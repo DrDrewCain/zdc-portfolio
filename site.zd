@@ -20,7 +20,8 @@
 # language and a way to name it from the file, and neither exists.
 
 use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
-use "./projects" for Project, Listing, cards, ringExtent, ringSize, ringScale, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, Ring, rings, projectSlugs, rounded5
+use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRST_YEAR, lastYear, workingYears, totalCommits
+use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
 use "./terminal" for screen, line, open, helpLines, whoamiLines, gamesLines, unknownLines, commandOf, argumentOf
@@ -431,14 +432,40 @@ view title is "Mark Sturman"
                             # answers "what is there", a cross-section answers
                             # "how much, and for how long".
                             Row gap is 40, align is "center", narrowDisplay is "block", class is "rings-row"
-                                Column class is "rings", width is 320, height is 320, position is "relative", overflow is "clip"
-                                    # The disc is drawn at its own extent and
-                                    # then scaled into the box, which is what
-                                    # the SVG's viewBox was doing.
-                                    Column class is "rings-space", position is "absolute", top is 0, left is 0, width is ringSize, height is ringSize, scale is ringScale, origin is "topLeft"
-                                        each ring in rings
-                                            Row class is ("ring shade" + (text of ring.shade) + " wob" + (text of ring.wobble)), position is "absolute", top is (ringExtent - ring.outer), left is (ringExtent - ring.outer), width is (ring.outer * 2), height is (ring.outer * 2), border is ring.width
-                                        Row class is "pith", position is "absolute", top is (ringExtent - 18), left is (ringExtent - 18), width is 36, height is 36, radius is 999
+                                Figure class is "rings"
+                                    # The real drawing at last. Every ring is
+                                    # a closed path with the three-harmonic
+                                    # wobble `rings.ts` writes, so the disc
+                                    # reads as timber rather than as a
+                                    # dartboard — which is exactly what the
+                                    # box-and-border-radius version could not
+                                    # do. The `viewBox` does the scaling that
+                                    # `ringScale` was doing by hand.
+                                    Svg viewBox is viewBoxText, label is "Growth rings: one ring a year since 2018, the centre is the first year."
+                                        # Outermost first, so the inner ones
+                                        # paint over their edges.
+                                        Group fill is "none"
+                                            each outline in trunkOutlines
+                                                Path outline is outline.band, stroke is outline.colour, strokeWidth is outline.width, class is "ring-grow"
+                                        # Latewood — the dark line laid down
+                                        # as a season closes. Without it nine
+                                        # browns read as one gradient and the
+                                        # rings cannot be counted.
+                                        Group fill is "none", stroke is "#14110d", strokeWidth is 1.6, opacity is 0.85
+                                            each outline in trunkOutlines
+                                                if outline.last is no
+                                                    Path outline is outline.latewood, class is "ring-grow"
+                                        # Grain. Short and faint on purpose —
+                                        # drawn full-radius these read as a
+                                        # wireframe rather than as figure in
+                                        # the wood.
+                                        Group stroke is "#211c14", strokeWidth is 1.1, opacity is 0.5
+                                            each fleck in grain
+                                                Segment fromX is fleck.x1, fromY is fleck.y1, toX is fleck.x2, toY is fleck.y2
+                                        Path outline is pithPath, fill is "#4a412a"
+                                        Circle x is (decimalOf of trunkExtent), y is (decimalOf of trunkExtent), radius is 5.0, fill is "#2b261e"
+                                    Caption class is "rings-caption"
+                                        Text ((((((text of FIRST_YEAR) + "–") + (text of lastYear)) + " · ") + (text of workingYears)) + " years shipping · ") + (text of totalCommits) + " commits"
                                 Column grow is 1, basis is 0, gap is 12, maxWidth is 420
                                     Text "growth rings", class is "rings-label"
                                     Text "One ring a year since 2018, when I started. The thick ones are the years that shipped something.", color is "muted", lineHeight is 1.7

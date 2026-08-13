@@ -133,48 +133,12 @@ function cardsOf with all
     sort each project by project.rank
     map each project to (Listing with slug is project.slug, title is project.title, oneLiner is project.oneLiner, status is project.status, stack is project.stack, shown is project.shown, timeline is project.timeline, rank is project.rank)
 
-# The rings, as one string. A `foreign` takes `Text` and `Decimal` and not a
-# `List of` a record, so the drawing is handed "9000,99,52,…" in running
-# order and works the geometry out itself — which is where the geometry
-# already lived.
-state rings is static List of Ring from ringsFrom with counts is (commitCounts with all is cards), index is 0, cursor is 18, taken is empty
-
-# ⚠️ THE DRAWING HAS TO BE SCALED, AND THIS IS WHERE THE SVG WAS DOING WORK
-# I DID NOT REPLACE.
-#
-# `ringPath` writes coordinates in whatever space the rings came out in, and
-# the `viewBox` then maps that space onto however many pixels the layout
-# gives it — so the geometry never has to know how big it will be drawn.
-# Elements have no viewBox: a 510px-wide ring in a 320px box is a 510px-wide
-# ring hanging out over the page, which is exactly what happened.
-#
-# So the extent is computed here and the whole disc is scaled to the box.
-# `origin is "topLeft"` because `scale` does not change the layout box, so
-# the shrink has to happen from the corner the box is anchored at.
-state ringExtent is static Whole from extentOf with all is rings, index is 0, most is 18
-
-function extentOf with all, index, most
-    when listAt with value is all, index is index
-        None
-            give most + 12
-        Some with ring
-            give extentOf with all is all, index is index + 1, most is (max with first is most, second is ring.outer)
-
-state ringSize is static Whole from doubled of ringExtent
-
-function doubled of value
-    give value * 2
-
-# The box the layout gives it, over the space the geometry came out in.
-state ringScale is static Decimal from fitted with box is 320.0, space is ringSize
-
-function fitted with box, space
-    give box / (decimalOf of space)
-
-function commitCounts with all
-    from all
-    keep each project where (commitsOf of project.timeline) > 0
-    map each project to (commitsOf of project.timeline)
+# The growth rings used to be computed here, as an outer radius and a
+# shade class per project, because the language could not draw a path and
+# the disc was a stack of `div`s with a border radius. `rings.zd` replaces
+# all of it with the geometry `src/lib/rings.ts` actually has — one ring
+# per *year*, closed paths with a three-harmonic wobble — now that `Svg`
+# and `Path` exist.
 
 # --- stack coverage --------------------------------------------------------
 #
@@ -250,35 +214,5 @@ function projectWith with all, slug, index, fallback
                 give project
             give projectWith with all is all, slug is slug, index is index + 1, fallback is fallback
 
-record Ring
-    outer  is Whole
-    width  is Whole
-    shade  is Whole
-    wobble is Whole
-
-# MIN_WIDTH + log10(commits) * WIDTH_SCALE, exactly as `rings.ts` has it.
-function ringWidth of commits
-    with grown is (valueOr with maybe is (log10 of (decimalOf of (max with first is commits, second is 1))), fallback is 0.0)
-    give 11 + (valueOr with maybe is (round of (grown * 7.6)), fallback is 0)
-
-# Rings, pith outward: each one sits on the edge the last left.
-function ringsFrom with counts, index, cursor, taken
-    when listAt with value is counts, index is index
-        None
-            give taken
-        Some with commits
-            give ringsFrom with counts is counts, index is index + 1, cursor is cursor + (ringWidth of commits), taken is (append (Ring with outer is cursor + (ringWidth of commits), width is (ringWidth of commits), shade is (shadeFor with index is index, count is (listLength of counts)), wobble is (valueOr with maybe is (mod with value is index, divisor is 6), fallback is 0)) to taken)
-
-# Position on the soil-to-ember ramp, as one of eleven classes. Eased hard
-# toward the end for the reason the original gives: ring *area* grows with
-# radius, so spreading the ramp evenly across ring index spends two thirds
-# of the picture on the bright end and the disc reads as a plain orange
-# circle.
-function shadeFor with index, count
-    if count < 2
-        give 10
-    with t is ((decimalOf of index) / (decimalOf of (count - 1)))
-    with eased is (valueOr with maybe is (power with value is t, exponent is 1.9), fallback is 0.0)
-    give valueOr with maybe is (round of (eased * 10.0)), fallback is 0
 
 

@@ -368,36 +368,41 @@ html {
  * Pantone 448 C at the pith, ember at the bark, with chroma pulled out of
  * the middle so the mid bands read as timber rather than leather.
  */
-.rings { margin: 0 auto; }
-/* The colour is `!important` because the width arrives as an inline
- * `border` shorthand — a reactive `border is` is a `setProperty` call — and
- * an inline shorthand resets `border-color` to `currentColor`, which a
- * class rule cannot outrank. */
-.ring {
-  border-style: solid;
-  box-sizing: border-box;
-  animation: ring-grow 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+/* The cross-section. `growth-rings.tsx` has this as
+   `mx-auto block h-auto w-full max-w-[420px]` on the svg, and the figure
+   around it carries the tilt. */
+.rings { margin: 0; }
+.rings svg {
+  display: block;
+  margin: 0 auto;
+  width: 100%;
+  height: auto;
+  max-width: 420px;
+  transition: transform 220ms ease-out;
 }
-.pith { background: var(--color-soil); box-shadow: inset 0 0 0 6px #2b261e; }
-
-.wob0 { border-radius: 48% 52% 51% 49% / 50% 49% 51% 50%; }
-.wob1 { border-radius: 52% 48% 49% 51% / 49% 51% 49% 51%; }
-.wob2 { border-radius: 50% 50% 48% 52% / 52% 48% 52% 48%; }
-.wob3 { border-radius: 49% 51% 52% 48% / 48% 52% 48% 52%; }
-.wob4 { border-radius: 51% 49% 50% 50% / 51% 50% 49% 50%; }
-.wob5 { border-radius: 50% 50% 52% 48% / 49% 51% 50% 50%; }
-
-.shade0 { border-color: #4a412a !important; }
-.shade1 { border-color: #5b4c33 !important; }
-.shade2 { border-color: #6b563d !important; }
-.shade3 { border-color: #7a6247 !important; }
-.shade4 { border-color: #896d51 !important; }
-.shade5 { border-color: #99785a !important; }
-.shade6 { border-color: #aa8361 !important; }
-.shade7 { border-color: #bd8d67 !important; }
-.shade8 { border-color: #d1976a !important; }
-.shade9 { border-color: #e7a06b !important; }
-.shade10 { border-color: #ffa96b !important; }
+.rings-caption {
+  margin-top: 1rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-muted);
+}
+/* Staggered outward, so the trunk thickens year by year from the pith
+   instead of arriving all at once. The rings are painted outermost-first —
+   so the inner ones overlap their edges — which means nth-child counts
+   inward and the delays run the other way: the pith is ring 9 and starts
+   first. `growth-rings.tsx` writes this as a `style` attribute per ring,
+   which is not something this language will emit. */
+.rings .ring-grow { transform-origin: center; }
+.rings g:first-of-type .ring-grow:nth-child(9) { animation-delay: 0ms; }
+.rings g:first-of-type .ring-grow:nth-child(8) { animation-delay: 55ms; }
+.rings g:first-of-type .ring-grow:nth-child(7) { animation-delay: 110ms; }
+.rings g:first-of-type .ring-grow:nth-child(6) { animation-delay: 165ms; }
+.rings g:first-of-type .ring-grow:nth-child(5) { animation-delay: 220ms; }
+.rings g:first-of-type .ring-grow:nth-child(4) { animation-delay: 275ms; }
+.rings g:first-of-type .ring-grow:nth-child(3) { animation-delay: 330ms; }
+.rings g:first-of-type .ring-grow:nth-child(2) { animation-delay: 385ms; }
+.rings g:first-of-type .ring-grow:nth-child(1) { animation-delay: 440ms; }
 
 .rings-label {
   font-family: var(--font-mono); font-size: 0.6875rem;

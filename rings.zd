@@ -1,0 +1,347 @@
+# rings.zd — the trunk, ported from `src/lib/rings.ts` and
+# `src/components/growth-rings.tsx`.
+#
+# WHAT CHANGED, AND WHY THIS FILE EXISTS NOW. The first port drew the rings
+# as absolutely positioned boxes with a border radius, because the language
+# had no way to say `<path>`. That is why the drawing was never right: a
+# ring is not a circle. Every ring in the original is a closed path with a
+# three-harmonic wobble on it, because concentric circles read as a
+# dartboard and the wobble is most of what makes a cross-section legible as
+# timber. A box with `border-radius: 50%` cannot wobble.
+#
+# The language now has `Svg`, `Group`, `Path`, `Circle` and `Segment`, so
+# this is the original geometry rather than an approximation of its
+# silhouette: the same harmonics, the same phases, the same 120 samples,
+# the same ramp, the same grain.
+#
+# EVERYTHING HERE IS `static`. The whole drawing is computed on the build
+# host and arrives as markup, which is what `growth-rings.tsx` says about
+# itself: "no canvas, no animation frame, nothing to schedule". A few
+# thousand trig calls at build time, zero at read time.
+#
+# ONE RING PER YEAR, NOT PER PROJECT. `buildLifeRings`, not `buildRings`,
+# for the reason its comment gives: a ring per project implies the work is
+# the whole of it, and a ring per year shows the years there was nothing to
+# show. Five thin dark rings, then four that carry everything.
+
+use "./projects" for Listing, cards, commitsOf
+
+# --- the constants, exactly as `rings.ts` has them --------------------------
+
+state FIRST_YEAR is static Whole starting 2018
+state LATEST_YEAR is static Whole starting 2026
+state YEARS is static Whole from (LATEST_YEAR - FIRST_YEAR) + 1
+
+# The pith. Everything is measured outward from here.
+state PITH is static Decimal starting 18.0
+# A year with nothing recorded still laid down wood.
+state BARE_WIDTH is static Decimal starting 9.5
+# Multiplier on log10(commits).
+state WIDTH_SCALE is static Decimal starting 7.6
+# Raising t to a power keeps the disc in soil and umber for most of its
+# trunkSpan and lets only the last rings reach ember.
+state RAMP_EASE is static Decimal starting 1.9
+# Real wood alternates earlywood and latewood, and that alternation is what
+# makes a cross-section legible where neighbouring years grew alike.
+state ALTERNATE is static Decimal starting 0.74
+# How much chroma to drain at the middle of the ramp. Ends keep theirs.
+state DESATURATE is static Decimal starting 0.3
+# How many points a ring's outline is sampled at.
+state SAMPLES is static Whole starting 120
+
+# --- the ramp ---------------------------------------------------------------
+#
+# Pantone 448 C at the pith — the colour identified as the least wanted
+# there is, kept because it is the value every warmer one above it is
+# measured against — climbing to ember at the bark.
+#
+# `rgb(…)` rather than `#rrggbb` because this language has no base-16
+# formatter and CSS treats the two as the same colour. The alternative was
+# a hex primitive in the prelude, which is a lot of surface area to add so
+# that a string looks more familiar.
+
+# The circular functions give `Option of Decimal`, because `sin of (1/0)`
+# has no answer and the type says so. Every angle in this file is finite by
+# construction — it is `index / SAMPLES * tau` — so the fallback is
+# unreachable, and writing `valueOr` around forty call sites would bury the
+# geometry it is meant to protect.
+
+function sinOf of angle
+    give valueOr with maybe is (sin of angle), fallback is 0.0
+
+function cosOf of angle
+    give valueOr with maybe is (cos of angle), fallback is 0.0
+
+function rootOf of value
+    give valueOr with maybe is (sqrt of value), fallback is 0.0
+
+# `largerOf` and `smallerOf` in the prelude take an `Option` — they are the
+# step of a fold that has not seen an element yet. These are the plain
+# two-decimal comparison the geometry wants.
+function atLeast with value, floorAt
+    if value < floorAt
+        give floorAt
+    give value
+
+function atMost with value, ceilingAt
+    if value > ceilingAt
+        give ceilingAt
+    give value
+
+function rampChannel with low, high, eased, shade
+    give (low + ((high - low) * eased)) * shade
+
+function wholeOfDecimal of value
+    give valueOr with maybe is (round of value), fallback is 0
+
+function rampAt with ratio, alternate
+    with eased is (valueOr with maybe is (power with value is ratio, exponent is RAMP_EASE), fallback is 0.0)
+    with shade is (shadeFactor of alternate)
+    with red is (rampChannel with low is 74.0, high is 255.0, eased is eased, shade is shade)
+    with green is (rampChannel with low is 65.0, high is 169.0, eased is eased, shade is shade)
+    with blue is (rampChannel with low is 42.0, high is 107.0, eased is eased, shade is shade)
+    # Pull chroma out of the middle of the climb. At full saturation the mid
+    # bands went orange and the disc read as leather rather than timber; the
+    # ends are left untouched so the pith is still exactly 448 C and the
+    # bark exactly ember.
+    with grey is (((red * 0.299) + (green * 0.587)) + (blue * 0.114))
+    with blend is (DESATURATE * (sinOf of (pi * ratio)))
+    give (((("rgb(" + (text of (channelOf with raw is red, grey is grey, blend is blend))) + ", ") + (text of (channelOf with raw is green, grey is grey, blend is blend))) + ", ") + (text of (channelOf with raw is blue, grey is grey, blend is blend)) + ")"
+
+function shadeFactor of alternate
+    if alternate
+        give ALTERNATE
+    give 1.0
+
+function channelOf with raw, grey, blend
+    give min with first is 255, second is (wholeOfDecimal of ((raw * (1.0 - blend)) + (grey * blend)))
+
+# --- the rings --------------------------------------------------------------
+
+record LifeRing
+    year     is Whole
+    calendar is Whole
+    commits  is Whole
+    radius   is Decimal
+    width    is Decimal
+    edge     is Decimal
+    colour   is Text
+
+# The first four-digit year in a timeline string. The original matches
+# `\b(19|20)\d{2}\b`; this walks the words and takes the first that parses
+# into that range, which is the same answer for every string either has
+# ever seen and does not need a regular expression the language lacks.
+function startYearOf of timeline
+    give firstYearIn with words is (split with value is (replace with value is timeline, old is ",", new is " "), using is " "), index is 0
+
+function firstYearIn with words, index
+    when listAt with value is words, index is index
+        None
+            give 0
+        Some with word
+            when parseWhole of (trim of word)
+                None
+                    give firstYearIn with words is words, index is index + 1
+                Some with parsed
+                    if (parsed > 1899) and (parsed < 2101)
+                        give parsed
+                    give firstYearIn with words is words, index is index + 1
+
+# The commits started in one calendar year, over every project.
+function commitsInYear with all, calendar, index, running
+    when listAt with value is all, index is index
+        None
+            give running
+        Some with project
+            if (startYearOf of project.timeline) is calendar
+                give commitsInYear with all is all, calendar is calendar, index is index + 1, running is running + (commitsOf of project.timeline)
+            give commitsInYear with all is all, calendar is calendar, index is index + 1, running is running
+
+# A year's extra thickness comes from the commits started in it.
+function yearWidth of commits
+    if commits < 1
+        give BARE_WIDTH
+    give BARE_WIDTH + ((valueOr with maybe is (log10 of (decimalOf of (commits + 1))), fallback is 0.0) * WIDTH_SCALE)
+
+state trunkRings is static List of LifeRing from trunkFrom with year is 1, cursor is PITH, taken is empty
+
+function trunkFrom with year, cursor, taken
+    if year > YEARS
+        give taken
+    with calendar is ((FIRST_YEAR + year) - 1)
+    with commits is (commitsInYear with all is cards, calendar is calendar, index is 0, running is 0)
+    with width is (yearWidth of commits)
+    give trunkFrom with year is year + 1, cursor is cursor + width, taken is (append (LifeRing with year is year, calendar is calendar, commits is commits, radius is cursor + (width / 2.0), width is width, edge is cursor + width, colour is (rampAt with ratio is ((decimalOf of (year - 1)) / (decimalOf of (YEARS - 1))), alternate is (alternating of year))) to taken)
+
+# The pith and the bark keep their exact ramp ends; everything between
+# alternates so no two neighbours share a value.
+function alternating of year
+    if year < 2
+        give no
+    if year is YEARS
+        give no
+    give (valueOr with maybe is (mod with value is year, divisor is 2), fallback is 1) is 0
+
+# --- sizing -----------------------------------------------------------------
+
+state outerEdge is static Decimal from edgeOf with all is trunkRings, index is 0, most is PITH
+
+function edgeOf with all, index, most
+    when listAt with value is all, index is index
+        None
+            give most
+        Some with ring
+            give edgeOf with all is all, index is index + 1, most is (atLeast with value is ring.edge, floorAt is most)
+
+state trunkExtent is static Whole from ceiling of (outerEdge + 10.0)
+
+function ceiling of value
+    with floored is (valueOr with maybe is (floor of value), fallback is 0)
+    if (decimalOf of floored) < value
+        give floored + 1
+    give floored
+
+state trunkSpan is static Whole from trunkExtent * 2
+state viewBoxText is static Text from (("0 0 " + (text of trunkSpan)) + " ") + (text of trunkSpan)
+
+state totalCommits is static Whole from commitsOf2 with all is trunkRings, index is 0, running is 0
+
+function commitsOf2 with all, index, running
+    when listAt with value is all, index is index
+        None
+            give running
+        Some with ring
+            give commitsOf2 with all is all, index is index + 1, running is running + ring.commits
+
+state workingYears is static Whole from workedOf with all is trunkRings, index is 0, running is 0
+
+function workedOf with all, index, running
+    when listAt with value is all, index is index
+        None
+            give running
+        Some with ring
+            if ring.commits > 0
+                give workedOf with all is all, index is index + 1, running is running + 1
+            give workedOf with all is all, index is index + 1, running is running
+
+state lastYear is static Whole from (FIRST_YEAR + YEARS) - 1
+
+# --- the outline ------------------------------------------------------------
+#
+# A ring as a closed, slightly irregular path.
+#
+# Drawn as perfect circles, concentric bands read as a dartboard: the eye
+# picks up the exact concentricity immediately and the thing stops looking
+# like wood. Real rings wobble, because a trunk grows unevenly against
+# wind, slope and light, and that wobble is most of what makes a
+# cross-section legible as timber.
+#
+# The wobble is a sum of three harmonics with integer frequencies, so the
+# path closes exactly, and the phases are fixed rather than random — the
+# same tree every render. Coprime frequencies so the sum does not repeat
+# within a turn.
+#
+# EVERY RING SHARES ONE OUTLINE. Giving each its own phase looked right in
+# principle and wrong on screen: adjacent boundaries drifted out of step
+# and opened black crescents between bands. A trunk's cross-section does
+# not do that, because each year is laid down on the shape the last one
+# left.
+
+function wobbleAt of theta
+    with waveA is (0.021 * (sinOf of ((2.0 * theta) + 0.6)))
+    with waveB is (0.013 * (sinOf of ((3.0 * theta) + 2.2)))
+    with waveC is (0.007 * (sinOf of ((5.0 * theta) + 4.1)))
+    give ((1.0 + waveA) + waveB) + waveC
+
+function trunkPath with cx, cy, radius
+    give trunkPointFrom with cx is cx, cy is cy, radius is radius, index is 0, drawn is ""
+
+function trunkPointFrom with cx, cy, radius, index, drawn
+    if index is SAMPLES
+        give drawn + "Z"
+    with theta is (((decimalOf of index) / (decimalOf of SAMPLES)) * (tau))
+    with r is (radius * (wobbleAt of theta))
+    with x is (cx + (r * (cosOf of theta)))
+    with y is (cy + (r * (sinOf of theta)))
+    give trunkPointFrom with cx is cx, cy is cy, radius is radius, index is index + 1, drawn is ((drawn + (commandAt of index)) + (valueOr with maybe is (fixedText with value is x, digits is 2), fallback is "0")) + " " + (valueOr with maybe is (fixedText with value is y, digits is 2), fallback is "0")
+
+function commandAt of index
+    if index is 0
+        give "M"
+    give "L"
+
+# --- what the view walks ----------------------------------------------------
+#
+# The view cannot compute, so every ring arrives with its outline already
+# written. `Outline` is the drawn form of `LifeRing`: three path strings —
+# the band, the latewood line that closes its season, and the paint.
+#
+# The centre drifts a little per ring: a trunk leans toward whatever light
+# it got. `growth-rings.tsx` writes that as `c + idx * 0.22`.
+
+record Outline
+    band     is Text
+    latewood is Text
+    colour   is Text
+    width    is Decimal
+    delay    is Whole
+    last     is Truth
+
+# Outermost first, so the inner ones paint over their edges — which is
+# what `growth-rings.tsx` does with `[...rings].reverse()`. Each band is a
+# stroke centred on its radius, so the order decides which half of each
+# boundary survives, and getting it backwards widens every ring by half a
+# stroke in the wrong direction.
+state trunkOutlines is static List of Outline from reverse of trunkOutlineFrom with all is trunkRings, index is 0, taken is empty
+
+function trunkOutlineFrom with all, index, taken
+    when listAt with value is all, index is index
+        None
+            give taken
+        Some with ring
+            with drift is ((decimalOf of trunkExtent) + ((decimalOf of index) * 0.22))
+            give trunkOutlineFrom with all is all, index is index + 1, taken is (append (Outline with band is (trunkPath with cx is drift, cy is (decimalOf of trunkExtent), radius is ring.radius), latewood is (trunkPath with cx is drift, cy is (decimalOf of trunkExtent), radius is ring.edge), colour is ring.colour, width is ring.width, delay is index * 55, last is (index is ((listLength of all) - 1))) to taken)
+
+state pithPath is static Text from trunkPath with cx is (decimalOf of trunkExtent), cy is (decimalOf of trunkExtent), radius is PITH
+
+# --- the grain --------------------------------------------------------------
+#
+# Medullary grain, as flecks rather than spokes.
+#
+# Rays are the detail that makes a cross-section read as timber instead of
+# as concentric bands. The first attempt drew each one from pith to bark,
+# which turned the disc into a wireframe globe — real grain are short,
+# broken, and sit at every depth rather than radiating from a single hub.
+#
+# The noise is `sin(i * k) * big`, fractional part: no RNG, so the grain is
+# identical every render. The original takes `% 1` of an absolute value;
+# this subtracts the floor, which is the same number and does not need a
+# `mod` that works on decimals.
+
+record Ray
+    x1 is Decimal
+    y1 is Decimal
+    x2 is Decimal
+    y2 is Decimal
+
+function fraction of value
+    with size is (abs of value)
+    give size - (decimalOf of (valueOr with maybe is (floor of size), fallback is 0))
+
+state grain is static List of Ray from grainFrom with index is 0, taken is empty
+
+function grainFrom with index, taken
+    if index > 89
+        give taken
+    with a is (fraction of ((sinOf of ((decimalOf of index) * 12.9898)) * 43758.5453))
+    with b is (fraction of ((sinOf of ((decimalOf of index) * 78.233)) * 12345.6789))
+    with theta is (a * (tau))
+    with inner is PITH
+    with outer is outerEdge
+    # Biased outward: the sapwood carries more visible figure than the heart.
+    with depth is (inner + ((outer - inner) * (0.15 + (0.8 * (rootOf of b)))))
+    with half is ((outer - inner) * (0.02 + (0.05 * a)))
+    with near is (atLeast with value is (depth - half), floorAt is inner)
+    with far is (atMost with value is (depth + half), ceilingAt is outer)
+    with centre is (decimalOf of trunkExtent)
+    give grainFrom with index is index + 1, taken is (append (Ray with x1 is (centre + (near * (cosOf of theta))), y1 is (centre + (near * (sinOf of theta))), x2 is (centre + (far * (cosOf of theta))), y2 is (centre + (far * (sinOf of theta)))) to taken)
