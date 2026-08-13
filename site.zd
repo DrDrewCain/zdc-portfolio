@@ -24,10 +24,11 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, pegs, lex, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
 use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
+use "./trader" for Ship, Move, newShip, stepTrader
 
 route Site
     Home    is "/"
@@ -298,6 +299,12 @@ component Terminal
                                 set screen to (joined with head is screen, rest is guessed.printed)
                                 if guessed.done
                                     set mode to "shell"
+                            if mode is "trader"
+                                with flown is (stepTrader with ship is ship, input is line)
+                                set ship to flown.ship
+                                set screen to (joined with head is screen, rest is flown.printed)
+                                if flown.done
+                                    set mode to "shell"
                             if mode is "games"
                                 set mode to "shell"
                                 with answer is (runCommand of line)
@@ -323,6 +330,8 @@ component Terminal
                                     set pegs to (newPegs of (clock))
                                 if answer.enters is "lexer"
                                     set lex to (newLex of (clock))
+                                if answer.enters is "trader"
+                                    set ship to (newShip of (clock))
                             set line to ""
 
                         # Ctrl+L clears the scrollback. Ctrl+C abandons the

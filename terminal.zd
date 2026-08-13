@@ -18,6 +18,7 @@
 use "./commands" for Outcome, Completion, runCommand, completionFor, commandNames
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
+use "./trader" for Ship, Move, newShip, stepTrader
 
 # The screen: what has been printed, oldest first.
 state screen is client List of Text starting ["mark's portfolio :: type 'help' to get started"]
@@ -44,6 +45,7 @@ state overlay is client Text starting ""
 # fresh number can honestly come from.
 state pegs is client Pegs starting (newPegs of 1)
 state lex is client Lex starting (newLex of 1)
+state ship is client Ship starting (newShip of 1)
 
 # --- history ----------------------------------------------------------------
 #

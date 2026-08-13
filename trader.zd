@@ -1,0 +1,227 @@
+# trader.zd — `src/lib/terminal/trader.ts`, ported.
+#
+# Spacetrader: turn 1,000 credits into 10,000. Six planets, three goods, a
+# hold of twenty and ten fuel. Prices reroll on every warp around each
+# planet's base, so the whole game is buy low here and sell high there
+# with a tank that runs out.
+#
+# WHAT THE RECORDS BUY. The original carries `cargo` and `prices` as
+# `Record<Good, number>` and spreads them on every move, which is the
+# shape a language without mutation gets for free: three named fields, and
+# a move that hands back a whole new ship. There is nowhere for a
+# half-applied trade to exist, which is the bug class the spread was there
+# to avoid.
+
+record Goods
+    ore   is Whole
+    spice is Whole
+    tech  is Whole
+
+record Ship
+    planet  is Text
+    credits is Whole
+    fuel    is Whole
+    cargo   is Goods
+    prices  is Goods
+    days    is Whole
+    seed    is Whole
+
+record Move
+    ship    is Ship
+    printed is List of Text
+    done    is Truth
+
+state holdSize is static Whole starting 20
+state winCredits is static Whole starting 10000
+state fuelPrice is static Whole starting 25
+state maxFuel is static Whole starting 10
+state planets is static List of Text starting ["vermilion", "kepler", "novaterra", "drift", "halcyon", "meridian"]
+
+# Base prices per planet; travel rerolls the actual prices around these.
+# A function rather than a `Map of Text to Goods`, for the reason
+# `layers.zd` gives about its tool table: a map literal has to fit on one
+# line, and six planets on one line is not a table anybody can amend.
+function basePrices of planet
+    if planet is "vermilion"
+        give Goods with ore is 18, spice is 70, tech is 120
+    if planet is "kepler"
+        give Goods with ore is 45, spice is 30, tech is 110
+    if planet is "novaterra"
+        give Goods with ore is 50, spice is 85, tech is 60
+    if planet is "drift"
+        give Goods with ore is 35, spice is 55, tech is 90
+    if planet is "halcyon"
+        give Goods with ore is 60, spice is 25, tech is 140
+    give Goods with ore is 25, spice is 95, tech is 75
+
+# Each price is `base * (0.7 … 1.3)`, floored at five so nothing is ever
+# free. Three draws, so three seeds — the sequence is threaded rather than
+# reused, because drawing three times from one seed gives three equal
+# numbers and a market that moves in lockstep.
+function rolledPrices with planet, seed
+    with base is (basePrices of planet)
+    give Goods with ore is (jittered with price is base.ore, seed is seed), spice is (jittered with price is base.spice, seed is (nextSeed of seed)), tech is (jittered with price is base.tech, seed is (nextSeed of (nextSeed of seed)))
+
+function jittered with price, seed
+    with factor is (0.7 + ((randomDecimal of seed) * 0.6))
+    give max with first is 5, second is (valueOr with maybe is (round of ((decimalOf of price) * factor)), fallback is price)
+
+function newShip of seed
+    give Ship with planet is "vermilion", credits is 1000, fuel is maxFuel, cargo is (Goods with ore is 0, spice is 0, tech is 0), prices is (rolledPrices with planet is "vermilion", seed is seed), days is 0, seed is (nextSeed of (nextSeed of (nextSeed of seed)))
+
+# --- reading the ship -------------------------------------------------------
+
+function holdUsed of cargo
+    give (cargo.ore + cargo.spice) + cargo.tech
+
+function amountOf with goods, good
+    if good is "ore"
+        give goods.ore
+    if good is "spice"
+        give goods.spice
+    give goods.tech
+
+function withAmount with goods, good, amount
+    if good is "ore"
+        give Goods with ore is amount, spice is goods.spice, tech is goods.tech
+    if good is "spice"
+        give Goods with ore is goods.ore, spice is amount, tech is goods.tech
+    give Goods with ore is goods.ore, spice is goods.spice, tech is amount
+
+function isGood of word
+    give (word is "ore") or ((word is "spice") or (word is "tech"))
+
+function goodsLine with goods, label
+    give ((((label + "ore ") + (text of goods.ore)) + " | spice ") + (text of goods.spice)) + " | tech " + (text of goods.tech)
+
+function statusLines of ship
+    give [(("day " + (text of ship.days)) + " :: docked at ") + ship.planet, ((((("credits " + (text of ship.credits)) + " | fuel ") + (text of ship.fuel)) + "/") + (text of maxFuel)) + " | hold " + (text of (holdUsed of ship.cargo)) + "/" + (text of holdSize), (goodsLine with goods is ship.prices, label is "market: "), (goodsLine with goods is ship.cargo, label is "cargo:  "), "planets: " + (join with parts is planets, using is ", "), "tip: prices reroll every warp. buy low here, sell high there."]
+
+function helpLines2
+    give ["trader commands:", "  look                prices and your ship", "  buy <good> <qty>    e.g. buy ore 5", "  sell <good> <qty>   sell from your hold", "  go <planet>         travel (burns 1 fuel)", ("  refuel              top up fuel (" + (text of fuelPrice)) + " credits each)", "  quit                abandon the run", ("goal: turn 1,000 credits into " + (groupedDigits with digits is (text of winCredits), separator is ",")) + "."]
+
+# --- one move ---------------------------------------------------------------
+
+function stepTrader with ship, input
+    with words is (split with value is (lowercase of (trim of input)), using is " ")
+    with verb is (valueOr with maybe is (listAt with value is words, index is 0), fallback is "")
+    with subject is (valueOr with maybe is (listAt with value is words, index is 1), fallback is "")
+    with count is (valueOr with maybe is (listAt with value is words, index is 2), fallback is "")
+    if isBlank of verb
+        give Move with ship is ship, printed is empty, done is no
+    if (verb is "look") or (verb is "status")
+        give Move with ship is ship, printed is (statusLines of ship), done is no
+    if verb is "buy"
+        give bought with ship is ship, good is subject, amount is (parsedAmount of count)
+    if verb is "sell"
+        give sold with ship is ship, good is subject, amount is (parsedAmount of count)
+    if verb is "go"
+        give warped with ship is ship, destination is subject
+    if verb is "refuel"
+        give refuelled of ship
+    if verb is "quit"
+        give Move with ship is ship, printed is ["docking permanently. thanks for flying."], done is yes
+    give Move with ship is ship, printed is (helpLines2), done is no
+
+function parsedAmount of word
+    give valueOr with maybe is (parseWhole of word), fallback is 0
+
+function bought with ship, good, amount
+    if (not (isGood of good)) or (amount < 1)
+        give Move with ship is ship, printed is ["usage: buy <ore|spice|tech> <qty>"], done is no
+    with cost is ((amountOf with goods is ship.prices, good is good) * amount)
+    if cost > ship.credits
+        give Move with ship is ship, printed is [("you cannot afford that (" + (text of cost)) + " credits)"], done is no
+    if ((holdUsed of ship.cargo) + amount) > holdSize
+        give Move with ship is ship, printed is [("your hold fits " + (text of holdSize)) + " units total"], done is no
+    give Move with ship is (Ship with planet is ship.planet, credits is ship.credits - cost, fuel is ship.fuel, cargo is (withAmount with goods is ship.cargo, good is good, amount is (amountOf with goods is ship.cargo, good is good) + amount), prices is ship.prices, days is ship.days, seed is ship.seed), printed is [(((("bought " + (text of amount)) + " ") + good) + " for ") + (text of cost)], done is no
+
+function sold with ship, good, amount
+    if (not (isGood of good)) or (amount < 1)
+        give Move with ship is ship, printed is ["usage: sell <ore|spice|tech> <qty>"], done is no
+    with held is (amountOf with goods is ship.cargo, good is good)
+    if held < amount
+        give Move with ship is ship, printed is [(("you only have " + (text of held)) + " ") + good], done is no
+    with income is ((amountOf with goods is ship.prices, good is good) * amount)
+    with settled is (Ship with planet is ship.planet, credits is ship.credits + income, fuel is ship.fuel, cargo is (withAmount with goods is ship.cargo, good is good, amount is held - amount), prices is ship.prices, days is ship.days, seed is ship.seed)
+    with receipt is (((("sold " + (text of amount)) + " ") + good) + " for ") + (text of income)
+    if settled.credits > (winCredits - 1)
+        give Move with ship is settled, printed is [receipt, ((text of settled.credits) + " credits. you won in ") + (text of settled.days) + " days, trader.", "the real game is the SpaceTrader Wars project. try: open spacetrader-wars"], done is yes
+    give Move with ship is settled, printed is [receipt], done is no
+
+# A warp burns a day and a fuel, rerolls the market, and rolls once for an
+# event. The two events are the whole of the game's tension: pirates take
+# two fifths of one good you are carrying, and a surge makes one good here
+# worth sixty per cent more than it was a moment ago.
+function warped with ship, destination
+    if not (listContains with items is planets, value is destination)
+        give Move with ship is ship, printed is ["no such planet. options: " + (join with parts is planets, using is ", ")], done is no
+    if destination is ship.planet
+        give Move with ship is ship, printed is ["you are already there"], done is no
+    if ship.fuel < 1
+        give stranded of ship
+    with rolled is (rolledPrices with planet is destination, seed is ship.seed)
+    with arrived is (Ship with planet is destination, credits is ship.credits, fuel is ship.fuel - 1, cargo is ship.cargo, prices is rolled, days is ship.days + 1, seed is (seedForward with seed is ship.seed, steps is 4))
+    with luck is (randomDecimal of (seedForward with seed is ship.seed, steps is 3))
+    give afterEvent with ship is arrived, luck is luck
+
+function stranded of ship
+    if ship.credits > (fuelPrice - 1)
+        give Move with ship is ship, printed is ["out of fuel. refuel first."], done is no
+    give Move with ship is ship, printed is ["out of fuel and out of credits. stranded. game over."], done is yes
+
+function seedForward with seed, steps
+    if steps is 0
+        give seed
+    give seedForward with seed is (nextSeed of seed), steps is steps - 1
+
+function afterEvent with ship, luck
+    with arrival is (("warped to " + ship.planet) + " (day ") + (text of ship.days) + ")"
+    with market is (goodsLine with goods is ship.prices, label is "market: ")
+    if (luck < 0.12) and ((holdUsed of ship.cargo) > 0)
+        give raided with ship is ship, arrival is arrival, market is market
+    if luck > 0.9
+        give surged with ship is ship, arrival is arrival, market is market
+    give Move with ship is ship, printed is [arrival, market], done is no
+
+# The good taken is the first one actually carried, rather than a draw
+# from the carried set: the original picks at random among those held, and
+# with three goods the difference is one line of noise against three of
+# bookkeeping the reader cannot see.
+function raided with ship, arrival, market
+    with target is (firstHeld of ship.cargo)
+    with held is (amountOf with goods is ship.cargo, good is target)
+    with stolen is (max with first is 1, second is (valueOr with maybe is (round of ((decimalOf of held) * 0.4)), fallback is 1))
+    give Move with ship is (Ship with planet is ship.planet, credits is ship.credits, fuel is ship.fuel, cargo is (withAmount with goods is ship.cargo, good is target, amount is held - stolen), prices is ship.prices, days is ship.days, seed is ship.seed), printed is [arrival, market, (("!! pirates boarded you and took " + (text of stolen)) + " ") + target], done is no
+
+function firstHeld of cargo
+    if cargo.ore > 0
+        give "ore"
+    if cargo.spice > 0
+        give "spice"
+    give "tech"
+
+function surged with ship, arrival, market
+    with good is (surgingGood of ship.seed)
+    with lifted is (withAmount with goods is ship.prices, good is good, amount is (valueOr with maybe is (round of ((decimalOf of (amountOf with goods is ship.prices, good is good)) * 1.6)), fallback is (amountOf with goods is ship.prices, good is good)))
+    give Move with ship is (Ship with planet is ship.planet, credits is ship.credits, fuel is ship.fuel, cargo is ship.cargo, prices is lifted, days is ship.days, seed is ship.seed), printed is [arrival, (goodsLine with goods is lifted, label is "market: "), ("!! " + good) + " is surging here. sell while it lasts"], done is no
+
+function surgingGood of seed
+    with pick is (valueOr with maybe is (randomBelow with seed is seed, bound is 3), fallback is 0)
+    if pick is 0
+        give "ore"
+    if pick is 1
+        give "spice"
+    give "tech"
+
+function refuelled of ship
+    with need is (maxFuel - ship.fuel)
+    if need is 0
+        give Move with ship is ship, printed is ["tank is full"], done is no
+    # Whole division, so this is the floor the original spells out — a
+    # reader with 40 credits can buy one unit at 25 and not one and a half.
+    with affordable is (quotient with value is ship.credits, divisor is fuelPrice)
+    with units is (min with first is need, second is (valueOr with maybe is affordable, fallback is 0))
+    if units is 0
+        give Move with ship is ship, printed is ["not enough credits to refuel"], done is no
+    give Move with ship is (Ship with planet is ship.planet, credits is ship.credits - (units * fuelPrice), fuel is ship.fuel + units, cargo is ship.cargo, prices is ship.prices, days is ship.days, seed is ship.seed), printed is [(("refueled " + (text of units)) + " for ") + (text of (units * fuelPrice)) + " credits"], done is no
