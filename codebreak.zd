@@ -45,12 +45,20 @@ state maxGuesses is static Whole starting 10
 # reader, and would be sitting in the bundle.
 
 function newPegs of seed
-    give Pegs with hidden is (pegsFrom with seed is seed, index is 0), guesses is empty, hintUsed is no, over is no, seed is (seedAfter with seed is seed, draws is pegCount)
+    give Pegs with hidden is (pegsFrom with seed is seed, index is 0),
+        guesses is empty,
+        hintUsed is no,
+        over is no,
+        seed is (seedAfter with seed is seed, draws is pegCount)
 
 function pegsFrom with seed, index
     if index is pegCount
         give ""
-    give (text of ((valueOr with maybe is (randomBelow with seed is seed, bound is colours), fallback is 0) + 1)) + (pegsFrom with seed is (nextSeed of seed), index is index + 1)
+    give (text of ((
+        valueOr with maybe is (randomBelow with seed is seed, bound is colours),
+        fallback is 0) + 1)) + (
+        pegsFrom with seed is (nextSeed of seed),
+        index is index + 1)
 
 function seedAfter with seed, draws
     if draws is 0
@@ -77,8 +85,22 @@ record Score
     misplaced is Whole
 
 function scoreOf with guess, hidden
-    with leftovers is (leftoverPair with guess is guess, hidden is hidden, index is 0, fromSecret is "", fromGuess is "")
-    give Score with exact is (exactCount with guess is guess, hidden is hidden, index is 0, running is 0), misplaced is (misplacedCount with pool is leftovers.fromSecret, taken is leftovers.fromGuess, index is 0, running is 0)
+    with leftovers is (
+        leftoverPair with guess is guess,
+        hidden is hidden,
+        index is 0,
+        fromSecret is "",
+        fromGuess is "")
+    give Score with exact is (
+        exactCount with guess is guess,
+        hidden is hidden,
+        index is 0,
+        running is 0),
+        misplaced is (
+            misplacedCount with pool is leftovers.fromSecret,
+            taken is leftovers.fromGuess,
+            index is 0,
+            running is 0)
 
 record Leftovers
     fromSecret is Text
@@ -87,16 +109,36 @@ record Leftovers
 function leftoverPair with guess, hidden, index, fromSecret, fromGuess
     if index is pegCount
         give Leftovers with fromSecret is fromSecret, fromGuess is fromGuess
-    if (pegAt with value is guess, index is index) is (pegAt with value is hidden, index is index)
-        give leftoverPair with guess is guess, hidden is hidden, index is index + 1, fromSecret is fromSecret, fromGuess is fromGuess
-    give leftoverPair with guess is guess, hidden is hidden, index is index + 1, fromSecret is fromSecret + (pegAt with value is hidden, index is index), fromGuess is fromGuess + (pegAt with value is guess, index is index)
+    if (
+        pegAt with value is guess,
+        index is index) is (pegAt with value is hidden,
+        index is index)
+        give leftoverPair with guess is guess,
+            hidden is hidden,
+            index is index + 1,
+            fromSecret is fromSecret,
+            fromGuess is fromGuess
+    give leftoverPair with guess is guess,
+        hidden is hidden,
+        index is index + 1,
+        fromSecret is fromSecret + (pegAt with value is hidden, index is index),
+        fromGuess is fromGuess + (pegAt with value is guess, index is index)
 
 function exactCount with guess, hidden, index, running
     if index is pegCount
         give running
-    if (pegAt with value is guess, index is index) is (pegAt with value is hidden, index is index)
-        give exactCount with guess is guess, hidden is hidden, index is index + 1, running is running + 1
-    give exactCount with guess is guess, hidden is hidden, index is index + 1, running is running
+    if (
+        pegAt with value is guess,
+        index is index) is (pegAt with value is hidden,
+        index is index)
+        give exactCount with guess is guess,
+            hidden is hidden,
+            index is index + 1,
+            running is running + 1
+    give exactCount with guess is guess,
+        hidden is hidden,
+        index is index + 1,
+        running is running
 
 # One credit per remaining secret peg, so a guess of `1111` against a
 # secret holding one `1` scores one misplaced and not four. The consumed
@@ -107,11 +149,20 @@ function misplacedCount with pool, taken, index, running
         give running
     with peg is (pegAt with value is taken, index is index)
     if textContains with value is pool, needle is peg
-        give misplacedCount with pool is (withoutOne with value is pool, needle is peg), taken is taken, index is index + 1, running is running + 1
-    give misplacedCount with pool is pool, taken is taken, index is index + 1, running is running
+        give misplacedCount with pool is (withoutOne with value is pool, needle is peg),
+            taken is taken,
+            index is index + 1,
+            running is running + 1
+    give misplacedCount with pool is pool,
+        taken is taken,
+        index is index + 1,
+        running is running
 
 function withoutOne with value, needle
-    give (before with value is value, delimiter is needle) + (after with value is value, delimiter is needle)
+    give (
+        before with value is value,
+        delimiter is needle) + (after with value is value,
+        delimiter is needle)
 
 function pegAt with value, index
     give valueOr with maybe is (textAt with value is value, index is index), fallback is ""
@@ -120,7 +171,13 @@ function pegAt with value, index
 # Deliberately not positional: showing which peg was which would give the
 # game away.
 function renderRow with guess, mark
-    give ((("  " + guess) + "   ") + (padEnd with value is ((repeat with value is "●", count is mark.exact) + (repeat with value is "○", count is mark.misplaced)), width is 4, using is "·")) + "   " + (text of mark.exact) + " exact, " + (text of mark.misplaced) + " misplaced"
+    give ((("  " + guess) + "   ") + (
+        padEnd with value is ((
+            repeat with value is "●",
+            count is mark.exact) + (repeat with value is "○",
+            count is mark.misplaced)),
+        width is 4,
+        using is "·")) + "   " + (text of mark.exact) + " exact, " + (text of mark.misplaced) + " misplaced"
 
 function isValidGuess of raw
     if not ((textLength of raw) is pegCount)
@@ -143,26 +200,59 @@ function allDigitsInRange with raw, index
 function stepPegs with game, input
     with raw is (lowercase of (trim of input))
     if (raw is "quit") or (raw is "exit")
-        give Round with game is game, printed is [("the code was " + game.hidden) + "."], done is yes
+        give Round with game is game,
+            printed is [("the code was " + game.hidden) + "."],
+            done is yes
     if (raw is "help") or (raw is "?")
-        give Round with game is game, printed is ["guess 4 digits, each 1-6, repeats allowed. e.g. 1234", "● = right colour in the right place. ○ = right colour, wrong place.", "'hint' reveals one peg, once. 'quit' gives up."], done is no
+        give Round with game is game,
+            printed is [
+                "guess 4 digits, each 1-6, repeats allowed. e.g. 1234",
+                "● = right colour in the right place. ○ = right colour, wrong place.",
+                "'hint' reveals one peg, once. 'quit' gives up."],
+            done is no
     if raw is "hint"
         give pegHint of game
     if not (isValidGuess of raw)
-        give Round with game is game, printed is ["4 digits, 1-6. try again, or 'help'."], done is no
+        give Round with game is game,
+            printed is ["4 digits, 1-6. try again, or 'help'."],
+            done is no
     with mark is (scoreOf with guess is raw, hidden is game.hidden)
-    with played is (Pegs with hidden is game.hidden, guesses is (append raw to game.guesses), hintUsed is game.hintUsed, over is no, seed is game.seed)
+    with played is (
+        Pegs with hidden is game.hidden,
+        guesses is (append raw to game.guesses),
+        hintUsed is game.hintUsed,
+        over is no,
+        seed is game.seed)
     with row is (renderRow with guess is raw, mark is mark)
     if mark.exact is pegCount
-        give Round with game is played, printed is [row, ("cracked it in " + (text of (listLength of played.guesses))) + "."], done is yes
+        give Round with game is played,
+            printed is [
+                row,
+                ("cracked it in " + (text of (listLength of played.guesses))) + "."],
+            done is yes
     if (listLength of played.guesses) > (maxGuesses - 1)
-        give Round with game is played, printed is [row, ("out of guesses. the code was " + game.hidden) + "."], done is yes
-    give Round with game is played, printed is [row, (text of (maxGuesses - (listLength of played.guesses))) + " left."], done is no
+        give Round with game is played,
+            printed is [row, ("out of guesses. the code was " + game.hidden) + "."],
+            done is yes
+    give Round with game is played,
+        printed is [row, (text of (maxGuesses - (listLength of played.guesses))) + " left."],
+        done is no
 
 # Reveal a *position* rather than a colour: a colour with no position is
 # barely worth more than the feedback already gives you.
 function pegHint of game
     if game.hintUsed
         give Round with game is game, printed is ["you have had your hint."], done is no
-    with spot is (valueOr with maybe is (randomBelow with seed is game.seed, bound is pegCount), fallback is 0)
-    give Round with game is (Pegs with hidden is game.hidden, guesses is game.guesses, hintUsed is yes, over is game.over, seed is (nextSeed of game.seed)), printed is [(("peg " + (text of (spot + 1))) + " is ") + (pegAt with value is game.hidden, index is spot) + "."], done is no
+    with spot is (
+        valueOr with maybe is (randomBelow with seed is game.seed, bound is pegCount),
+        fallback is 0)
+    give Round with game is (
+        Pegs with hidden is game.hidden,
+        guesses is game.guesses,
+        hintUsed is yes,
+        over is game.over,
+        seed is (nextSeed of game.seed)),
+        printed is [(("peg " + (text of (spot + 1))) + " is ") + (
+            pegAt with value is game.hidden,
+            index is spot) + "."],
+        done is no

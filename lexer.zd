@@ -38,10 +38,21 @@ state dictionary is static List of Text from lines of (build read "content/termi
 state answers is static List of Text from lines of (build read "content/terminal/answers.txt")
 
 function newLex of seed
-    give Lex with target is (drawnWord of seed), guesses is empty, hintUsed is no, boomUsed is no, seed is (nextSeed of seed)
+    give Lex with target is (drawnWord of seed),
+        guesses is empty,
+        hintUsed is no,
+        boomUsed is no,
+        seed is (nextSeed of seed)
 
 function drawnWord of seed
-    give valueOr with maybe is (listAt with value is answers, index is (valueOr with maybe is (randomBelow with seed is seed, bound is (listLength of answers)), fallback is 0)), fallback is "crane"
+    give valueOr with maybe is (
+        listAt with value is answers,
+        index is (
+            valueOr with maybe is (
+                randomBelow with seed is seed,
+                bound is (listLength of answers)),
+            fallback is 0)),
+        fallback is "crane"
 
 # --- scoring ----------------------------------------------------------------
 #
@@ -51,28 +62,62 @@ function drawnWord of seed
 # they consumed are withheld from the pool the second sweep draws on.
 
 function scoreGuess with guess, target
-    with pool is (unmatchedLetters with guess is guess, target is target, index is 0, taken is "")
-    give join with parts is (marksFor with guess is guess, target is target, pool is pool, index is 0, taken is empty), using is " "
+    with pool is (
+        unmatchedLetters with guess is guess,
+        target is target,
+        index is 0,
+        taken is "")
+    give join with parts is (
+        marksFor with guess is guess,
+        target is target,
+        pool is pool,
+        index is 0,
+        taken is empty),
+        using is " "
 
 function unmatchedLetters with guess, target, index, taken
     if index is 5
         give taken
-    if (letterAt with value is guess, index is index) is (letterAt with value is target, index is index)
-        give unmatchedLetters with guess is guess, target is target, index is index + 1, taken is taken
-    give unmatchedLetters with guess is guess, target is target, index is index + 1, taken is taken + (letterAt with value is target, index is index)
+    if (
+        letterAt with value is guess,
+        index is index) is (letterAt with value is target,
+        index is index)
+        give unmatchedLetters with guess is guess,
+            target is target,
+            index is index + 1,
+            taken is taken
+    give unmatchedLetters with guess is guess,
+        target is target,
+        index is index + 1,
+        taken is taken + (letterAt with value is target, index is index)
 
 function marksFor with guess, target, pool, index, taken
     if index is 5
         give taken
     with letter is (letterAt with value is guess, index is index)
     if letter is (letterAt with value is target, index is index)
-        give marksFor with guess is guess, target is target, pool is pool, index is index + 1, taken is (append (uppercase of letter) to taken)
+        give marksFor with guess is guess,
+            target is target,
+            pool is pool,
+            index is index + 1,
+            taken is (append (uppercase of letter) to taken)
     if textContains with value is pool, needle is letter
-        give marksFor with guess is guess, target is target, pool is (withoutOneLetter with value is pool, needle is letter), index is index + 1, taken is (append letter to taken)
-    give marksFor with guess is guess, target is target, pool is pool, index is index + 1, taken is (append "." to taken)
+        give marksFor with guess is guess,
+            target is target,
+            pool is (withoutOneLetter with value is pool, needle is letter),
+            index is index + 1,
+            taken is (append letter to taken)
+    give marksFor with guess is guess,
+        target is target,
+        pool is pool,
+        index is index + 1,
+        taken is (append "." to taken)
 
 function withoutOneLetter with value, needle
-    give (before with value is value, delimiter is needle) + (after with value is value, delimiter is needle)
+    give (
+        before with value is value,
+        delimiter is needle) + (after with value is value,
+        delimiter is needle)
 
 function letterAt with value, index
     give valueOr with maybe is (textAt with value is value, index is index), fallback is ""
@@ -89,7 +134,9 @@ function allLetters with guess, index
     # membership test against the alphabet rather than `>= "a"`. The needle
     # is never empty — the length was checked first — which is the one case
     # `textContains` would answer `yes` to for the wrong reason.
-    if not (textContains with value is "abcdefghijklmnopqrstuvwxyz", needle is (letterAt with value is guess, index is index))
+    if not (
+        textContains with value is "abcdefghijklmnopqrstuvwxyz",
+        needle is (letterAt with value is guess, index is index))
         give no
     give allLetters with guess is guess, index is index + 1
 
@@ -103,12 +150,15 @@ function everythingMissed of marks
     give marks is ". . . . ."
 
 function spelledOut of guess
-    give join with parts is (lettersOf with guess is guess, index is 0, taken is empty), using is " "
+    give join with parts is (lettersOf with guess is guess, index is 0, taken is empty),
+        using is " "
 
 function lettersOf with guess, index, taken
     if index is 5
         give taken
-    give lettersOf with guess is guess, index is index + 1, taken is (append (letterAt with value is guess, index is index) to taken)
+    give lettersOf with guess is guess,
+        index is index + 1,
+        taken is (append (letterAt with value is guess, index is index) to taken)
 
 # --- one move ---------------------------------------------------------------
 
@@ -117,23 +167,47 @@ function stepLex with game, input
     if isBlank of guess
         give Reply with game is game, printed is empty, done is no, boom is no
     if (guess is "quit") or (guess is "exit")
-        give Reply with game is game, printed is [("fine. the word was '" + game.target) + "'."], done is yes, boom is no
+        give Reply with game is game,
+            printed is [("fine. the word was '" + game.target) + "'."],
+            done is yes,
+            boom is no
     if guess is "hint"
         give lexHint of game
     if not (isFiveLetters of guess)
-        give Reply with game is game, printed is ["guesses are five letters, e.g. crane"], done is no, boom is no
+        give Reply with game is game,
+            printed is ["guesses are five letters, e.g. crane"],
+            done is no,
+            boom is no
     if not (listContains with items is dictionary, value is guess)
-        give Reply with game is game, printed is [("'" + guess) + "' is not in my dictionary"], done is no, boom is no
+        give Reply with game is game,
+            printed is [("'" + guess) + "' is not in my dictionary"],
+            done is no,
+            boom is no
     with marks is (scoreGuess with guess is guess, target is game.target)
     if (not game.boomUsed) and (everythingMissed of marks)
         give detonated with game is game, marks is marks
-    with played is (Lex with target is game.target, guesses is (append guess to game.guesses), hintUsed is game.hintUsed, boomUsed is game.boomUsed, seed is game.seed)
+    with played is (
+        Lex with target is game.target,
+        guesses is (append guess to game.guesses),
+        hintUsed is game.hintUsed,
+        boomUsed is game.boomUsed,
+        seed is game.seed)
     with attempt is ((text of (listLength of played.guesses)) + "/") + (text of maxLexGuesses)
     with rows is [(spelledOut of guess), (marks + "   ") + attempt]
     if guess is game.target
-        give Reply with game is played, printed is (appendLine with rows is rows, line is ("got it in " + (text of (listLength of played.guesses))) + ". nice."), done is yes, boom is no
+        give Reply with game is played,
+            printed is (
+                appendLine with rows is rows,
+                line is ("got it in " + (text of (listLength of played.guesses))) + ". nice."),
+            done is yes,
+            boom is no
     if (listLength of played.guesses) > (maxLexGuesses - 1)
-        give Reply with game is played, printed is (appendLine with rows is rows, line is ("out of guesses. it was '" + game.target) + "'."), done is yes, boom is no
+        give Reply with game is played,
+            printed is (
+                appendLine with rows is rows,
+                line is ("out of guesses. it was '" + game.target) + "'."),
+            done is yes,
+            boom is no
     give Reply with game is played, printed is rows, done is no, boom is no
 
 function appendLine with rows, line
@@ -143,10 +217,35 @@ function appendLine with rows, line
 # rerolls and the guess is refunded — the guess list is not appended to,
 # which is what "refunded" means here.
 function detonated with game, marks
-    give Reply with game is (Lex with target is (drawnWord of game.seed), guesses is game.guesses, hintUsed is game.hintUsed, boomUsed is yes, seed is (nextSeed of game.seed)), printed is (appendLine with rows is (boomArt), line is "critical miss. the word exploded, a new one loaded. guess refunded."), done is no, boom is yes
+    give Reply with game is (
+        Lex with target is (drawnWord of game.seed),
+        guesses is game.guesses,
+        hintUsed is game.hintUsed,
+        boomUsed is yes,
+        seed is (nextSeed of game.seed)),
+        printed is (
+            appendLine with rows is (boomArt),
+            line is "critical miss. the word exploded, a new one loaded. guess refunded."),
+        done is no,
+        boom is yes
 
 function lexHint of game
     if game.hintUsed
-        give Reply with game is game, printed is ["you already burned your hint."], done is no, boom is no
-    with spot is (valueOr with maybe is (randomBelow with seed is game.seed, bound is 5), fallback is 0)
-    give Reply with game is (Lex with target is game.target, guesses is game.guesses, hintUsed is yes, boomUsed is game.boomUsed, seed is (nextSeed of game.seed)), printed is [(("lexer whispers: position " + (text of (spot + 1))) + " is '") + (letterAt with value is game.target, index is spot) + "'. one hint per game."], done is no, boom is no
+        give Reply with game is game,
+            printed is ["you already burned your hint."],
+            done is no,
+            boom is no
+    with spot is (
+        valueOr with maybe is (randomBelow with seed is game.seed, bound is 5),
+        fallback is 0)
+    give Reply with game is (
+        Lex with target is game.target,
+        guesses is game.guesses,
+        hintUsed is yes,
+        boomUsed is game.boomUsed,
+        seed is (nextSeed of game.seed)),
+        printed is [(("lexer whispers: position " + (text of (spot + 1))) + " is '") + (
+            letterAt with value is game.target,
+            index is spot) + "'. one hint per game."],
+        done is no,
+        boom is no

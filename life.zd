@@ -61,8 +61,16 @@ function wrapped with value, most
     give valueOr with maybe is (mod with value is value + most, divisor is most), fallback is 0
 
 function aliveAt with rows, x, y
-    with row is (valueOr with maybe is (listAt with value is rows, index is (wrapped with value is y, most is lifeHeight)), fallback is "")
-    give (valueOr with maybe is (textAt with value is row, index is (wrapped with value is x, most is lifeWidth)), fallback is ".") is "#"
+    with row is (
+        valueOr with maybe is (
+            listAt with value is rows,
+            index is (wrapped with value is y, most is lifeHeight)),
+        fallback is "")
+    give (
+        valueOr with maybe is (
+            textAt with value is row,
+            index is (wrapped with value is x, most is lifeWidth)),
+        fallback is ".") is "#"
 
 function oneIfAlive with rows, x, y
     if aliveAt with rows is rows, x is x, y is y
@@ -70,7 +78,24 @@ function oneIfAlive with rows, x, y
     give 0
 
 function neighbours with rows, x, y
-    give (((oneIfAlive with rows is rows, x is x - 1, y is y - 1) + (oneIfAlive with rows is rows, x is x, y is y - 1)) + ((oneIfAlive with rows is rows, x is x + 1, y is y - 1) + (oneIfAlive with rows is rows, x is x - 1, y is y))) + (((oneIfAlive with rows is rows, x is x + 1, y is y) + (oneIfAlive with rows is rows, x is x - 1, y is y + 1)) + ((oneIfAlive with rows is rows, x is x, y is y + 1) + (oneIfAlive with rows is rows, x is x + 1, y is y + 1)))
+    give (((
+        oneIfAlive with rows is rows,
+        x is x - 1,
+        y is y - 1) + (oneIfAlive with rows is rows,
+        x is x,
+        y is y - 1)) + ((oneIfAlive with rows is rows,
+        x is x + 1,
+        y is y - 1) + (oneIfAlive with rows is rows,
+        x is x - 1,
+        y is y))) + (((oneIfAlive with rows is rows,
+        x is x + 1,
+        y is y) + (oneIfAlive with rows is rows,
+        x is x - 1,
+        y is y + 1)) + ((oneIfAlive with rows is rows,
+        x is x,
+        y is y + 1) + (oneIfAlive with rows is rows,
+        x is x + 1,
+        y is y + 1)))
 
 # B3/S23: a dead cell with exactly three live neighbours is born, a live
 # cell with two or three survives, everything else dies.
@@ -83,17 +108,24 @@ function neighbours with rows, x, y
 # of the sweep because there is no way for it to be anything else.
 
 function stepLife of game
-    give Life with rows is (steppedRows with rows is game.rows, y is 0, taken is empty), generation is game.generation + 1, seed is game.seed
+    give Life with rows is (steppedRows with rows is game.rows, y is 0, taken is empty),
+        generation is game.generation + 1,
+        seed is game.seed
 
 function steppedRows with rows, y, taken
     if y is lifeHeight
         give taken
-    give steppedRows with rows is rows, y is y + 1, taken is (append (steppedRow with rows is rows, y is y, x is 0, taken is "") to taken)
+    give steppedRows with rows is rows,
+        y is y + 1,
+        taken is (append (steppedRow with rows is rows, y is y, x is 0, taken is "") to taken)
 
 function steppedRow with rows, y, x, taken
     if x is lifeWidth
         give taken
-    give steppedRow with rows is rows, y is y, x is x + 1, taken is taken + (nextCell with rows is rows, x is x, y is y)
+    give steppedRow with rows is rows,
+        y is y,
+        x is x + 1,
+        taken is taken + (nextCell with rows is rows, x is x, y is y)
 
 function nextCell with rows, x, y
     with around is (neighbours with rows is rows, x is x, y is y)
@@ -107,12 +139,17 @@ function nextCell with rows, x, y
 
 function population of game
     from game.rows
-    fold each row into total starting 0 to total + (liveIn with row is row, index is 0, running is 0)
+    fold each row into total starting 0 to total + (
+        liveIn with row is row,
+        index is 0,
+        running is 0)
 
 function liveIn with row, index, running
     if index is (textLength of row)
         give running
-    if (valueOr with maybe is (textAt with value is row, index is index), fallback is ".") is "#"
+    if (
+        valueOr with maybe is (textAt with value is row, index is index),
+        fallback is ".") is "#"
         give liveIn with row is row, index is index + 1, running is running + 1
     give liveIn with row is row, index is index + 1, running is running
 
@@ -123,7 +160,14 @@ function liveIn with row, index, running
 function stamped with pattern, seed
     with points is (split with value is pattern, using is " ")
     with size is (patternSize with points is points, index is 0, wide is 0, tall is 0)
-    give Life with rows is (placedAll with rows is (emptyRows of lifeHeight), points is points, index is 0, offsetX is (quotientOr with value is lifeWidth - size.wide, divisor is 2), offsetY is (quotientOr with value is lifeHeight - size.tall, divisor is 2)), generation is 0, seed is seed
+    give Life with rows is (
+        placedAll with rows is (emptyRows of lifeHeight),
+        points is points,
+        index is 0,
+        offsetX is (quotientOr with value is lifeWidth - size.wide, divisor is 2),
+        offsetY is (quotientOr with value is lifeHeight - size.tall, divisor is 2)),
+        generation is 0,
+        seed is seed
 
 record Extent
     wide is Whole
@@ -137,19 +181,35 @@ function patternSize with points, index, wide, tall
         None
             give Extent with wide is wide + 1, tall is tall + 1
         Some with point
-            give patternSize with points is points, index is index + 1, wide is (max with first is wide, second is (coordinate with point is point, second is no)), tall is (max with first is tall, second is (coordinate with point is point, second is yes))
+            give patternSize with points is points,
+                index is index + 1,
+                wide is (
+                    max with first is wide,
+                    second is (coordinate with point is point, second is no)),
+                tall is (
+                    max with first is tall,
+                    second is (coordinate with point is point, second is yes))
 
 function coordinate with point, second
     if second
-        give valueOr with maybe is (parseWhole of (after with value is point, delimiter is ",")), fallback is 0
-    give valueOr with maybe is (parseWhole of (before with value is point, delimiter is ",")), fallback is 0
+        give valueOr with maybe is (parseWhole of (after with value is point, delimiter is ",")),
+            fallback is 0
+    give valueOr with maybe is (parseWhole of (before with value is point, delimiter is ",")),
+        fallback is 0
 
 function placedAll with rows, points, index, offsetX, offsetY
     when listAt with value is points, index is index
         None
             give rows
         Some with point
-            give placedAll with rows is (liveAt with rows is rows, x is (coordinate with point is point, second is no) + offsetX, y is (coordinate with point is point, second is yes) + offsetY), points is points, index is index + 1, offsetX is offsetX, offsetY is offsetY
+            give placedAll with rows is (
+                liveAt with rows is rows,
+                x is (coordinate with point is point, second is no) + offsetX,
+                y is (coordinate with point is point, second is yes) + offsetY),
+                points is points,
+                index is index + 1,
+                offsetX is offsetX,
+                offsetY is offsetY
 
 function liveAt with rows, x, y
     give rewritten with rows is rows, y is y, index is 0, taken is empty, x is x
@@ -160,11 +220,22 @@ function rewritten with rows, y, index, taken, x
             give taken
         Some with row
             if index is y
-                give rewritten with rows is rows, y is y, index is index + 1, taken is (append (withLiveCell with row is row, x is x) to taken), x is x
-            give rewritten with rows is rows, y is y, index is index + 1, taken is (append row to taken), x is x
+                give rewritten with rows is rows,
+                    y is y,
+                    index is index + 1,
+                    taken is (append (withLiveCell with row is row, x is x) to taken),
+                    x is x
+            give rewritten with rows is rows,
+                y is y,
+                index is index + 1,
+                taken is (append row to taken),
+                x is x
 
 function withLiveCell with row, x
-    give ((slice with value is row, start is 0, stop is x) + "#") + (slice with value is row, start is x + 1, stop is (textLength of row))
+    give ((slice with value is row, start is 0, stop is x) + "#") + (
+        slice with value is row,
+        start is x + 1,
+        stop is (textLength of row))
 
 # --- the drawing ------------------------------------------------------------
 #
@@ -179,13 +250,24 @@ function boardPath of game
 function cellPaths with rows, y, taken
     if y is lifeHeight
         give taken
-    give cellPaths with rows is rows, y is y + 1, taken is taken + (rowPath with row is (valueOr with maybe is (listAt with value is rows, index is y), fallback is ""), y is y, x is 0, taken is "")
+    give cellPaths with rows is rows,
+        y is y + 1,
+        taken is taken + (
+            rowPath with row is (
+                valueOr with maybe is (listAt with value is rows, index is y),
+                fallback is ""),
+            y is y,
+            x is 0,
+            taken is "")
 
 function rowPath with row, y, x, taken
     if x is lifeWidth
         give taken
     if (valueOr with maybe is (textAt with value is row, index is x), fallback is ".") is "#"
-        give rowPath with row is row, y is y, x is x + 1, taken is taken + (squareAt with x is x, y is y)
+        give rowPath with row is row,
+            y is y,
+            x is x + 1,
+            taken is taken + (squareAt with x is x, y is y)
     give rowPath with row is row, y is y, x is x + 1, taken is taken
 
 # A cell inset by one pixel, so the grid reads as cells rather than as a

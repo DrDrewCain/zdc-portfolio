@@ -20,8 +20,27 @@ use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
-use "./mines" for Field, freshField, revealAt, flagAt, movedBy, mineStatus, mineViewBox, hiddenPath, flaggedPath, openPath, cursorPath, minePath
-use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
+use "./mines" for Field,
+    freshField,
+    revealAt,
+    flagAt,
+    movedBy,
+    mineStatus,
+    mineViewBox,
+    hiddenPath,
+    flaggedPath,
+    openPath,
+    cursorPath,
+    minePath
+use "./life" for Life,
+    stepLife,
+    stamped,
+    population,
+    boardPath,
+    lifeViewBox,
+    gunCells,
+    gliderCells,
+    pulsarCells
 
 # The screen: what has been printed, oldest first.
 state screen is client List of Text starting ["mark's portfolio :: type 'help' to get started"]
@@ -67,7 +86,10 @@ state field is client Field starting (freshField of 1)
 # one there, and neither knows about the other.
 state tiles is client Board starting (freshBoard of 1)
 state bestScore is remembered Whole starting 0
-state board is client Life every "90ms" starting (stamped with pattern is gunCells, seed is 1) to (steppedIf with game is board, moving is running)
+state board is client Life every "90ms" starting (
+    stamped with pattern is gunCells,
+    seed is 1) to (steppedIf with game is board,
+    moving is running)
 
 function steppedIf with game, moving
     if moving
@@ -91,7 +113,8 @@ state draft is client Text starting ""
 function recalled with all, back
     if back > (listLength of all)
         give valueOr with maybe is (listAt with value is all, index is 0), fallback is ""
-    give valueOr with maybe is (listAt with value is all, index is (listLength of all) - back), fallback is ""
+    give valueOr with maybe is (listAt with value is all, index is (listLength of all) - back),
+        fallback is ""
 
 function steppedBack with all, position
     if position > ((listLength of all) - 1)

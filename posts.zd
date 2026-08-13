@@ -50,14 +50,18 @@ function wordsFrom with pieces, index, total
         None
             give total
         Some with piece
-            give wordsFrom with pieces is pieces, index is index + 2, total is total + (wordsIn of piece)
+            give wordsFrom with pieces is pieces,
+                index is index + 2,
+                total is total + (wordsIn of piece)
 
 function codeLinesFrom with pieces, index, total
     when listAt with value is pieces, index is index
         None
             give total
         Some with piece
-            give codeLinesFrom with pieces is pieces, index is index + 2, total is total + (linesIn of piece)
+            give codeLinesFrom with pieces is pieces,
+                index is index + 2,
+                total is total + (linesIn of piece)
 
 # A fenced block's own two fence lines are the delimiters that were split
 # away, so what is left is the content plus the newline each side of it.
@@ -70,7 +74,21 @@ function linesIn of piece
 # Table pipes, heading markers and emphasis are punctuation rather than
 # words, so they become spaces before the split. `replace` is the prelude's.
 function despunctuated of piece
-    give replace with value is (replace with value is (replace with value is (replace with value is (replace with value is (replace with value is piece, old is "|", new is " "), old is "#", new is " "), old is ">", new is " "), old is "*", new is " "), old is "_", new is " "), old is (text of newline), new is " "
+    give replace with value is (
+        replace with value is (
+            replace with value is (
+                replace with value is (
+                    replace with value is (replace with value is piece, old is "|", new is " "),
+                    old is "#",
+                    new is " "),
+                old is ">",
+                new is " "),
+            old is "*",
+            new is " "),
+        old is "_",
+        new is " "),
+        old is (text of newline),
+        new is " "
 
 function wordsIn of piece
     from (split with value is (despunctuated of piece), using is " ")
@@ -97,7 +115,12 @@ function readingMinutes of body
     give rounded
 
 function postFromRaw with path, raw
-    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), minutes is (readingMinutes of (bodyOf of raw)), body is build markdown (linkified of (bodyOf of raw))
+    give Post with slug is (slugOf of path),
+        title is (fieldOf with raw is raw, key is "title"),
+        summary is (fieldOf with raw is raw, key is "summary"),
+        date is (fieldOf with raw is raw, key is "date"),
+        minutes is (readingMinutes of (bodyOf of raw)),
+        body is build markdown (linkified of (bodyOf of raw))
 
 # ⚠️ THE ONE THING THE BUILD CAPABILITIES CANNOT DO, AND IT IS WORTH SAYING
 # PLAINLY.
@@ -119,8 +142,21 @@ function postFromRaw with path, raw
 # anything; `build list` runs during the build, which is after. Closing
 # that gap means letting a route enumerate over a build capability, and
 # that is a change to when the document set is decided, not a bug fix.
-state slugs is static List of Text starting ["2026-07-15-hello-world", "2026-07-16-things-that-move", "2026-07-18-critters-grew-up", "2026-07-20-judgment-became-an-act", "2026-07-24-the-shape-of-the-fuel", "2026-07-25-the-classifier-was-never-the-problem", "2026-07-25-the-optimization-that-was-wrong-twice", "2026-07-25-you-only-get-to-watch-one-person-think", "2026-07-31-coastlines-over-open-water", "2026-08-02-commitment-is-the-safety-feature", "2026-08-02-the-ruler-is-made-of-people", "2026-08-02-the-same-question-one-layer-up", "2026-08-02-the-student-beat-the-teacher", "2026-08-02-the-window-is-not-the-memory"]
-
+state slugs is static List of Text starting [
+    "2026-07-15-hello-world",
+    "2026-07-16-things-that-move",
+    "2026-07-18-critters-grew-up",
+    "2026-07-20-judgment-became-an-act",
+    "2026-07-24-the-shape-of-the-fuel",
+    "2026-07-25-the-classifier-was-never-the-problem",
+    "2026-07-25-the-optimization-that-was-wrong-twice",
+    "2026-07-25-you-only-get-to-watch-one-person-think",
+    "2026-07-31-coastlines-over-open-water",
+    "2026-08-02-commitment-is-the-safety-feature",
+    "2026-08-02-the-ruler-is-made-of-people",
+    "2026-08-02-the-same-question-one-layer-up",
+    "2026-08-02-the-student-beat-the-teacher",
+    "2026-08-02-the-window-is-not-the-memory"]
 
 state posts is static List of Post from readPosts with directory is "content/blog"
 
@@ -148,7 +184,12 @@ function newestFirst with all
 state missingPost is static Post from missing with title is "Not found"
 
 function missing with title
-    give Post with slug is "", title is title, summary is "", date is "", minutes is 1, body is build markdown ""
+    give Post with slug is "",
+        title is title,
+        summary is "",
+        date is "",
+        minutes is 1,
+        body is build markdown ""
 
 function postWith with all, slug, index, fallback
     when listAt with value is all, index is index
@@ -157,5 +198,7 @@ function postWith with all, slug, index, fallback
         Some with post
             if post.slug is slug
                 give post
-            give postWith with all is all, slug is slug, index is index + 1, fallback is fallback
-
+            give postWith with all is all,
+                slug is slug,
+                index is index + 1,
+                fallback is fallback

@@ -49,7 +49,23 @@ record Project
     rank      is Whole
     body      is Markup
 
-state projectSlugs is static List of Text starting ["appmeee", "clawfreelance", "gridwright", "imsg-protocol", "judgehuman", "matrix-infras", "minimac-llm", "minineuromodel", "minitorch", "nlp-classifiers", "project-mercury", "spacetrader-wars", "tvm-kernel-opt", "vernos", "voxmatch", "zdeceptron"]
+state projectSlugs is static List of Text starting [
+    "appmeee",
+    "clawfreelance",
+    "gridwright",
+    "imsg-protocol",
+    "judgehuman",
+    "matrix-infras",
+    "minimac-llm",
+    "minineuromodel",
+    "minitorch",
+    "nlp-classifiers",
+    "project-mercury",
+    "spacetrader-wars",
+    "tvm-kernel-opt",
+    "vernos",
+    "voxmatch",
+    "zdeceptron"]
 
 state projects is static List of Project from readProjects with directory is "content/projects"
 
@@ -63,7 +79,17 @@ function projectFrom of path
 # `order` comes out of the header as text and has to be a number to sort by.
 # `parseWhole` gives an `Option`, because a header can say anything.
 function projectFromRaw with path, raw
-    give Project with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), oneLiner is (fieldOf with raw is raw, key is "oneLiner"), status is (fieldOf with raw is raw, key is "status"), stack is (unbracketed of (fieldOf with raw is raw, key is "stack")), shown is (spaced of (unbracketed of (fieldOf with raw is raw, key is "stack"))), timeline is (fieldOf with raw is raw, key is "timeline"), rank is (valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")), fallback is 99), body is build markdown (linkified of (bodyOf of raw))
+    give Project with slug is (slugOf of path),
+        title is (fieldOf with raw is raw, key is "title"),
+        oneLiner is (fieldOf with raw is raw, key is "oneLiner"),
+        status is (fieldOf with raw is raw, key is "status"),
+        stack is (unbracketed of (fieldOf with raw is raw, key is "stack")),
+        shown is (spaced of (unbracketed of (fieldOf with raw is raw, key is "stack"))),
+        timeline is (fieldOf with raw is raw, key is "timeline"),
+        rank is (
+            valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")),
+            fallback is 99),
+        body is build markdown (linkified of (bodyOf of raw))
 
 # The effort, not the whole timeline. "Feb 2026 to now, over 9,000 commits"
 # is a period and an effort, and the listing's right-hand column wants only
@@ -86,7 +112,13 @@ function effortOf of timeline
 # expression; this drops the separators and takes the first word that parses
 # as a number, which is the same answer by a different road.
 function commitsOf of timeline
-    give firstNumberIn with words is (split with value is (replace with value is (effortOf of timeline), old is ",", new is ""), using is " "), index is 0
+    give firstNumberIn with words is (
+        split with value is (
+            replace with value is (effortOf of timeline),
+            old is ",",
+            new is ""),
+        using is " "),
+        index is 0
 
 function firstNumberIn with words, index
     when listAt with value is words, index is index
@@ -115,7 +147,8 @@ function spaced of value
     give join with parts is (split with value is value, using is ", "), using is " · "
 
 function unbracketed of value
-    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["), suffix is "]"
+    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["),
+        suffix is "]"
 
 state ranked is static List of Project from byRank with all is projects
 
@@ -131,7 +164,15 @@ state cards is static List of Listing from cardsOf with all is projects
 function cardsOf with all
     from all
     sort each project by project.rank
-    map each project to (Listing with slug is project.slug, title is project.title, oneLiner is project.oneLiner, status is project.status, stack is project.stack, shown is project.shown, timeline is project.timeline, rank is project.rank)
+    map each project to (
+        Listing with slug is project.slug,
+        title is project.title,
+        oneLiner is project.oneLiner,
+        status is project.status,
+        stack is project.stack,
+        shown is project.shown,
+        timeline is project.timeline,
+        rank is project.rank)
 
 # The growth rings used to be computed here, as an outer radius and a
 # shade class per project, because the language could not draw a path and
@@ -154,7 +195,9 @@ record Coverage
 # How many projects reach one layer.
 function countFor with all, layer
     from all
-    fold each project into total starting 0 to total + (oneIfReaches with stack is project.stack, layer is layer)
+    fold each project into total starting 0 to total + (
+        oneIfReaches with stack is project.stack,
+        layer is layer)
 
 # The busiest layer, which the bars are scaled against — the question is "is
 # any of this empty", not "what share is this", so the widest bar is the
@@ -164,7 +207,11 @@ function busiest with all, index, most
         None
             give most
         Some with layer
-            give busiest with all is all, index is index + 1, most is (max with first is most, second is (countFor with all is all, layer is layer))
+            give busiest with all is all,
+                index is index + 1,
+                most is (
+                    max with first is most,
+                    second is (countFor with all is all, layer is layer))
 
 state widest is static Whole from busiest with all is cards, index is 0, most is 1
 
@@ -172,18 +219,26 @@ state coverage is static List of Coverage from coverageOf with all is cards
 
 function coverageOf with all
     from layerNames
-    map each layer to (Coverage with layer is layer, count is (countFor with all is all, layer is layer), width is (percentOf with part is (countFor with all is all, layer is layer), whole is widest))
+    map each layer to (
+        Coverage with layer is layer,
+        count is (countFor with all is all, layer is layer),
+        width is (
+            percentOf with part is (countFor with all is all, layer is layer),
+            whole is widest))
 
 # The bar widths are classes, and a class per whole percent would be a
 # hundred and one of them. Rounded to the nearest five, which is twenty-one
 # and is finer than the eye reads on a 14px bar.
 function rounded5 of percent
-    give 5 * (valueOr with maybe is (quotient with value is percent + 2, divisor is 5), fallback is 0)
+    give 5 * (
+        valueOr with maybe is (quotient with value is percent + 2, divisor is 5),
+        fallback is 0)
 
 function percentOf with part, whole
     if whole is 0
         give 0
-    give valueOr with maybe is (quotient with value is part * 100, divisor is whole), fallback is 0
+    give valueOr with maybe is (quotient with value is part * 100, divisor is whole),
+        fallback is 0
 
 # "5 of 5 layers" — how many are occupied at all.
 state spanned is static Whole from spannedOf with all is cards, index is 0, total is 0
@@ -193,7 +248,9 @@ function spannedOf with all, index, total
         None
             give total
         Some with layer
-            give spannedOf with all is all, index is index + 1, total is total + (oneIfAny of (countFor with all is all, layer is layer))
+            give spannedOf with all is all,
+                index is index + 1,
+                total is total + (oneIfAny of (countFor with all is all, layer is layer))
 
 function oneIfAny of count
     if count > 0
@@ -203,7 +260,15 @@ function oneIfAny of count
 state missingProject is static Project from missingWork with title is "Not found"
 
 function missingWork with title
-    give Project with slug is "", title is title, oneLiner is "", status is "", stack is "", shown is "", timeline is "", rank is 99, body is build markdown ""
+    give Project with slug is "",
+        title is title,
+        oneLiner is "",
+        status is "",
+        stack is "",
+        shown is "",
+        timeline is "",
+        rank is 99,
+        body is build markdown ""
 
 function projectWith with all, slug, index, fallback
     when listAt with value is all, index is index
@@ -212,7 +277,7 @@ function projectWith with all, slug, index, fallback
         Some with project
             if project.slug is slug
                 give project
-            give projectWith with all is all, slug is slug, index is index + 1, fallback is fallback
-
-
-
+            give projectWith with all is all,
+                slug is slug,
+                index is index + 1,
+                fallback is fallback

@@ -54,8 +54,12 @@ function mergedRun with rest, taken, gained
                     give (Slid with line is (append head to taken), gained is gained)
                 Some with next
                     if head is next
-                        give mergedRun with rest is (listDrop with items is rest, count is 2), taken is (append (head + next) to taken), gained is gained + head + next
-                    give mergedRun with rest is (listDrop with items is rest, count is 1), taken is (append head to taken), gained is gained
+                        give mergedRun with rest is (listDrop with items is rest, count is 2),
+                            taken is (append (head + next) to taken),
+                            gained is gained + head + next
+                    give mergedRun with rest is (listDrop with items is rest, count is 1),
+                        taken is (append head to taken),
+                        gained is gained
 
 function padTo with line, size
     if (listLength of line) >= size
@@ -78,32 +82,56 @@ function paddedSlid of slid
 function lineOf with cells, direction, index
     when direction
         Left
-            give [(cellOf with cells is cells, index is index * 4), (cellOf with cells is cells, index is index * 4 + 1), (cellOf with cells is cells, index is index * 4 + 2), (cellOf with cells is cells, index is index * 4 + 3)]
+            give [
+                (cellOf with cells is cells, index is index * 4),
+                (cellOf with cells is cells, index is index * 4 + 1),
+                (cellOf with cells is cells, index is index * 4 + 2),
+                (cellOf with cells is cells, index is index * 4 + 3)]
         Right
-            give [(cellOf with cells is cells, index is index * 4 + 3), (cellOf with cells is cells, index is index * 4 + 2), (cellOf with cells is cells, index is index * 4 + 1), (cellOf with cells is cells, index is index * 4)]
+            give [
+                (cellOf with cells is cells, index is index * 4 + 3),
+                (cellOf with cells is cells, index is index * 4 + 2),
+                (cellOf with cells is cells, index is index * 4 + 1),
+                (cellOf with cells is cells, index is index * 4)]
         Up
-            give [(cellOf with cells is cells, index is index), (cellOf with cells is cells, index is index + 4), (cellOf with cells is cells, index is index + 8), (cellOf with cells is cells, index is index + 12)]
+            give [
+                (cellOf with cells is cells, index is index),
+                (cellOf with cells is cells, index is index + 4),
+                (cellOf with cells is cells, index is index + 8),
+                (cellOf with cells is cells, index is index + 12)]
         Down
-            give [(cellOf with cells is cells, index is index + 12), (cellOf with cells is cells, index is index + 8), (cellOf with cells is cells, index is index + 4), (cellOf with cells is cells, index is index)]
+            give [
+                (cellOf with cells is cells, index is index + 12),
+                (cellOf with cells is cells, index is index + 8),
+                (cellOf with cells is cells, index is index + 4),
+                (cellOf with cells is cells, index is index)]
 
 # The four slid lines, as a list of lists. `.line` here and `.gained` in
 # `gainedFrom` below: one `Slid` carries both answers and each caller takes
 # the half it needs.
 function slidLines with cells, direction
     from (range with start is 0, stop is 4)
-    map each index to (slideLine of (lineOf with cells is cells, direction is direction, index is index)).line
+    map each index to (slideLine of (
+        lineOf with cells is cells,
+        direction is direction,
+        index is index)).line
 
 function gainedFrom with cells, direction
     from (range with start is 0, stop is 4)
-    fold each index into total starting 0 to total + (slideLine of (lineOf with cells is cells, direction is direction, index is index)).gained
+    fold each index into total starting 0 to total + (slideLine of (
+        lineOf with cells is cells,
+        direction is direction,
+        index is index)).gained
 
 # Which line, and which position in it, the cell spot `spot` reads back from.
 function lineIndexFor with direction, spot
     when direction
         Left
-            give valueOr with maybe is (quotient with value is spot, divisor is 4), fallback is 0
+            give valueOr with maybe is (quotient with value is spot, divisor is 4),
+                fallback is 0
         Right
-            give valueOr with maybe is (quotient with value is spot, divisor is 4), fallback is 0
+            give valueOr with maybe is (quotient with value is spot, divisor is 4),
+                fallback is 0
         Up
             give valueOr with maybe is (mod with value is spot, divisor is 4), fallback is 0
         Down
@@ -114,11 +142,16 @@ function spotFor with direction, spot
         Left
             give valueOr with maybe is (mod with value is spot, divisor is 4), fallback is 0
         Right
-            give 3 - (valueOr with maybe is (mod with value is spot, divisor is 4), fallback is 0)
+            give 3 - (
+                valueOr with maybe is (mod with value is spot, divisor is 4),
+                fallback is 0)
         Up
-            give valueOr with maybe is (quotient with value is spot, divisor is 4), fallback is 0
+            give valueOr with maybe is (quotient with value is spot, divisor is 4),
+                fallback is 0
         Down
-            give 3 - (valueOr with maybe is (quotient with value is spot, divisor is 4), fallback is 0)
+            give 3 - (
+                valueOr with maybe is (quotient with value is spot, divisor is 4),
+                fallback is 0)
 
 # The fallback is a written-out empty line rather than `empty`, which is
 # ambiguous between a list and a map with nothing here to settle it.
@@ -126,11 +159,16 @@ function blankLine
     give [0, 0, 0, 0]
 
 function lineOfLines with lines, index
-    give valueOr with maybe is (listAt with value is lines, index is index), fallback is blankLine
+    give valueOr with maybe is (listAt with value is lines, index is index),
+        fallback is blankLine
 
 function movedCells with lines, direction
     from (range with start is 0, stop is 16)
-    map each spot to (cellOf with cells is (lineOfLines with lines is lines, index is (lineIndexFor with direction is direction, spot is spot)), index is (spotFor with direction is direction, spot is spot))
+    map each spot to (
+        cellOf with cells is (
+            lineOfLines with lines is lines,
+            index is (lineIndexFor with direction is direction, spot is spot)),
+        index is (spotFor with direction is direction, spot is spot))
 
 # --- spawning --------------------------------------------------------------
 
@@ -164,7 +202,17 @@ function spawnedValue of seed
 function withSpawn with cells, seed
     if (emptyCount of cells) is 0
         give cells
-    give setAt with items is cells, index is (emptyAt with cells is cells, wanted is (valueOr with maybe is (randomBelow with seed is seed, bound is (emptyCount of cells)), fallback is 0), spot is 0, seen is 0), item is (spawnedValue of (nextSeed of seed))
+    give setAt with items is cells,
+        index is (
+            emptyAt with cells is cells,
+            wanted is (
+                valueOr with maybe is (
+                    randomBelow with seed is seed,
+                    bound is (emptyCount of cells)),
+                fallback is 0),
+            spot is 0,
+            seen is 0),
+        item is (spawnedValue of (nextSeed of seed))
 
 # --- a move ----------------------------------------------------------------
 
@@ -176,19 +224,38 @@ function withSpawn with cells, seed
 function noMovesLeft of cells
     if (emptyCount of cells) > 0
         give no
-    if not (sameCells with left is cells, right is (movedCells with lines is (slidLines with cells is cells, direction is Left), direction is Left))
+    if not (
+        sameCells with left is cells,
+        right is (
+            movedCells with lines is (slidLines with cells is cells, direction is Left),
+            direction is Left))
         give no
-    if not (sameCells with left is cells, right is (movedCells with lines is (slidLines with cells is cells, direction is Right), direction is Right))
+    if not (
+        sameCells with left is cells,
+        right is (
+            movedCells with lines is (slidLines with cells is cells, direction is Right),
+            direction is Right))
         give no
-    if not (sameCells with left is cells, right is (movedCells with lines is (slidLines with cells is cells, direction is Up), direction is Up))
+    if not (
+        sameCells with left is cells,
+        right is (
+            movedCells with lines is (slidLines with cells is cells, direction is Up),
+            direction is Up))
         give no
-    if not (sameCells with left is cells, right is (movedCells with lines is (slidLines with cells is cells, direction is Down), direction is Down))
+    if not (
+        sameCells with left is cells,
+        right is (
+            movedCells with lines is (slidLines with cells is cells, direction is Down),
+            direction is Down))
         give no
     give yes
 
 function sameCells with left, right
     from (range with start is 0, stop is 16)
-    fold each spot into same starting yes to same and ((cellOf with cells is left, index is spot) is (cellOf with cells is right, index is spot))
+    fold each spot into same starting yes to same and ((
+        cellOf with cells is left,
+        index is spot) is (cellOf with cells is right,
+        index is spot))
 
 function holdsWinningTile of cells
     from cells
@@ -199,23 +266,49 @@ function holdsWinningTile of cells
 function afterMove with board, direction
     if board.over
         give board
-    if sameCells with left is board.cells, right is (movedCells with lines is (slidLines with cells is board.cells, direction is direction), direction is direction)
+    if sameCells with left is board.cells,
+        right is (
+            movedCells with lines is (
+                slidLines with cells is board.cells,
+                direction is direction),
+            direction is direction)
         give board
-    give afterScoring with board is board, moved is (movedCells with lines is (slidLines with cells is board.cells, direction is direction), direction is direction), gained is (gainedFrom with cells is board.cells, direction is direction)
+    give afterScoring with board is board,
+        moved is (
+            movedCells with lines is (
+                slidLines with cells is board.cells,
+                direction is direction),
+            direction is direction),
+        gained is (gainedFrom with cells is board.cells, direction is direction)
 
 function afterScoring with board, moved, gained
-    give withScore with board is board, cells is (withSpawn with cells is moved, seed is board.seed), gained is gained
+    give withScore with board is board,
+        cells is (withSpawn with cells is moved, seed is board.seed),
+        gained is gained
 
 function withScore with board, cells, gained
-    give (Board with cells is cells, score is board.score + gained, seed is (nextSeed of (nextSeed of board.seed)), won is board.won or (holdsWinningTile of cells), over is (noMovesLeft of cells))
+    give (
+        Board with cells is cells,
+        score is board.score + gained,
+        seed is (nextSeed of (nextSeed of board.seed)),
+        won is board.won or (holdsWinningTile of cells),
+        over is (noMovesLeft of cells))
 
 # --- a new game ------------------------------------------------------------
 
 function freshCells of seed
-    give withSpawn with cells is (withSpawn with cells is (filled with value is 0, count is 16), seed is seed), seed is (nextSeed of seed)
+    give withSpawn with cells is (
+        withSpawn with cells is (filled with value is 0, count is 16),
+        seed is seed),
+        seed is (nextSeed of seed)
 
 function freshBoard of seed
-    give (Board with cells is (freshCells of seed), score is 0, seed is (nextSeed of (nextSeed of seed)), won is no, over is no)
+    give (
+        Board with cells is (freshCells of seed),
+        score is 0,
+        seed is (nextSeed of (nextSeed of seed)),
+        won is no,
+        over is no)
 
 # --- what a tile looks like -------------------------------------------------
 #

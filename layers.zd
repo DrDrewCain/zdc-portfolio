@@ -22,7 +22,12 @@
 
 # Ordered from the metal upward, because that is the direction the colour
 # ramp runs: silicon is ember, interface is mint.
-state layerNames is static List of Text starting ["silicon", "kernel", "runtime", "service", "interface"]
+state layerNames is static List of Text starting [
+    "silicon",
+    "kernel",
+    "runtime",
+    "service",
+    "interface"]
 
 # The tool table, as one function rather than a map literal: a `Map` literal
 # would have to fit on one line, and forty entries on one line is not a

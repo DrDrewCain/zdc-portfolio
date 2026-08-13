@@ -95,7 +95,9 @@ function wholeOfDecimal of value
     give valueOr with maybe is (round of value), fallback is 0
 
 function rampAt with ratio, alternate
-    with eased is (valueOr with maybe is (power with value is ratio, exponent is RAMP_EASE), fallback is 0.0)
+    with eased is (
+        valueOr with maybe is (power with value is ratio, exponent is RAMP_EASE),
+        fallback is 0.0)
     with shade is (shadeFactor of alternate)
     with red is (rampChannel with low is 74.0, high is 255.0, eased is eased, shade is shade)
     with green is (rampChannel with low is 65.0, high is 169.0, eased is eased, shade is shade)
@@ -106,7 +108,16 @@ function rampAt with ratio, alternate
     # bark exactly ember.
     with grey is (((red * 0.299) + (green * 0.587)) + (blue * 0.114))
     with blend is (DESATURATE * (sinOf of (pi * ratio)))
-    give (((("rgb(" + (text of (channelOf with raw is red, grey is grey, blend is blend))) + ", ") + (text of (channelOf with raw is green, grey is grey, blend is blend))) + ", ") + (text of (channelOf with raw is blue, grey is grey, blend is blend)) + ")"
+    give (((("rgb(" + (text of (
+        channelOf with raw is red,
+        grey is grey,
+        blend is blend))) + ", ") + (text of (
+        channelOf with raw is green,
+        grey is grey,
+        blend is blend))) + ", ") + (text of (
+        channelOf with raw is blue,
+        grey is grey,
+        blend is blend)) + ")"
 
 function shadeFactor of alternate
     if alternate
@@ -114,7 +125,8 @@ function shadeFactor of alternate
     give 1.0
 
 function channelOf with raw, grey, blend
-    give min with first is 255, second is (wholeOfDecimal of ((raw * (1.0 - blend)) + (grey * blend)))
+    give min with first is 255,
+        second is (wholeOfDecimal of ((raw * (1.0 - blend)) + (grey * blend)))
 
 # --- the rings --------------------------------------------------------------
 
@@ -132,7 +144,10 @@ record LifeRing
 # into that range, which is the same answer for every string either has
 # ever seen and does not need a regular expression the language lacks.
 function startYearOf of timeline
-    give firstYearIn with words is (split with value is (replace with value is timeline, old is ",", new is " "), using is " "), index is 0
+    give firstYearIn with words is (
+        split with value is (replace with value is timeline, old is ",", new is " "),
+        using is " "),
+        index is 0
 
 function firstYearIn with words, index
     when listAt with value is words, index is index
@@ -154,24 +169,49 @@ function commitsInYear with all, calendar, index, running
             give running
         Some with project
             if (startYearOf of project.timeline) is calendar
-                give commitsInYear with all is all, calendar is calendar, index is index + 1, running is running + (commitsOf of project.timeline)
-            give commitsInYear with all is all, calendar is calendar, index is index + 1, running is running
+                give commitsInYear with all is all,
+                    calendar is calendar,
+                    index is index + 1,
+                    running is running + (commitsOf of project.timeline)
+            give commitsInYear with all is all,
+                calendar is calendar,
+                index is index + 1,
+                running is running
 
 # A year's extra thickness comes from the commits started in it.
 function yearWidth of commits
     if commits < 1
         give BARE_WIDTH
-    give BARE_WIDTH + ((valueOr with maybe is (log10 of (decimalOf of (commits + 1))), fallback is 0.0) * WIDTH_SCALE)
+    give BARE_WIDTH + ((
+        valueOr with maybe is (log10 of (decimalOf of (commits + 1))),
+        fallback is 0.0) * WIDTH_SCALE)
 
-state trunkRings is static List of LifeRing from trunkFrom with year is 1, cursor is PITH, taken is empty
+state trunkRings is static List of LifeRing from trunkFrom with year is 1,
+    cursor is PITH,
+    taken is empty
 
 function trunkFrom with year, cursor, taken
     if year > YEARS
         give taken
     with calendar is ((FIRST_YEAR + year) - 1)
-    with commits is (commitsInYear with all is cards, calendar is calendar, index is 0, running is 0)
+    with commits is (
+        commitsInYear with all is cards,
+        calendar is calendar,
+        index is 0,
+        running is 0)
     with width is (yearWidth of commits)
-    give trunkFrom with year is year + 1, cursor is cursor + width, taken is (append (LifeRing with year is year, calendar is calendar, commits is commits, radius is cursor + (width / 2.0), width is width, edge is cursor + width, colour is (rampAt with ratio is ((decimalOf of (year - 1)) / (decimalOf of (YEARS - 1))), alternate is (alternating of year))) to taken)
+    give trunkFrom with year is year + 1,
+        cursor is cursor + width,
+        taken is (append (
+            LifeRing with year is year,
+            calendar is calendar,
+            commits is commits,
+            radius is cursor + (width / 2.0),
+            width is width,
+            edge is cursor + width,
+            colour is (
+                rampAt with ratio is ((decimalOf of (year - 1)) / (decimalOf of (YEARS - 1))),
+                alternate is (alternating of year))) to taken)
 
 # The pith and the bark keep their exact ramp ends; everything between
 # alternates so no two neighbours share a value.
@@ -191,7 +231,9 @@ function edgeOf with all, index, most
         None
             give most
         Some with ring
-            give edgeOf with all is all, index is index + 1, most is (atLeast with value is ring.edge, floorAt is most)
+            give edgeOf with all is all,
+                index is index + 1,
+                most is (atLeast with value is ring.edge, floorAt is most)
 
 state trunkExtent is static Whole from ceiling of (outerEdge + 10.0)
 
@@ -204,16 +246,22 @@ function ceiling of value
 state trunkSpan is static Whole from trunkExtent * 2
 state viewBoxText is static Text from (("0 0 " + (text of trunkSpan)) + " ") + (text of trunkSpan)
 
-state totalCommits is static Whole from commitsOf2 with all is trunkRings, index is 0, running is 0
+state totalCommits is static Whole from commitsOf2 with all is trunkRings,
+    index is 0,
+    running is 0
 
 function commitsOf2 with all, index, running
     when listAt with value is all, index is index
         None
             give running
         Some with ring
-            give commitsOf2 with all is all, index is index + 1, running is running + ring.commits
+            give commitsOf2 with all is all,
+                index is index + 1,
+                running is running + ring.commits
 
-state workingYears is static Whole from workedOf with all is trunkRings, index is 0, running is 0
+state workingYears is static Whole from workedOf with all is trunkRings,
+    index is 0,
+    running is 0
 
 function workedOf with all, index, running
     when listAt with value is all, index is index
@@ -263,7 +311,15 @@ function trunkPointFrom with cx, cy, radius, index, drawn
     with r is (radius * (wobbleAt of theta))
     with x is (cx + (r * (cosOf of theta)))
     with y is (cy + (r * (sinOf of theta)))
-    give trunkPointFrom with cx is cx, cy is cy, radius is radius, index is index + 1, drawn is ((drawn + (commandAt of index)) + (valueOr with maybe is (fixedText with value is x, digits is 2), fallback is "0")) + " " + (valueOr with maybe is (fixedText with value is y, digits is 2), fallback is "0")
+    give trunkPointFrom with cx is cx,
+        cy is cy,
+        radius is radius,
+        index is index + 1,
+        drawn is ((drawn + (commandAt of index)) + (
+            valueOr with maybe is (fixedText with value is x, digits is 2),
+            fallback is "0")) + " " + (
+            valueOr with maybe is (fixedText with value is y, digits is 2),
+            fallback is "0")
 
 function commandAt of index
     if index is 0
@@ -292,7 +348,9 @@ record Outline
 # stroke centred on its radius, so the order decides which half of each
 # boundary survives, and getting it backwards widens every ring by half a
 # stroke in the wrong direction.
-state trunkOutlines is static List of Outline from reverse of trunkOutlineFrom with all is trunkRings, index is 0, taken is empty
+state trunkOutlines is static List of Outline from reverse of trunkOutlineFrom with all is trunkRings,
+    index is 0,
+    taken is empty
 
 function trunkOutlineFrom with all, index, taken
     when listAt with value is all, index is index
@@ -300,9 +358,25 @@ function trunkOutlineFrom with all, index, taken
             give taken
         Some with ring
             with drift is ((decimalOf of trunkExtent) + ((decimalOf of index) * 0.22))
-            give trunkOutlineFrom with all is all, index is index + 1, taken is (append (Outline with band is (trunkPath with cx is drift, cy is (decimalOf of trunkExtent), radius is ring.radius), latewood is (trunkPath with cx is drift, cy is (decimalOf of trunkExtent), radius is ring.edge), colour is ring.colour, width is ring.width, delay is index * 55, last is (index is ((listLength of all) - 1))) to taken)
+            give trunkOutlineFrom with all is all,
+                index is index + 1,
+                taken is (append (
+                    Outline with band is (
+                        trunkPath with cx is drift,
+                        cy is (decimalOf of trunkExtent),
+                        radius is ring.radius),
+                    latewood is (
+                        trunkPath with cx is drift,
+                        cy is (decimalOf of trunkExtent),
+                        radius is ring.edge),
+                    colour is ring.colour,
+                    width is ring.width,
+                    delay is index * 55,
+                    last is (index is ((listLength of all) - 1))) to taken)
 
-state pithPath is static Text from trunkPath with cx is (decimalOf of trunkExtent), cy is (decimalOf of trunkExtent), radius is PITH
+state pithPath is static Text from trunkPath with cx is (decimalOf of trunkExtent),
+    cy is (decimalOf of trunkExtent),
+    radius is PITH
 
 # --- the grain --------------------------------------------------------------
 #
@@ -344,4 +418,9 @@ function grainFrom with index, taken
     with near is (atLeast with value is (depth - half), floorAt is inner)
     with far is (atMost with value is (depth + half), ceilingAt is outer)
     with centre is (decimalOf of trunkExtent)
-    give grainFrom with index is index + 1, taken is (append (Ray with x1 is (centre + (near * (cosOf of theta))), y1 is (centre + (near * (sinOf of theta))), x2 is (centre + (far * (cosOf of theta))), y2 is (centre + (far * (sinOf of theta)))) to taken)
+    give grainFrom with index is index + 1,
+        taken is (append (
+            Ray with x1 is (centre + (near * (cosOf of theta))),
+            y1 is (centre + (near * (sinOf of theta))),
+            x2 is (centre + (far * (cosOf of theta))),
+            y2 is (centre + (far * (sinOf of theta)))) to taken)

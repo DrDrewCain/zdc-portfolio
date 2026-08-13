@@ -61,10 +61,17 @@ function lineFor with items, key, index
 # `after` the *first* colon, so a value containing one — and the summaries
 # here do — keeps everything past it.
 function unquoted of value
-    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "\""), suffix is "\""
+    give withoutSuffix with value is (
+        withoutPrefix with value is value,
+        prefix is "\""), suffix is "\""
 
 function fieldOf with raw, key
-    give unquoted of (trim of (after with value is (lineFor with items is (lines of (headerOf of raw)), key is key, index is 0), delimiter is ":"))
+    give unquoted of (trim of (
+        after with value is (
+            lineFor with items is (lines of (headerOf of raw)),
+            key is key,
+            index is 0),
+        delimiter is ":"))
 
 # --- the slug --------------------------------------------------------------
 #
@@ -73,7 +80,8 @@ function fieldOf with raw, key
 # last separator and one last dot and both are the ones that matter.
 
 function slugOf of path
-    give beforeLast with value is (afterLast with value is path, delimiter is "/"), delimiter is "."
+    give beforeLast with value is (afterLast with value is path, delimiter is "/"),
+        delimiter is "."
 
 # --- making a bare URL clickable -------------------------------------------
 #
@@ -107,7 +115,9 @@ function codeOrLink of piece
     give "`" + piece + "`"
 
 function spanAt with parts, index
-    with piece is (valueOr with maybe is (listAt with value is parts, index is index), fallback is "")
+    with piece is (
+        valueOr with maybe is (listAt with value is parts, index is index),
+        fallback is "")
     if isOddNumber of index
         give codeOrLink of piece
     give piece
@@ -118,10 +128,13 @@ function spanParts of parts
 
 # One piece of prose, with its code spans considered.
 function inlineLinked of piece
-    give join with parts is (spanParts of (split with value is piece, using is "`")), using is ""
+    give join with parts is (spanParts of (split with value is piece, using is "`")),
+        using is ""
 
 function partAt with parts, index
-    with piece is (valueOr with maybe is (listAt with value is parts, index is index), fallback is "")
+    with piece is (
+        valueOr with maybe is (listAt with value is parts, index is index),
+        fallback is "")
     # An odd piece is the inside of a fenced block. Nothing in there is
     # touched: a URL in a code sample is a sample, not a destination.
     if isOddNumber of index
@@ -133,4 +146,5 @@ function linkedParts of parts
     map each index to (partAt with parts is parts, index is index)
 
 function linkified of body
-    give join with parts is (linkedParts of (split with value is body, using is "```")), using is "```"
+    give join with parts is (linkedParts of (split with value is body, using is "```")),
+        using is "```"

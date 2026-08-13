@@ -20,18 +20,78 @@
 # language and a way to name it from the file, and neither exists.
 
 use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
-use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRST_YEAR, lastYear, workingYears, totalCommits
-use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
+use "./rings" for trunkOutlines,
+    grain,
+    pithPath,
+    trunkExtent,
+    viewBoxText,
+    FIRST_YEAR,
+    lastYear,
+    workingYears,
+    totalCommits
+use "./projects" for Project,
+    Listing,
+    cards,
+    projects,
+    ranked,
+    missingProject,
+    projectWith,
+    effortOf,
+    Coverage,
+    coverage,
+    spanned,
+    projectSlugs,
+    rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, board, running, field, tiles, bestScore, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen,
+    line,
+    open,
+    mode,
+    overlay,
+    pegs,
+    lex,
+    ship,
+    board,
+    running,
+    field,
+    tiles,
+    bestScore,
+    history,
+    cursor,
+    draft,
+    promptFor,
+    hintFor,
+    joined,
+    opening,
+    recalled,
+    steppedBack
 use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
-use "./mines" for Field, freshField, revealAt, flagAt, movedBy, mineStatus, mineViewBox, hiddenPath, flaggedPath, openPath, cursorPath, minePath
-use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
+use "./mines" for Field,
+    freshField,
+    revealAt,
+    flagAt,
+    movedBy,
+    mineStatus,
+    mineViewBox,
+    hiddenPath,
+    flaggedPath,
+    openPath,
+    cursorPath,
+    minePath
+use "./life" for Life,
+    stepLife,
+    stamped,
+    population,
+    boardPath,
+    lifeViewBox,
+    gunCells,
+    gliderCells,
+    pulsarCells
 
 route Site
     Home    is "/"
@@ -130,7 +190,13 @@ function tabClass of here
     give "tab"
 
 component Status with onBlog
-    Row class is "status", position is "sticky", top is 0, layer is 10, padding is 8, gap is 14, align is "center"
+    Row class is "status",
+        position is "sticky",
+        top is 0,
+        layer is 10,
+        padding is 8,
+        gap is 14,
+        align is "center"
         Link Home, decoration is "none", padding is 0
             Text "mark@portfolio", class is "tag", padding is 4
         Tab "0", "now", "/#now", (not onBlog)
@@ -240,7 +306,11 @@ component Working with project
                     Text project.timeline
                 Heading project.title, class is "title"
                 Row height is 10
-                Text project.oneLiner, color is "muted", size is "large", lineHeight is 1.6, maxWidth is 665
+                Text project.oneLiner,
+                    color is "muted",
+                    size is "large",
+                    lineHeight is 1.6,
+                    maxWidth is 665
                 Row height is 10
                 Text project.shown, class is "stack"
                 Row height is 30
@@ -267,8 +337,19 @@ component CoverageBar with row
 # wants one.
 component Terminal
     if open
-        Column class is "term", position is "fixed", top is 0, left is 0, right is 0, bottom is 0, layer is 50, padding is 24
-            Column class is "term-body", grow is 1, padding is 18, gap is 4, overflow is "scroll"
+        Column class is "term",
+            position is "fixed",
+            top is 0,
+            left is 0,
+            right is 0,
+            bottom is 0,
+            layer is 50,
+            padding is 24
+            Column class is "term-body",
+                grow is 1,
+                padding is 18,
+                gap is 4,
+                overflow is "scroll"
                 each printed in screen
                     Text printed, class is "term-line"
 
@@ -279,8 +360,10 @@ component Terminal
                 Column class is "term-game-wide", gap is 8
                     Row gap is 16, align is "center"
                         Text "conway", class is "prompt-path"
-                        Text (("generation " + (text of board.generation)) + " · population ") + (text of (population of board)), class is "prompt-mark"
-                        Text "space runs · n steps · g gun · p pulsar · esc quits", class is "prompt-mark"
+                        Text (("generation " + (text of board.generation)) + " · population ") + (text of (population of board)),
+                            class is "prompt-mark"
+                        Text "space runs · n steps · g gun · p pulsar · esc quits",
+                            class is "prompt-mark"
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
@@ -288,13 +371,24 @@ component Terminal
                 Column class is "term-game", gap is 8, align is "center"
                     Row gap is 16, align is "center"
                         Text "2048", class is "prompt-path"
-                        Text ((("score " + (text of tiles.score)) + " · best ") + (text of bestScore)) + " · arrows slide · r restarts", class is "prompt-mark"
+                        Text ((("score " + (text of tiles.score)) + " · best ") + (text of bestScore)) + " · arrows slide · r restarts",
+                            class is "prompt-mark"
                     Column class is "t48-grid", padding is 8, radius is 12
                         each band in [0, 4, 8, 12]
                             Row gap is 6
                                 each step in [0, 1, 2, 3]
-                                    Column class is (tileClass of (cellOf with cells is tiles.cells, index is band + step)), width is 62, height is 62, radius is 6, align is "center", justify is "center"
-                                        Text (tileText of (cellOf with cells is tiles.cells, index is band + step)), weight is "800"
+                                    Column class is (tileClass of (
+                                        cellOf with cells is tiles.cells,
+                                        index is band + step)),
+                                        width is 62,
+                                        height is 62,
+                                        radius is 6,
+                                        align is "center",
+                                        justify is "center"
+                                        Text (tileText of (
+                                            cellOf with cells is tiles.cells,
+                                            index is band + step)),
+                                            weight is "800"
 
             if overlay is "minesweeper"
                 Column class is "term-game-wide", gap is 8
@@ -306,7 +400,10 @@ component Terminal
                         Path outline is (hiddenPath of field), fill is "#3a3128"
                         Path outline is (flaggedPath of field), fill is "#e6c46d"
                         Path outline is (minePath of field), fill is "#ff6b6b"
-                        Path outline is (cursorPath of field), fill is "none", stroke is "#ffa96b", strokeWidth is 2
+                        Path outline is (cursorPath of field),
+                            fill is "none",
+                            stroke is "#ffa96b",
+                            strokeWidth is 2
 
             Row class is "term-input", gap is 8, align is "center", padding is 12
                 Text "~/portfolio", class is "prompt-path"
@@ -329,25 +426,33 @@ component Terminal
                             if mode is "codebreak"
                                 with played is (stepPegs with game is pegs, input is line)
                                 set pegs to played.game
-                                set screen to (joined with head is screen, rest is played.printed)
+                                set screen to (
+                                    joined with head is screen,
+                                    rest is played.printed)
                                 if played.done
                                     set mode to "shell"
                             if mode is "lexer"
                                 with guessed is (stepLex with game is lex, input is line)
                                 set lex to guessed.game
-                                set screen to (joined with head is screen, rest is guessed.printed)
+                                set screen to (
+                                    joined with head is screen,
+                                    rest is guessed.printed)
                                 if guessed.done
                                     set mode to "shell"
                             if mode is "trader"
                                 with flown is (stepTrader with ship is ship, input is line)
                                 set ship to flown.ship
-                                set screen to (joined with head is screen, rest is flown.printed)
+                                set screen to (
+                                    joined with head is screen,
+                                    rest is flown.printed)
                                 if flown.done
                                     set mode to "shell"
                             if mode is "games"
                                 set mode to "shell"
                                 with answer is (runCommand of line)
-                                set screen to (joined with head is screen, rest is answer.printed)
+                                set screen to (
+                                    joined with head is screen,
+                                    rest is answer.printed)
                                 if not (isBlank of answer.launches)
                                     set overlay to answer.launches
                                 if not (isBlank of answer.enters)
@@ -357,7 +462,9 @@ component Terminal
                                 if answer.clears
                                     set screen to (opening)
                                 if not answer.clears
-                                    set screen to (joined with head is screen, rest is answer.printed)
+                                    set screen to (
+                                        joined with head is screen,
+                                        rest is answer.printed)
                                 if not (isBlank of answer.launches)
                                     set overlay to answer.launches
                                 if answer.launches is "minesweeper"
@@ -397,7 +504,9 @@ component Terminal
                             if cursor is 0
                                 set draft to line
                             set cursor to (steppedBack with all is history, position is cursor)
-                            set line to (recalled with all is history, back is (steppedBack with all is history, position is cursor))
+                            set line to (
+                                recalled with all is history,
+                                back is (steppedBack with all is history, position is cursor))
                         if stroke.key is "ArrowDown"
                             if cursor < 2
                                 set cursor to 0
@@ -413,7 +522,9 @@ component Terminal
                             with completion is (completionFor of line)
                             set line to completion.completed
                             if (listLength of completion.suggestions) > 1
-                                set screen to (append (join with parts is completion.suggestions, using is "  ") to screen)
+                                set screen to (append (
+                                    join with parts is completion.suggestions,
+                                    using is "  ") to screen)
 
                         # A game holding the panel takes the keys that
                         # drive it. They are on the input rather than on
@@ -444,7 +555,9 @@ component Terminal
                             if stroke.key is "ArrowDown"
                                 set field to (movedBy with field is field, dx is 0, dy is 1)
                             if (stroke.key is " ") or (stroke.key is "Enter")
-                                set field to (revealAt with field is field, index is field.cursor)
+                                set field to (
+                                    revealAt with field is field,
+                                    index is field.cursor)
                             if stroke.key is "f"
                                 set field to (flagAt with field is field, index is field.cursor)
                             if stroke.key is "r"
@@ -456,11 +569,17 @@ component Terminal
                             if stroke.key is "n"
                                 set board to (stepLife of board)
                             if stroke.key is "g"
-                                set board to (stamped with pattern is gunCells, seed is board.seed)
+                                set board to (
+                                    stamped with pattern is gunCells,
+                                    seed is board.seed)
                             if stroke.key is "p"
-                                set board to (stamped with pattern is pulsarCells, seed is board.seed)
+                                set board to (
+                                    stamped with pattern is pulsarCells,
+                                    seed is board.seed)
                             if stroke.key is "c"
-                                set board to (stamped with pattern is gliderCells, seed is board.seed)
+                                set board to (
+                                    stamped with pattern is gliderCells,
+                                    seed is board.seed)
 
                         if stroke.key is "Escape"
                             if isBlank of overlay
@@ -530,7 +649,11 @@ view title is "Mark Sturman"
                                 Text "."
 
                             Row height is 12
-                            Text "Transformers written from scratch, DNN kernels hand scheduled in TVM across CPU, GPU and FPGA, and the Rust servers and iOS apps underneath. One person, the whole stack.", color is "muted", lineHeight is 1.7, maxWidth is 620, size is "large"
+                            Text "Transformers written from scratch, DNN kernels hand scheduled in TVM across CPU, GPU and FPGA, and the Rust servers and iOS apps underneath. One person, the whole stack.",
+                                color is "muted",
+                                lineHeight is 1.7,
+                                maxWidth is 620,
+                                size is "large"
 
                             Row height is 24
 
@@ -538,23 +661,35 @@ view title is "Mark Sturman"
                             # verification link: the repositories are private
                             # and a dead link reads worse than an unlinked
                             # claim.
-                            Column gap is 8, class is "creds print-in", padding is 12, maxWidth is 620
+                            Column gap is 8,
+                                class is "creds print-in",
+                                padding is 12,
+                                maxWidth is 620
                                 Row gap is 10, align is "baseline"
                                     Text "1st in class", class is "cred-rank"
-                                    Text "Cornell ECE 5545, benchmarked TVM kernel optimization", class is "cred-detail"
+                                    Text "Cornell ECE 5545, benchmarked TVM kernel optimization",
+                                        class is "cred-detail"
                                 Row gap is 10, align is "baseline"
                                     Text "1st in class", class is "cred-rank"
-                                    Text "Cornell CS 5740, NLP held out test accuracy", class is "cred-detail"
+                                    Text "Cornell CS 5740, NLP held out test accuracy",
+                                        class is "cred-detail"
 
                             Row height is 30
-                            Row gap is 8, align is "center", class is "psst print-in", padding is 12, radius is 8
+                            Row gap is 8,
+                                align is "center",
+                                class is "psst print-in",
+                                padding is 12,
+                                radius is 8
                                 Text "psst, this site has an interactive mode. Try pressing"
                                 Text "~", class is "kbd", padding is 4
 
                             Row height is 46
 
                             # The measurement of the claim the hero just made.
-                            Column gap is 10, class is "coverage", padding is 18, maxWidth is 620
+                            Column gap is 10,
+                                class is "coverage",
+                                padding is 18,
+                                maxWidth is 620
                                 Row gap is 10, align is "baseline", class is "cov-head"
                                     Text "stack coverage"
                                     Row grow is 1
@@ -563,7 +698,8 @@ view title is "Mark Sturman"
                                 Column gap is 3
                                     each row in coverage
                                         CoverageBar row
-                                Text "Counted from each project's declared stack, metal at the top.", class is "cov-note"
+                                Text "Counted from each project's declared stack, metal at the top.",
+                                    class is "cov-note"
 
                             Row height is 56
 
@@ -602,7 +738,10 @@ view title is "Mark Sturman"
                             # The catalogue before the catalogue: a list
                             # answers "what is there", a cross-section answers
                             # "how much, and for how long".
-                            Row gap is 40, align is "center", narrowDisplay is "block", class is "rings-row"
+                            Row gap is 40,
+                                align is "center",
+                                narrowDisplay is "block",
+                                class is "rings-row"
                                 Figure class is "rings"
                                     # The real drawing at last. Every ring is
                                     # a closed path with the three-harmonic
@@ -612,34 +751,52 @@ view title is "Mark Sturman"
                                     # box-and-border-radius version could not
                                     # do. The `viewBox` does the scaling that
                                     # `ringScale` was doing by hand.
-                                    Svg viewBox is viewBoxText, label is "Growth rings: one ring a year since 2018, the centre is the first year."
+                                    Svg viewBox is viewBoxText,
+                                        label is "Growth rings: one ring a year since 2018, the centre is the first year."
                                         # Outermost first, so the inner ones
                                         # paint over their edges.
                                         Group fill is "none"
                                             each outline in trunkOutlines
-                                                Path outline is outline.band, stroke is outline.colour, strokeWidth is outline.width, class is "ring-grow"
+                                                Path outline is outline.band,
+                                                    stroke is outline.colour,
+                                                    strokeWidth is outline.width,
+                                                    class is "ring-grow"
                                         # Latewood — the dark line laid down
                                         # as a season closes. Without it nine
                                         # browns read as one gradient and the
                                         # rings cannot be counted.
-                                        Group fill is "none", stroke is "#14110d", strokeWidth is 1.6, opacity is 0.85
+                                        Group fill is "none",
+                                            stroke is "#14110d",
+                                            strokeWidth is 1.6,
+                                            opacity is 0.85
                                             each outline in trunkOutlines
                                                 if outline.last is no
-                                                    Path outline is outline.latewood, class is "ring-grow"
+                                                    Path outline is outline.latewood,
+                                                        class is "ring-grow"
                                         # Grain. Short and faint on purpose —
                                         # drawn full-radius these read as a
                                         # wireframe rather than as figure in
                                         # the wood.
-                                        Group stroke is "#211c14", strokeWidth is 1.1, opacity is 0.5
+                                        Group stroke is "#211c14",
+                                            strokeWidth is 1.1,
+                                            opacity is 0.5
                                             each fleck in grain
-                                                Segment fromX is fleck.x1, fromY is fleck.y1, toX is fleck.x2, toY is fleck.y2
+                                                Segment fromX is fleck.x1,
+                                                    fromY is fleck.y1,
+                                                    toX is fleck.x2,
+                                                    toY is fleck.y2
                                         Path outline is pithPath, fill is "#4a412a"
-                                        Circle x is (decimalOf of trunkExtent), y is (decimalOf of trunkExtent), radius is 5.0, fill is "#2b261e"
+                                        Circle x is (decimalOf of trunkExtent),
+                                            y is (decimalOf of trunkExtent),
+                                            radius is 5.0,
+                                            fill is "#2b261e"
                                     Caption class is "rings-caption"
                                         Text ((((((text of FIRST_YEAR) + "–") + (text of lastYear)) + " · ") + (text of workingYears)) + " years shipping · ") + (text of totalCommits) + " commits"
                                 Column grow is 1, basis is 0, gap is 12, maxWidth is 420
                                     Text "growth rings", class is "rings-label"
-                                    Text "One ring a year since 2018, when I started. The thick ones are the years that shipped something.", color is "muted", lineHeight is 1.7
+                                    Text "One ring a year since 2018, when I started. The thick ones are the years that shipped something.",
+                                        color is "muted",
+                                        lineHeight is 1.7
 
                             Row height is 40
                             Row class is "row-head"
@@ -674,7 +831,11 @@ view title is "Mark Sturman"
 
                 Work with slug
                     Shell no
-                        Working (projectWith with all is projects, slug is slug, index is 0, fallback is missingProject)
+                        Working (
+                            projectWith with all is projects,
+                            slug is slug,
+                            index is 0,
+                            fallback is missingProject)
 
                 Writing
                     Shell yes
@@ -689,8 +850,6 @@ view title is "Mark Sturman"
                                     Text "rss"
                             Row height is 28
 
-
-
                             Column gap is 14
                                 each post in ordered
                                     Card post
@@ -699,4 +858,8 @@ view title is "Mark Sturman"
                     Shell yes
                         # The lookup happens once, at the call, rather than
                         # three times in three bindings.
-                        Reading (postWith with all is posts, slug is slug, index is 0, fallback is missingPost)
+                        Reading (
+                            postWith with all is posts,
+                            slug is slug,
+                            index is 0,
+                            fallback is missingPost)

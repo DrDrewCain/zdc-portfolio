@@ -9,16 +9,42 @@ use "./game2048" for Board, Slid, Direction, cellOf, afterMove, freshBoard, tile
 #
 # Everything above is a function of its arguments. This is the only state.
 
-state board is client Board starting (Board with cells is [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 4, 0, 0], score is 0, seed is 20260812, won is no, over is no)
+state board is client Board starting (
+    Board with cells is [0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 4, 0, 0],
+    score is 0,
+    seed is 20260812,
+    won is no,
+    over is no)
 
 state best is remembered Whole starting 0
 
-state positions is client List of Whole starting [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+state positions is client List of Whole starting [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15]
 
 # --- what a tile looks like ------------------------------------------------
 
 component Tile with value
-    Column class is (tileClass of value), width is 76, height is 76, radius is 8, align is "center", justify is "center"
+    Column class is (tileClass of value),
+        width is 76,
+        height is 76,
+        radius is 8,
+        align is "center",
+        justify is "center"
         Text (tileText of value), weight is "800"
 
 # --- the view --------------------------------------------------------------
@@ -52,10 +78,18 @@ view title is "2048"
         Row gap is 16, align is "center", width is 340
             Heading "2048", class is "t48-brand"
             Row grow is 1
-            Column class is "t48-chip", padding is 10, radius is 8, align is "center", minWidth is 84
+            Column class is "t48-chip",
+                padding is 10,
+                radius is 8,
+                align is "center",
+                minWidth is 84
                 Text "SCORE", class is "t48-chip-label", size is "tiny", weight is "700"
                 Text board.score, weight is "800"
-            Column class is "t48-chip", padding is 10, radius is 8, align is "center", minWidth is 84
+            Column class is "t48-chip",
+                padding is 10,
+                radius is 8,
+                align is "center",
+                minWidth is 84
                 Text "BEST", class is "t48-chip-label", size is "tiny", weight is "700"
                 Text best, weight is "800"
 
@@ -64,24 +98,40 @@ view title is "2048"
                 each spot in (listTake with items is positions, count is 4)
                     Tile (cellOf with cells is board.cells, index is spot)
             Row gap is 8
-                each spot in (listTake with items is (listDrop with items is positions, count is 4), count is 4)
+                each spot in (
+                    listTake with items is (listDrop with items is positions, count is 4),
+                    count is 4)
                     Tile (cellOf with cells is board.cells, index is spot)
             Row gap is 8
-                each spot in (listTake with items is (listDrop with items is positions, count is 8), count is 4)
+                each spot in (
+                    listTake with items is (listDrop with items is positions, count is 8),
+                    count is 4)
                     Tile (cellOf with cells is board.cells, index is spot)
             Row gap is 8
                 each spot in (listDrop with items is positions, count is 12)
                     Tile (cellOf with cells is board.cells, index is spot)
 
         if board.over
-            Column class is "t48-banner", padding is 14, radius is 10, align is "center", gap is 8
+            Column class is "t48-banner",
+                padding is 14,
+                radius is 10,
+                align is "center",
+                gap is 8
                 Text "No moves left.", weight is "800"
-                Button "new game", class is "t48-go", padding is 12, radius is 8, cursor is "pointer"
+                Button "new game",
+                    class is "t48-go",
+                    padding is 12,
+                    radius is 8,
+                    cursor is "pointer"
                     on click
                         set board to (freshBoard of (nextSeed of board.seed))
 
         Row gap is 10, align is "center"
-            Button "new game", class is "t48-go", padding is 12, radius is 8, cursor is "pointer"
+            Button "new game",
+                class is "t48-go",
+                padding is 12,
+                radius is 8,
+                cursor is "pointer"
                 on click
                     set board to (freshBoard of (nextSeed of board.seed))
             Text "arrow keys to play", class is "t48-hint", size is "small"

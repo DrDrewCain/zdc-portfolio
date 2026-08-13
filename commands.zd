@@ -29,16 +29,32 @@ record Outcome
     enters   is Text
 
 function saying of printed
-    give Outcome with printed is printed, goesTo is "", clears is no, launches is "", enters is ""
+    give Outcome with printed is printed,
+        goesTo is "",
+        clears is no,
+        launches is "",
+        enters is ""
 
 function goingTo with printed, destination
-    give Outcome with printed is printed, goesTo is destination, clears is no, launches is "", enters is ""
+    give Outcome with printed is printed,
+        goesTo is destination,
+        clears is no,
+        launches is "",
+        enters is ""
 
 function launching with printed, game
-    give Outcome with printed is printed, goesTo is "", clears is no, launches is game, enters is ""
+    give Outcome with printed is printed,
+        goesTo is "",
+        clears is no,
+        launches is game,
+        enters is ""
 
 function entering with printed, mode
-    give Outcome with printed is printed, goesTo is "", clears is no, launches is "", enters is mode
+    give Outcome with printed is printed,
+        goesTo is "",
+        clears is no,
+        launches is "",
+        enters is mode
 
 # --- the command table ------------------------------------------------------
 #
@@ -47,7 +63,28 @@ function entering with printed, mode
 # absent: they stay out of `help` and out of completion while still being
 # real, which is what makes them worth hiding.
 
-state commandNames is static List of Text starting ["help", "ls", "open", "info", "about", "cat", "neofetch", "whoami", "blog", "search", "now", "games", "trader", "codebreak", "lexer", "minesweeper", "2048", "life", "mode", "clear", "home"]
+state commandNames is static List of Text starting [
+    "help",
+    "ls",
+    "open",
+    "info",
+    "about",
+    "cat",
+    "neofetch",
+    "whoami",
+    "blog",
+    "search",
+    "now",
+    "games",
+    "trader",
+    "codebreak",
+    "lexer",
+    "minesweeper",
+    "2048",
+    "life",
+    "mode",
+    "clear",
+    "home"]
 
 state catFiles is static List of Text starting ["resume", "now", "projects", "stack"]
 
@@ -68,29 +105,63 @@ function countingUpTo with upTo, index, taken
     give countingUpTo with upTo is upTo, index is index + 1, taken is (append index to taken)
 
 function editDistance with left, right
-    give distanceRow with left is left, right is right, row is (countingUpTo with upTo is (textLength of right), index is 0, taken is empty), index is 0
+    give distanceRow with left is left,
+        right is right,
+        row is (countingUpTo with upTo is (textLength of right), index is 0, taken is empty),
+        index is 0
 
 function distanceRow with left, right, row, index
     if index is (textLength of left)
-        give valueOr with maybe is (listAt with value is row, index is (textLength of right)), fallback is 0
-    give distanceRow with left is left, right is right, row is (nextRow with left is left, right is right, previous is row, index is index, column is 1, taken is [index + 1]), index is index + 1
+        give valueOr with maybe is (listAt with value is row, index is (textLength of right)),
+            fallback is 0
+    give distanceRow with left is left,
+        right is right,
+        row is (
+            nextRow with left is left,
+            right is right,
+            previous is row,
+            index is index,
+            column is 1,
+            taken is [index + 1]),
+        index is index + 1
 
 function nextRow with left, right, previous, index, column, taken
     if column > (textLength of right)
         give taken
-    with above is (valueOr with maybe is (listAt with value is previous, index is column), fallback is 0)
-    with diagonal is (valueOr with maybe is (listAt with value is previous, index is column - 1), fallback is 0)
-    with behind is (valueOr with maybe is (listAt with value is taken, index is column - 1), fallback is 0)
-    with same is (sameCharacter with left is left, right is right, cursor is index, column is column)
-    with best is (leastOf with first is above + 1, second is behind + 1, third is diagonal + (oneUnless of same))
-    give nextRow with left is left, right is right, previous is previous, index is index, column is column + 1, taken is (append best to taken)
+    with above is (
+        valueOr with maybe is (listAt with value is previous, index is column),
+        fallback is 0)
+    with diagonal is (
+        valueOr with maybe is (listAt with value is previous, index is column - 1),
+        fallback is 0)
+    with behind is (
+        valueOr with maybe is (listAt with value is taken, index is column - 1),
+        fallback is 0)
+    with same is (
+        sameCharacter with left is left,
+        right is right,
+        cursor is index,
+        column is column)
+    with best is (
+        leastOf with first is above + 1,
+        second is behind + 1,
+        third is diagonal + (oneUnless of same))
+    give nextRow with left is left,
+        right is right,
+        previous is previous,
+        index is index,
+        column is column + 1,
+        taken is (append best to taken)
 
 # `textAt` gives an `Option of Text` — an index past the end has no
 # character — so the two are compared through their fallbacks. `""` and
 # `""` comparing equal is unreachable here: both indices are inside their
 # string by construction, and neither loop runs otherwise.
 function sameCharacter with left, right, cursor, column
-    give (characterAt with value is left, index is cursor) is (characterAt with value is right, index is column - 1)
+    give (
+        characterAt with value is left,
+        index is cursor) is (characterAt with value is right,
+        index is column - 1)
 
 function characterAt with value, index
     give valueOr with maybe is (textAt with value is value, index is index), fallback is ""
@@ -107,7 +178,12 @@ function leastOf with first, second, third
 # threshold and it is the one that matters: at four, `ls` matches `life`
 # and every two-letter typo suggests something absurd.
 function closestTo with written, among
-    with best is (nearestAmong with written is written, among is among, index is 0, best is "", distance is 9999)
+    with best is (
+        nearestAmong with written is written,
+        among is among,
+        index is 0,
+        best is "",
+        distance is 9999)
     give best
 
 function nearestAmong with written, among, index, best, distance
@@ -119,8 +195,16 @@ function nearestAmong with written, among, index, best, distance
         Some with candidate
             with here is (editDistance with left is written, right is candidate)
             if here < distance
-                give nearestAmong with written is written, among is among, index is index + 1, best is candidate, distance is here
-            give nearestAmong with written is written, among is among, index is index + 1, best is best, distance is distance
+                give nearestAmong with written is written,
+                    among is among,
+                    index is index + 1,
+                    best is candidate,
+                    distance is here
+            give nearestAmong with written is written,
+                among is among,
+                index is index + 1,
+                best is best,
+                distance is distance
 
 function orDidYouMean with message, guess
     if isBlank of guess
@@ -149,14 +233,20 @@ function prefixAcross with items, index, sofar
         None
             give sofar
         Some with item
-            give prefixAcross with items is items, index is index + 1, sofar is (sharedPrefix with left is sofar, right is item)
+            give prefixAcross with items is items,
+                index is index + 1,
+                sofar is (sharedPrefix with left is sofar, right is item)
 
 function sharedPrefix with left, right
     if isBlank of left
         give ""
     if startsWith with value is right, prefix is left
         give left
-    give sharedPrefix with left is (slice with value is left, start is 0, stop is (textLength of left) - 1), right is right
+    give sharedPrefix with left is (
+        slice with value is left,
+        start is 0,
+        stop is (textLength of left) - 1),
+        right is right
 
 # The completer only completes the *command*, because the argument
 # completers in the original need the caller's catalogue and this one has
@@ -165,16 +255,26 @@ function sharedPrefix with left, right
 function completionFor of written
     with tail is (after with value is written, delimiter is " ")
     if textContains with value is written, needle is " "
-        give completeArgument with verb is (trim of (before with value is written, delimiter is " ")), partial is (trim of tail), written is written
-    give completeFrom with among is commandNames, partial is (lowercase of (trim of written)), leading is ""
+        give completeArgument with verb is (trim of (
+            before with value is written,
+            delimiter is " ")),
+            partial is (trim of tail),
+            written is written
+    give completeFrom with among is commandNames,
+        partial is (lowercase of (trim of written)),
+        leading is ""
 
 function completeArgument with verb, partial, written
     if verb is "cat"
         give completeFrom with among is catFiles, partial is partial, leading is "cat "
     if verb is "blog"
-        give completeFrom with among is (postSlugs of ordered), partial is partial, leading is "blog "
+        give completeFrom with among is (postSlugs of ordered),
+            partial is partial,
+            leading is "blog "
     if (verb is "open") or ((verb is "info") or (verb is "about"))
-        give completeFrom with among is (slugsOf of cards), partial is partial, leading is (verb + " ")
+        give completeFrom with among is (slugsOf of cards),
+            partial is partial,
+            leading is (verb + " ")
     give Completion with completed is written, suggestions is empty
 
 function completeFrom with among, partial, leading
@@ -182,8 +282,12 @@ function completeFrom with among, partial, leading
     if isEmpty of matches
         give Completion with completed is (leading + partial), suggestions is empty
     if (listLength of matches) is 1
-        give Completion with completed is ((leading + (valueOr with maybe is (first of matches), fallback is partial)) + " "), suggestions is empty
-    give Completion with completed is (leading + (commonPrefix of matches)), suggestions is matches
+        give Completion with completed is ((leading + (
+            valueOr with maybe is (first of matches),
+            fallback is partial)) + " "),
+            suggestions is empty
+    give Completion with completed is (leading + (commonPrefix of matches)),
+        suggestions is matches
 
 function slugsOf of all
     from all
@@ -196,24 +300,63 @@ function postSlugs of all
 # --- what the commands print ------------------------------------------------
 
 function helpLines
-    give ["available commands:", "  ls [projects]     list projects", "  open <project>    open a project page", "  info <project>    what it is, how it was built", "  cat <file>        resume, now, projects or stack", "  neofetch          system info, sort of", "  whoami            who is this guy", "  blog [slug]       list posts, or open one", "  search <term>     find a project or post by name, stack or topic", "  now               what I am up to currently", "  games             play something (yes really)", "  codebreak         crack a four peg code in ten guesses", "  lexer             six guesses, five letters", "  2048              slide tiles together (alias: twenty48)", "  life              conway, with a glider gun and a pulsar", "  minesweeper       clear the board without hitting a mine (alias: mines)", "  mode <level>      set interactive mode: off, terminal, full", "  home              back to the top", "  clear             clear the screen", "tip: tab completes commands and project names", "tip: up/down walks history, ctrl+l clears, ctrl+c abandons a line", "psst: dinosaurs once roamed this terminal"]
+    give [
+        "available commands:",
+        "  ls [projects]     list projects",
+        "  open <project>    open a project page",
+        "  info <project>    what it is, how it was built",
+        "  cat <file>        resume, now, projects or stack",
+        "  neofetch          system info, sort of",
+        "  whoami            who is this guy",
+        "  blog [slug]       list posts, or open one",
+        "  search <term>     find a project or post by name, stack or topic",
+        "  now               what I am up to currently",
+        "  games             play something (yes really)",
+        "  codebreak         crack a four peg code in ten guesses",
+        "  lexer             six guesses, five letters",
+        "  2048              slide tiles together (alias: twenty48)",
+        "  life              conway, with a glider gun and a pulsar",
+        "  minesweeper       clear the board without hitting a mine (alias: mines)",
+        "  mode <level>      set interactive mode: off, terminal, full",
+        "  home              back to the top",
+        "  clear             clear the screen",
+        "tip: tab completes commands and project names",
+        "tip: up/down walks history, ctrl+l clears, ctrl+c abandons a line",
+        "psst: dinosaurs once roamed this terminal"]
 
 function listingLines of all
     from all
-    map each project to (((padEnd with value is project.slug, width is 20, using is " ") + "[") + project.status) + "]  " + project.title
+    map each project to (((
+        padEnd with value is project.slug,
+        width is 20,
+        using is " ") + "[") + project.status) + "]  " + project.title
 
 function projectSummaries of all
     from all
-    map each project to (padEnd with value is project.slug, width is 20, using is " ") + project.oneLiner
+    map each project to (
+        padEnd with value is project.slug,
+        width is 20,
+        using is " ") + project.oneLiner
 
 function resumeLines
-    give ["Mark: generalist engineer.", "ML:       a 127M param LLM (GQA, RoPE, SwiGLU) built from scratch on a MacBook,", "          plus DNN kernels hand-scheduled in TVM that byScore first in the class.", "Systems:  E2EE messaging server in Rust; iMessage protocol tooling in Swift.", "Infra:    a self-hosted Matrix homeserver and sixteen bridges, all from Ansible.", "Mobile:   voice first iOS social app in SwiftUI.", "Web:      alignment research platform on Next.js; AI decision engine on Bun.", "more:     'ls' for the project list, 'search <term>' to find one."]
+    give [
+        "Mark: generalist engineer.",
+        "ML:       a 127M param LLM (GQA, RoPE, SwiGLU) built from scratch on a MacBook,",
+        "          plus DNN kernels hand-scheduled in TVM that byScore first in the class.",
+        "Systems:  E2EE messaging server in Rust; iMessage protocol tooling in Swift.",
+        "Infra:    a self-hosted Matrix homeserver and sixteen bridges, all from Ansible.",
+        "Mobile:   voice first iOS social app in SwiftUI.",
+        "Web:      alignment research platform on Next.js; AI decision engine on Bun.",
+        "more:     'ls' for the project list, 'search <term>' to find one."]
 
 # `cat now.txt` prints what the page's own `now` section says, out of the
 # same list, so the two cannot drift.
 function nowLines
     from now
-    map each entry to ((padEnd with value is entry.label, width is 20, using is " ") + entry.title) + (detailAfter of entry.detail)
+    map each entry to ((
+        padEnd with value is entry.label,
+        width is 20,
+        using is " ") + entry.title) + (detailAfter of entry.detail)
 
 function detailAfter of detail
     if isBlank of detail
@@ -227,7 +370,10 @@ function stackLines of all
     with tallies is (tallyFrom with all is all, index is 0, taken is empty)
     from tallies
     sort each entry by 1000 - entry.count
-    map each entry to (padEnd with value is entry.name, width is 18, using is " ") + (countedProjects of entry.count)
+    map each entry to (
+        padEnd with value is entry.name,
+        width is 18,
+        using is " ") + (countedProjects of entry.count)
 
 record Tally
     name  is Text
@@ -243,7 +389,12 @@ function tallyFrom with all, index, taken
         None
             give taken
         Some with project
-            give tallyFrom with all is all, index is index + 1, taken is (countedInto with taken is taken, tools is (toolsIn of project.stack), cursor is 0)
+            give tallyFrom with all is all,
+                index is index + 1,
+                taken is (
+                    countedInto with taken is taken,
+                    tools is (toolsIn of project.stack),
+                    cursor is 0)
 
 function toolsIn of stack
     from (split with value is stack, using is ",")
@@ -254,7 +405,14 @@ function countedInto with taken, tools, cursor
         None
             give taken
         Some with tool
-            give countedInto with taken is (bumped with taken is taken, name is tool, index is 0, rebuilt is empty, found is no), tools is tools, cursor is cursor + 1
+            give countedInto with taken is (
+                bumped with taken is taken,
+                name is tool,
+                index is 0,
+                rebuilt is empty,
+                found is no),
+                tools is tools,
+                cursor is cursor + 1
 
 function bumped with taken, name, index, rebuilt, found
     when listAt with value is taken, index is index
@@ -264,17 +422,38 @@ function bumped with taken, name, index, rebuilt, found
             give append (Tally with name is name, count is 1) to rebuilt
         Some with entry
             if entry.name is name
-                give bumped with taken is taken, name is name, index is index + 1, rebuilt is (append (Tally with name is entry.name, count is entry.count + 1) to rebuilt), found is yes
-            give bumped with taken is taken, name is name, index is index + 1, rebuilt is (append entry to rebuilt), found is found
+                give bumped with taken is taken,
+                    name is name,
+                    index is index + 1,
+                    rebuilt is (append (
+                        Tally with name is entry.name,
+                        count is entry.count + 1) to rebuilt),
+                    found is yes
+            give bumped with taken is taken,
+                name is name,
+                index is index + 1,
+                rebuilt is (append entry to rebuilt),
+                found is found
 
 # Counted, never written down. The original's comment is the whole reason:
 # a hardcoded "12 public" was three projects out of date the day it was
 # read.
 function neofetchLines of all
     with total is (listLength of all)
-    with overhauling is (countWhere with all is all, status is "overhauling", index is 0, running is 0)
+    with overhauling is (
+        countWhere with all is all,
+        status is "overhauling",
+        index is 0,
+        running is 0)
     with technologies is (listLength of (tallyFrom with all is all, index is 0, taken is empty))
-    give ["        ▄▄▄▄        mark@portfolio      ", "      ▄██████▄      ────────────────────", "     ████████▀      Role: builds everything", "     ▀██████▄       Langs: TS · Rust · Swift · Python · Go · Java · C++", ("      ▀████▀        Projects: " + (text of total)) + " public, " + (text of overhauling) + " mid-overhaul", ("        ▀▀          Stack: " + (text of technologies)) + " distinct technologies", "                    Uptime: always shipping"]
+    give [
+        "        ▄▄▄▄        mark@portfolio      ",
+        "      ▄██████▄      ────────────────────",
+        "     ████████▀      Role: builds everything",
+        "     ▀██████▄       Langs: TS · Rust · Swift · Python · Go · Java · C++",
+        ("      ▀████▀        Projects: " + (text of total)) + " public, " + (text of overhauling) + " mid-overhaul",
+        ("        ▀▀          Stack: " + (text of technologies)) + " distinct technologies",
+        "                    Uptime: always shipping"]
 
 function countWhere with all, status, index, running
     when listAt with value is all, index is index
@@ -282,12 +461,21 @@ function countWhere with all, status, index, running
             give running
         Some with project
             if project.status is status
-                give countWhere with all is all, status is status, index is index + 1, running is running + 1
-            give countWhere with all is all, status is status, index is index + 1, running is running
+                give countWhere with all is all,
+                    status is status,
+                    index is index + 1,
+                    running is running + 1
+            give countWhere with all is all,
+                status is status,
+                index is index + 1,
+                running is running
 
 function blogLines of all
     from all
-    map each post to ((post.date + "  ") + (padStart with value is ((text of post.minutes) + " min read"), width is 12, using is " ")) + "  " + post.title
+    map each post to ((post.date + "  ") + (
+        padStart with value is ((text of post.minutes) + " min read"),
+        width is 12,
+        using is " ")) + "  " + post.title
 
 # --- search -----------------------------------------------------------------
 #
@@ -332,23 +520,55 @@ function scoreField with haystack, needle, weight
     give weight
 
 function wholeWordIn with haystack, needle
-    give (startsWith with value is haystack, prefix is needle) or ((textContains with value is haystack, needle is " " + needle) or (textContains with value is haystack, needle is "-" + needle))
+    give (
+        startsWith with value is haystack,
+        prefix is needle) or ((
+            textContains with value is haystack,
+            needle is " " + needle) or (textContains with value is haystack,
+            needle is "-" + needle))
 
 function projectHits with all, needle
     from all
-    map each project to (Hit with kind is "project", slug is project.slug, title is project.title, detail is project.oneLiner, score is (projectScore with project is project, needle is needle))
+    map each project to (
+        Hit with kind is "project",
+        slug is project.slug,
+        title is project.title,
+        detail is project.oneLiner,
+        score is (projectScore with project is project, needle is needle))
     keep each hit where hit.score > 0
 
 function projectScore with project, needle
-    give ((scoreField with haystack is project.title, needle is needle, weight is (titleWeight)) + (scoreField with haystack is project.slug, needle is needle, weight is (slugWeight))) + ((scoreField with haystack is project.stack, needle is needle, weight is (stackWeight)) + (scoreField with haystack is project.oneLiner, needle is needle, weight is (summaryWeight)))
+    give ((
+        scoreField with haystack is project.title,
+        needle is needle,
+        weight is (titleWeight)) + (scoreField with haystack is project.slug,
+        needle is needle,
+        weight is (slugWeight))) + ((scoreField with haystack is project.stack,
+        needle is needle,
+        weight is (stackWeight)) + (scoreField with haystack is project.oneLiner,
+        needle is needle,
+        weight is (summaryWeight)))
 
 function postHits with all, needle
     from all
-    map each post to (Hit with kind is "post", slug is post.slug, title is post.title, detail is post.summary, score is (postScore with post is post, needle is needle))
+    map each post to (
+        Hit with kind is "post",
+        slug is post.slug,
+        title is post.title,
+        detail is post.summary,
+        score is (postScore with post is post, needle is needle))
     keep each hit where hit.score > 0
 
 function postScore with post, needle
-    give ((scoreField with haystack is post.title, needle is needle, weight is (titleWeight)) + (scoreField with haystack is post.slug, needle is needle, weight is (slugWeight))) + (scoreField with haystack is post.summary, needle is needle, weight is (summaryWeight))
+    give ((
+        scoreField with haystack is post.title,
+        needle is needle,
+        weight is (titleWeight)) + (scoreField with haystack is post.slug,
+        needle is needle,
+        weight is (slugWeight))) + (
+        scoreField with haystack is post.summary,
+        needle is needle,
+        weight is (summaryWeight))
 
 # Trims a summary to one line without cutting mid-word.
 function truncated of text
@@ -363,7 +583,9 @@ function truncated of text
 function searchLines with query, hits
     if isEmpty of hits
         give [("no matches for '" + query) + "'."]
-    give (joinedLines with head is [((((text of (listLength of hits)) + " match") + (esWhenMany of (listLength of hits))) + " for '") + query + "':"], rest is (hitLines of hits))
+    give (
+        joinedLines with head is [((((text of (listLength of hits)) + " match") + (esWhenMany of (listLength of hits))) + " for '") + query + "':"],
+        rest is (hitLines of hits))
 
 function esWhenMany of count
     if count is 1
@@ -372,7 +594,10 @@ function esWhenMany of count
 
 function hitLines of hits
     from hits
-    map each hit to ((("  " + (kindLabel of hit.kind)) + "  ") + (padEnd with value is hit.slug, width is 38, using is " ")) + (truncated of hit.detail)
+    map each hit to ((("  " + (kindLabel of hit.kind)) + "  ") + (
+        padEnd with value is hit.slug,
+        width is 38,
+        using is " ")) + (truncated of hit.detail)
 
 function kindLabel of kind
     if kind is "project"
@@ -420,7 +645,11 @@ function runCommand of input
     if verb is "whoami"
         give saying of ["Mark. Just Mark."]
     if verb is "clear"
-        give Outcome with printed is empty, goesTo is "", clears is yes, launches is "", enters is ""
+        give Outcome with printed is empty,
+            goesTo is "",
+            clears is yes,
+            launches is "",
+            enters is ""
     if verb is "blog"
         give blogFor of (lowercase of tail)
     if verb is "now"
@@ -428,34 +657,55 @@ function runCommand of input
     if verb is "home"
         give goingTo with printed is ["going home..."], destination is "/"
     if verb is "games"
-        give entering with printed is ["> what game? (2048, life, minesweeper, codebreak, lexer, trader) or 'exit'"], mode is "games"
+        give entering with printed is ["> what game? (2048, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
+            mode is "games"
     if (verb is "codebreak") or (verb is "mastermind")
-        give entering with printed is ["codebreak: four pegs, six colours, repeats allowed, ten guesses.", "● right colour right place. ○ right colour wrong place. never which.", "guess four digits 1-6, e.g. 1234. one 'hint' per game."], mode is "codebreak"
+        give entering with printed is [
+            "codebreak: four pegs, six colours, repeats allowed, ten guesses.",
+            "● right colour right place. ○ right colour wrong place. never which.",
+            "guess four digits 1-6, e.g. 1234. one 'hint' per game."],
+            mode is "codebreak"
     if (verb is "lexer") or (verb is "wordle")
-        give entering with printed is ["lexer: six guesses, five letters. UPPERCASE right spot, lowercase wrong spot.", "one 'hint' per game if you get stuck."], mode is "lexer"
+        give entering with printed is [
+            "lexer: six guesses, five letters. UPPERCASE right spot, lowercase wrong spot.",
+            "one 'hint' per game if you get stuck."],
+            mode is "lexer"
     if (verb is "trader") or (verb is "trade")
-        give entering with printed is ["spacetrader: turn 1,000 credits into 10,000.", "type 'look' to see the market, 'quit' to leave."], mode is "trader"
+        give entering with printed is [
+            "spacetrader: turn 1,000 credits into 10,000.",
+            "type 'look' to see the market, 'quit' to leave."],
+            mode is "trader"
     if (verb is "2048") or (verb is "twenty48")
-        give launching with printed is ["launching 2048... (arrows/wasd slide, r restarts, esc to quit)"], game is "2048"
+        give launching with printed is ["launching 2048... (arrows/wasd slide, r restarts, esc to quit)"],
+            game is "2048"
     if (verb is "life") or (verb is "conway")
-        give launching with printed is ["seeding a glider gun... (click cells, space runs, n steps, esc quits)"], game is "life"
+        give launching with printed is ["seeding a glider gun... (click cells, space runs, n steps, esc quits)"],
+            game is "life"
     if (verb is "minesweeper") or (verb is "mines")
-        give launching with printed is ["launching minesweeper... (arrows/wasd move, space/enter reveals, f flags, esc to quit)"], game is "minesweeper"
+        give launching with printed is ["launching minesweeper... (arrows/wasd move, space/enter reveals, f flags, esc to quit)"],
+            game is "minesweeper"
     # The one game not ported. It says so rather than raising an overlay
     # with nothing in it, which is what an unimplemented `launch` would
     # do — a blank panel and no way to tell whether it broke.
     if verb is "critters"
-        give saying of ["the critter lab is not ported yet — it is 660 lines and a creature generator.", "everything else in `games` works."]
+        give saying of [
+            "the critter lab is not ported yet — it is 660 lines and a creature generator.",
+            "everything else in `games` works."]
     if verb is "mode"
         give modeLine of tail
-    give saying of [(orDidYouMean with message is ("command not found: " + verb), guess is (closestTo with written is verb, among is commandNames))]
+    give saying of [(
+        orDidYouMean with message is ("command not found: " + verb),
+        guess is (closestTo with written is verb, among is commandNames))]
 
 function openProject of slug
     if isBlank of slug
         give saying of ["usage: open <project>  (try: ls)"]
     if listContains with items is (slugsOf of cards), value is slug
-        give goingTo with printed is [("opening " + slug) + "..."], destination is "/projects/" + slug
-    give saying of [(orDidYouMean with message is ("no such project: " + slug), guess is (closestTo with written is slug, among is (slugsOf of cards)))]
+        give goingTo with printed is [("opening " + slug) + "..."],
+            destination is "/projects/" + slug
+    give saying of [(
+        orDidYouMean with message is ("no such project: " + slug),
+        guess is (closestTo with written is slug, among is (slugsOf of cards)))]
 
 function projectInfo of slug
     if isBlank of slug
@@ -465,17 +715,28 @@ function projectInfo of slug
 function infoFor with all, slug, index
     when listAt with value is all, index is index
         None
-            give saying of [(orDidYouMean with message is ("no such project: " + slug), guess is (closestTo with written is slug, among is (slugsOf of all)))]
+            give saying of [(
+                orDidYouMean with message is ("no such project: " + slug),
+                guess is (closestTo with written is slug, among is (slugsOf of all)))]
         Some with project
             if project.slug is slug
-                give saying of [(project.title + "  [") + project.status + "]", "  " + project.oneLiner, "  built:  " + project.stack, "  time:   " + project.timeline, ("  more:   open " + project.slug) + "  (full engineering story)"]
+                give saying of [
+                    (project.title + "  [") + project.status + "]",
+                    "  " + project.oneLiner,
+                    "  built:  " + project.stack,
+                    "  time:   " + project.timeline,
+                    ("  more:   open " + project.slug) + "  (full engineering story)"]
             give infoFor with all is all, slug is slug, index is index + 1
 
 function searchFor of query
     if (textLength of (trim of query)) < 2
         give saying of ["usage: search <term>  (two letters or more)"]
     with needle is (lowercase of (trim of query))
-    give saying of (searchLines with query is (trim of query), hits is (byScore of (joinedLines with head is (projectHits with all is cards, needle is needle), rest is (postHits with all is ordered, needle is needle))))
+    give saying of (
+        searchLines with query is (trim of query),
+        hits is (byScore of (
+            joinedLines with head is (projectHits with all is cards, needle is needle),
+            rest is (postHits with all is ordered, needle is needle))))
 
 function byScore of hits
     from hits
@@ -493,7 +754,9 @@ function catFile of name
         give saying of (projectSummaries of cards)
     if file is "stack"
         give saying of (stackLines of cards)
-    give saying of [(orDidYouMean with message is (("cat: " + name) + ": no such file"), guess is (closestTo with written is file, among is catFiles))]
+    give saying of [(
+        orDidYouMean with message is (("cat: " + name) + ": no such file"),
+        guess is (closestTo with written is file, among is catFiles))]
 
 function withoutDotTxt of name
     if endsWith with value is name, suffix is ".txt"
@@ -502,16 +765,21 @@ function withoutDotTxt of name
 
 function blogFor of slug
     if isBlank of slug
-        give saying of (joinedLines with head is (blogLines of ordered), rest is ["", "open one with 'blog <slug>', or just 'home' then click."])
+        give saying of (
+            joinedLines with head is (blogLines of ordered),
+            rest is ["", "open one with 'blog <slug>', or just 'home' then click."])
     give blogEntry with all is ordered, slug is slug, index is 0
 
 function blogEntry with all, slug, index
     when listAt with value is all, index is index
         None
-            give saying of [(orDidYouMean with message is ("no such post: " + slug), guess is (closestTo with written is slug, among is (postSlugs of all)))]
+            give saying of [(
+                orDidYouMean with message is ("no such post: " + slug),
+                guess is (closestTo with written is slug, among is (postSlugs of all)))]
         Some with post
             if post.slug is slug
-                give goingTo with printed is [("opening " + post.title) + "..."], destination is "/blog/" + post.slug
+                give goingTo with printed is [("opening " + post.title) + "..."],
+                    destination is "/blog/" + post.slug
             give blogEntry with all is all, slug is slug, index is index + 1
 
 # The original's `mode` sets a progressive-enhancement level the host owns.
