@@ -20,7 +20,7 @@
 # language and a way to name it from the file, and neither exists.
 
 use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
-use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, Ring, rings, projectSlugs, rounded5
+use "./projects" for Project, Listing, cards, ringExtent, ringSize, ringScale, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, Ring, rings, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
 use "./terminal" for screen, line, open, helpLines, whoamiLines, gamesLines, unknownLines, commandOf, argumentOf
@@ -431,10 +431,14 @@ view title is "Mark Sturman"
                             # answers "what is there", a cross-section answers
                             # "how much, and for how long".
                             Row gap is 40, align is "center", narrowDisplay is "block", class is "rings-row"
-                                Column class is "rings", width is 320, height is 320, position is "relative"
-                                    each ring in rings
-                                        Row class is ("ring shade" + (text of ring.shade) + " wob" + (text of ring.wobble)), position is "absolute", top is (160 - ring.outer), left is (160 - ring.outer), width is (ring.outer * 2), height is (ring.outer * 2), border is ring.width
-                                    Row class is "pith", position is "absolute", top is 142, left is 142, width is 36, height is 36, radius is 999
+                                Column class is "rings", width is 320, height is 320, position is "relative", overflow is "clip"
+                                    # The disc is drawn at its own extent and
+                                    # then scaled into the box, which is what
+                                    # the SVG's viewBox was doing.
+                                    Column class is "rings-space", position is "absolute", top is 0, left is 0, width is ringSize, height is ringSize, scale is ringScale, origin is "topLeft"
+                                        each ring in rings
+                                            Row class is ("ring shade" + (text of ring.shade) + " wob" + (text of ring.wobble)), position is "absolute", top is (ringExtent - ring.outer), left is (ringExtent - ring.outer), width is (ring.outer * 2), height is (ring.outer * 2), border is ring.width
+                                        Row class is "pith", position is "absolute", top is (ringExtent - 18), left is (ringExtent - 18), width is 36, height is 36, radius is 999
                                 Column grow is 1, basis is 0, gap is 12, maxWidth is 420
                                     Text "growth rings", class is "rings-label"
                                     Text "One ring a year since 2018, when I started. The thick ones are the years that shipped something.", color is "muted", lineHeight is 1.7

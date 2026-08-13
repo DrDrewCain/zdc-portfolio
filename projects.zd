@@ -139,6 +139,38 @@ function cardsOf with all
 # already lived.
 state rings is static List of Ring from ringsFrom with counts is (commitCounts with all is cards), index is 0, cursor is 18, taken is empty
 
+# ⚠️ THE DRAWING HAS TO BE SCALED, AND THIS IS WHERE THE SVG WAS DOING WORK
+# I DID NOT REPLACE.
+#
+# `ringPath` writes coordinates in whatever space the rings came out in, and
+# the `viewBox` then maps that space onto however many pixels the layout
+# gives it — so the geometry never has to know how big it will be drawn.
+# Elements have no viewBox: a 510px-wide ring in a 320px box is a 510px-wide
+# ring hanging out over the page, which is exactly what happened.
+#
+# So the extent is computed here and the whole disc is scaled to the box.
+# `origin is "topLeft"` because `scale` does not change the layout box, so
+# the shrink has to happen from the corner the box is anchored at.
+state ringExtent is static Whole from extentOf with all is rings, index is 0, most is 18
+
+function extentOf with all, index, most
+    when listAt with value is all, index is index
+        None
+            give most + 12
+        Some with ring
+            give extentOf with all is all, index is index + 1, most is (max with first is most, second is ring.outer)
+
+state ringSize is static Whole from doubled of ringExtent
+
+function doubled of value
+    give value * 2
+
+# The box the layout gives it, over the space the geometry came out in.
+state ringScale is static Decimal from fitted with box is 320.0, space is ringSize
+
+function fitted with box, space
+    give box / (decimalOf of space)
+
 function commitCounts with all
     from all
     keep each project where (commitsOf of project.timeline) > 0
