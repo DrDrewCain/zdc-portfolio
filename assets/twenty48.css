@@ -1,0 +1,37 @@
+/* twenty48.css — the tile palette, which the style vocabulary cannot hold.
+ *
+ * `background is` takes a `Colour` and folds it at build time, so a colour
+ * a signal decides is refused. A tile's colour *is* decided by a signal —
+ * its value — so the program names a class per value and the palette lives
+ * here. Eleven classes rather than one gradient, because there are eleven
+ * tiles and each is a decision. */
+
+.page { background: #faf8ef; color: #776e65; min-height: 100vh; }
+.brand { font-size: 44px; font-weight: 800; color: #776e65; letter-spacing: -0.02em; }
+
+.chip { background: #bbada0; color: #f9f6f2; }
+.chip-label { color: #eee4da; letter-spacing: 0.08em; }
+
+.grid { background: #bbada0; }
+
+.t { font-size: 30px; transition: transform 90ms ease-in; }
+.t-empty { background: rgba(238, 228, 218, 0.35); }
+
+.t-2    { background: #eee4da; color: #776e65; }
+.t-4    { background: #ede0c8; color: #776e65; }
+.t-8    { background: #f2b179; color: #f9f6f2; }
+.t-16   { background: #f59563; color: #f9f6f2; }
+.t-32   { background: #f67c5f; color: #f9f6f2; }
+.t-64   { background: #f65e3b; color: #f9f6f2; }
+.t-128  { background: #edcf72; color: #f9f6f2; font-size: 25px; }
+.t-256  { background: #edcc61; color: #f9f6f2; font-size: 25px; }
+.t-512  { background: #edc850; color: #f9f6f2; font-size: 25px; }
+.t-1024 { background: #edc53f; color: #f9f6f2; font-size: 21px; }
+.t-2048 { background: #edc22e; color: #f9f6f2; font-size: 21px;
+          box-shadow: 0 0 30px 10px rgba(243, 215, 116, 0.48); }
+
+.go { background: #8f7a66; color: #f9f6f2; border: none; font-weight: 700; }
+.go:hover { background: #9f8b77; }
+.hint { color: #8f7a66; }
+.banner { background: rgba(237, 194, 46, 0.5); color: #776e65; }
+.won { color: #8f7a66; }
