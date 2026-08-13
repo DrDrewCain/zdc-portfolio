@@ -24,7 +24,8 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, helpLines, whoamiLines, gamesLines, unknownLines, commandOf, argumentOf
+use "./terminal" for screen, line, open, mode, overlay, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./commands" for runCommand, completionFor
 
 route Site
     Home    is "/"
@@ -267,34 +268,71 @@ component Terminal
 
             Row class is "term-input", gap is 8, align is "center", padding is 12
                 Text "~/portfolio", class is "prompt-path"
-                Text "$", class is "prompt-mark"
-                Input line, hint is "help", class is "term-field", grow is 1
+                Text (promptFor of mode), class is "prompt-mark"
+                Input line, hint is (hintFor of mode), class is "term-field", grow is 1
+                    # Every binding a person who lives in a shell will try.
+                    # They are written here rather than in `terminal.zd`
+                    # because each one *writes* state, and a function in
+                    # this language gives a value and writes nothing.
                     on keydown with stroke
                         if stroke.key is "Enter"
-                            set screen to (append ("$ " + line) to screen)
-                            set screen to (joined with head is screen, rest is (runLine of line))
+                            set screen to (append ((promptFor of mode) + " ") + line to screen)
+                            set history to (append line to history)
+                            set cursor to 0
+                            set draft to ""
+                            with answer is (runCommand of line)
+                            if answer.clears
+                                set screen to (opening)
+                            if not answer.clears
+                                set screen to (joined with head is screen, rest is answer.printed)
+                            if not (isBlank of answer.launches)
+                                set overlay to answer.launches
+                            if not (isBlank of answer.enters)
+                                set mode to answer.enters
                             set line to ""
+
+                        # Ctrl+L clears the scrollback. Ctrl+C abandons the
+                        # half-typed line without running it, and in a game
+                        # mode drops back to the shell — which is what
+                        # interrupting is for.
+                        if stroke.control and ((stroke.key is "l") or (stroke.key is "L"))
+                            set screen to (opening)
+                            set line to ""
+                        if stroke.control and ((stroke.key is "c") or (stroke.key is "C"))
+                            set screen to (append (((promptFor of mode) + " ") + line) + "^C" to screen)
+                            set line to ""
+                            set mode to "shell"
+
+                        # Up and down walk history. The caret would
+                        # otherwise jump to one end of the box, which fights
+                        # the recall it is performing — `preventsDefault`
+                        # is what stops that.
+                        if stroke.key is "ArrowUp"
+                            if cursor is 0
+                                set draft to line
+                            set cursor to (steppedBack with all is history, position is cursor)
+                            set line to (recalled with all is history, back is (steppedBack with all is history, position is cursor))
+                        if stroke.key is "ArrowDown"
+                            if cursor < 2
+                                set cursor to 0
+                                set line to draft
+                            if cursor > 1
+                                set cursor to cursor - 1
+                                set line to (recalled with all is history, back is cursor - 1)
+
+                        # Tab completes. More than one candidate prints the
+                        # list, which is what a shell does rather than
+                        # cycling silently through them.
+                        if stroke.key is "Tab"
+                            with completion is (completionFor of line)
+                            set line to completion.completed
+                            if (listLength of completion.suggestions) > 1
+                                set screen to (append (join with parts is completion.suggestions, using is "  ") to screen)
+
                         if stroke.key is "Escape"
-                            set open to no
-
-# `append` puts one item on the end; a command prints several, so the two
-# lists are joined a line at a time.
-function joined with head, rest
-    from rest
-    fold each printed into taken starting head to (append printed to taken)
-
-function runLine of input
-    if isBlank of (trim of input)
-        give empty
-    if (commandOf of input) is "help"
-        give helpLines
-    if (commandOf of input) is "whoami"
-        give whoamiLines
-    if (commandOf of input) is "games"
-        give gamesLines
-    if (commandOf of input) is "clear"
-        give ["mark@portfolio — interactive mode. type `help`."]
-    give unknownLines of (commandOf of input)
+                            if isBlank of overlay
+                                set open to no
+                            set overlay to ""
 
 component Shell with onBlog, children
     Column class is "page", minHeight is 700

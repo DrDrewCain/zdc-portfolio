@@ -1,54 +1,97 @@
-# terminal.zd — the interactive mode the hero promises.
+# terminal.zd — the session. `src/components/terminal/terminal.tsx`, ported.
 #
-# WHAT THIS IS AND IS NOT. The original is 4,620 lines across a dozen files
-# and embeds four games of its own — codebreak, critters, 2048, life,
-# minesweeper — plus tab completion, command history, ctrl-l and ctrl-c.
-# This is the shell around all of that: it opens on `~`, takes a line, runs
-# it, and prints. The commands it knows are the ones that are about the
-# site rather than about a game, and `games` says so rather than pretending.
+# WHAT IS HERE AND WHAT IS NEXT DOOR. `commands.zd` says what a command
+# *means*, which is a pure function of the line and the catalogue. This
+# holds what a session *is*: what has been printed, what mode the prompt is
+# in, which game is up, and the line being typed. The original splits the
+# same way and for the same reason — one half is testable without a DOM.
 #
-# WHY IT IS A GOOD FIT FOR THE LANGUAGE. A terminal is a fold: the screen is
-# a list of lines, a command appends to it, and nothing else can change it.
-# There is no place in this file where output is mutated after it is
-# printed, because there is nothing to mutate it with.
+# WHY A TERMINAL IS A GOOD FIT. The screen is a list of lines and a command
+# appends to it. There is nowhere in this file that output is mutated after
+# it is printed, because there is nothing to mutate it with.
 #
 # THE ONE THING THE LANGUAGE GIVES FREE. `on key "~"` is a document
-# listener, and the compiler emits a listener that stands down while a field
-# has focus. So typing `~` *into* the terminal's own input does not close
-# it, and nothing in this file says so.
+# listener, and the compiler emits one that stands down while a field has
+# focus. So typing `~` *into* the terminal's own input does not close it,
+# and nothing here says so.
+
+use "./commands" for Outcome, Completion, runCommand, completionFor, commandNames
 
 # The screen: what has been printed, oldest first.
-state screen is client List of Text starting ["mark@portfolio — interactive mode. type `help`."]
+state screen is client List of Text starting ["mark's portfolio :: type 'help' to get started"]
 state line is client Text starting ""
 state open is client Truth starting no
 
-# --- what a command does ----------------------------------------------------
+# `shell`, or the name of a game the prompt has been handed to. The
+# original's `Mode`, as a `Text` rather than a `choice`, because the value
+# is compared and never matched on — and a `choice` here would mean a
+# `when` in the view, which is a region rather than an attribute.
+state mode is client Text starting "shell"
+
+# Which full-panel game is up, or `""`. Separate from `mode`: a game that
+# takes the whole panel still leaves the prompt underneath it, and quitting
+# one returns to the shell rather than to the mode it was launched from.
+state overlay is client Text starting ""
+
+# --- history ----------------------------------------------------------------
 #
-# One function, `Text` in and a list of lines out. Every command is a branch
-# and the fallback is an error, which is the shape a shell has.
+# `src/lib/terminal/history.ts`. Spans every mode, because recalling the
+# trader command you typed two games ago is exactly the thing a shell is
+# expected to do.
+#
+# The cursor is an index from the *end*: 0 is the line being typed, 1 is
+# the last command, and walking back past the oldest stops rather than
+# wrapping. `draft` holds what was half-typed when the walk started, so
+# arrowing all the way forward gives it back rather than emptying the box.
+state history is client List of Text starting empty
+state cursor is client Whole starting 0
+state draft is client Text starting ""
 
-function helpLines
-    give ["available commands:", "  ls                list projects", "  open <project>    open a project page", "  blog              list posts", "  about             who is this guy", "  now               what I am up to currently", "  whoami            short version", "  games             play something", "  clear             clear the screen", "  exit              close this (or press ~)"]
+function recalled with all, back
+    if back > (listLength of all)
+        give valueOr with maybe is (listAt with value is all, index is 0), fallback is ""
+    give valueOr with maybe is (listAt with value is all, index is (listLength of all) - back), fallback is ""
 
-function whoamiLines
-    give ["mark", "makes models run faster.", "transformers from scratch, TVM kernels, rust servers, ios apps."]
+function steppedBack with all, position
+    if position > ((listLength of all) - 1)
+        give listLength of all
+    give position + 1
 
-function gamesLines
-    give ["2048 is playable — it is a separate program in this repo:", "  zdc dev ./twenty48.zd", "codebreak, critters, life and minesweeper are not ported yet."]
+# --- the prompt -------------------------------------------------------------
 
-function unknownLines of command
-    give [(command + ": command not found"), "type `help`"]
+function promptFor of mode
+    if mode is "trader"
+        give "trader>"
+    if mode is "lexer"
+        give "lexer>"
+    if mode is "codebreak"
+        give "code>"
+    if mode is "games"
+        give ">"
+    give "$"
 
-# `open <project>` and the like: the verb is the first word.
-function verbOf of input
-    give before with value is (trim of input), delimiter is " "
+# A sample of the move each mode expects, shown greyed in the input.
+function hintFor of mode
+    if mode is "trader"
+        give "look"
+    if mode is "lexer"
+        give "crane"
+    if mode is "codebreak"
+        give "1234"
+    if mode is "games"
+        give "2048"
+    give "help"
 
-function argumentOf of input
-    give trim of (after with value is (trim of input), delimiter is " ")
+# --- what a submitted line does ---------------------------------------------
+#
+# `append` puts one item on the end; a command prints several, so the two
+# lists are joined a line at a time.
+function joined with head, rest
+    from rest
+    fold each printed into taken starting head to (append printed to taken)
 
-# The whole of a one-word command is the verb, because `before` of a
-# delimiter that is not there gives the empty string.
-function commandOf of input
-    if isBlank of (verbOf of input)
-        give trim of input
-    give verbOf of input
+# The banner `clear` leaves behind, which is the banner the session opened
+# with. The original clears to nothing; leaving the greeting is the same
+# decision `neofetch` makes about a blank screen being unhelpful.
+function opening
+    give ["mark's portfolio :: type 'help' to get started"]
