@@ -22,6 +22,7 @@
 use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
+use "./terminal" for screen, line, open, helpLines, whoamiLines, gamesLines, unknownLines, commandOf, argumentOf
 
 record Post
     slug    is Text
@@ -188,11 +189,27 @@ function projectFrom of path
 # `order` comes out of the header as text and has to be a number to sort by.
 # `parseWhole` gives an `Option`, because a header can say anything.
 function projectFromRaw with path, raw
-    give Project with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), oneLiner is (fieldOf with raw is raw, key is "oneLiner"), status is (fieldOf with raw is raw, key is "status"), stack is (unbracketed of (fieldOf with raw is raw, key is "stack")), timeline is (fieldOf with raw is raw, key is "timeline"), rank is (valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")), fallback is 99), body is build markdown (linkified of (bodyOf of raw))
+    give Project with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), oneLiner is (fieldOf with raw is raw, key is "oneLiner"), status is (fieldOf with raw is raw, key is "status"), stack is (spaced of (unbracketed of (fieldOf with raw is raw, key is "stack"))), timeline is (fieldOf with raw is raw, key is "timeline"), rank is (valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")), fallback is 99), body is build markdown (linkified of (bodyOf of raw))
+
+# The effort, not the whole timeline. "Feb 2026 to now, over 9,000 commits"
+# is a period and an effort, and the listing's right-hand column wants only
+# the second — the original splits them with a regular expression, and this
+# takes the last comma-separated piece when it is a commit count.
+function effortOf of timeline
+    with tail is (trim of (afterLast with value is timeline, delimiter is ","))
+    if textContains with value is tail, needle is "commits"
+        give tail
+    give ""
 
 # `stack` is a YAML list — `[TypeScript, Next.js]` — and the brackets are
 # the only part of that syntax this reads. Anything more is a YAML parser,
 # and `frontmatter.zd` says why there is not one.
+# `TypeScript, Next.js` reads as `TypeScript · Next.js`, which is how the
+# original joins it. Done here rather than in the view because the view
+# renders a `Text` and has nowhere to put a separator.
+function spaced of value
+    give join with parts is (split with value is value, using is ", "), using is " · "
+
 function unbracketed of value
     give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["), suffix is "]"
 
@@ -466,7 +483,7 @@ component WorkRow with project
                 Text project.title, class is "row-title"
                 Text project.oneLiner, color is "muted", size is "small", lineHeight is 1.65
                 Text project.stack, class is "stack"
-            Text project.timeline, class is "effort"
+            Text (effortOf of project.timeline), class is "effort"
 
 component Working with project
     Column gap is 0
@@ -501,14 +518,71 @@ component CoverageBar with row
             Row class is ("cov-fill cov-" + row.layer + " cov-w" + (text of (rounded5 of row.width)))
             Text row.count, class is "cov-count", position is "absolute", right is 8, top is 0
 
+# The terminal overlay. `on key "~"` sits beside the elements because it
+# listens to the document, and the compiled listener stands down while a
+# field has focus — so typing `~` into the terminal's own input does not
+# close it, and nothing here says so.
+# The overlay itself. The `~` that opens it is declared at the top of the
+# view rather than here: `on key` goes beside the elements, and a component
+# whose body is a listener *and* a branch is two things where the production
+# wants one.
+component Terminal
+    if open
+        Column class is "term", position is "fixed", top is 0, left is 0, right is 0, bottom is 0, layer is 50, padding is 24
+            Column class is "term-body", grow is 1, padding is 18, gap is 4, overflow is "scroll"
+                each printed in screen
+                    Text printed, class is "term-line"
+
+            Row class is "term-input", gap is 8, align is "center", padding is 12
+                Text "~/portfolio", class is "prompt-path"
+                Text "$", class is "prompt-mark"
+                Input line, hint is "help", class is "term-field", grow is 1
+                    on keydown with stroke
+                        if stroke.key is "Enter"
+                            set screen to (append ("$ " + line) to screen)
+                            set screen to (joined with head is screen, rest is (runLine of line))
+                            set line to ""
+                        if stroke.key is "Escape"
+                            set open to no
+
+# `append` puts one item on the end; a command prints several, so the two
+# lists are joined a line at a time.
+function joined with head, rest
+    from rest
+    fold each printed into taken starting head to (append printed to taken)
+
+function runLine of input
+    if isBlank of (trim of input)
+        give empty
+    if (commandOf of input) is "help"
+        give helpLines
+    if (commandOf of input) is "whoami"
+        give whoamiLines
+    if (commandOf of input) is "games"
+        give gamesLines
+    if (commandOf of input) is "clear"
+        give ["mark@portfolio — interactive mode. type `help`."]
+    give unknownLines of (commandOf of input)
+
 component Shell with onBlog, children
     Column class is "page", minHeight is 700
+        Terminal
         Status onBlog
         Row justify is "center"
-            Column maxWidth is 700, grow is 1, padding is 40, narrowPadding is 18, gap is 0
+            # 1020, not 700. The listing has four columns and the description
+            # was being squeezed into a third of the width it wants; the blog
+            # stays a narrow measure because `.prose` caps itself at 665.
+            Column maxWidth is 1020, grow is 1, padding is 40, narrowPadding is 18, gap is 0
                 children
 
 view title is "Mark Sturman"
+    # The key that opens the interactive mode. On the document, so it works
+    # wherever the reader is — and the compiled listener stands down while a
+    # field has focus, so typing `~` into the terminal's own input does not
+    # close it.
+    on key "~"
+        set open to not open
+
     # `Shell` sits inside each arm rather than around the `when`.
     # `address` is folded to one value per emitted document, so `page` may
     # only be dispatched on — reading it as an expression to work out which

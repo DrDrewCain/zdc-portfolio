@@ -1,0 +1,54 @@
+# terminal.zd — the interactive mode the hero promises.
+#
+# WHAT THIS IS AND IS NOT. The original is 4,620 lines across a dozen files
+# and embeds four games of its own — codebreak, critters, 2048, life,
+# minesweeper — plus tab completion, command history, ctrl-l and ctrl-c.
+# This is the shell around all of that: it opens on `~`, takes a line, runs
+# it, and prints. The commands it knows are the ones that are about the
+# site rather than about a game, and `games` says so rather than pretending.
+#
+# WHY IT IS A GOOD FIT FOR THE LANGUAGE. A terminal is a fold: the screen is
+# a list of lines, a command appends to it, and nothing else can change it.
+# There is no place in this file where output is mutated after it is
+# printed, because there is nothing to mutate it with.
+#
+# THE ONE THING THE LANGUAGE GIVES FREE. `on key "~"` is a document
+# listener, and the compiler emits a listener that stands down while a field
+# has focus. So typing `~` *into* the terminal's own input does not close
+# it, and nothing in this file says so.
+
+# The screen: what has been printed, oldest first.
+state screen is client List of Text starting ["mark@portfolio — interactive mode. type `help`."]
+state line is client Text starting ""
+state open is client Truth starting no
+
+# --- what a command does ----------------------------------------------------
+#
+# One function, `Text` in and a list of lines out. Every command is a branch
+# and the fallback is an error, which is the shape a shell has.
+
+function helpLines
+    give ["available commands:", "  ls                list projects", "  open <project>    open a project page", "  blog              list posts", "  about             who is this guy", "  now               what I am up to currently", "  whoami            short version", "  games             play something", "  clear             clear the screen", "  exit              close this (or press ~)"]
+
+function whoamiLines
+    give ["mark", "makes models run faster.", "transformers from scratch, TVM kernels, rust servers, ios apps."]
+
+function gamesLines
+    give ["2048 is playable — it is a separate program in this repo:", "  zdc dev ./twenty48.zd", "codebreak, critters, life and minesweeper are not ported yet."]
+
+function unknownLines of command
+    give [(command + ": command not found"), "type `help`"]
+
+# `open <project>` and the like: the verb is the first word.
+function verbOf of input
+    give before with value is (trim of input), delimiter is " "
+
+function argumentOf of input
+    give trim of (after with value is (trim of input), delimiter is " ")
+
+# The whole of a one-word command is the verb, because `before` of a
+# delimiter that is not there gives the empty string.
+function commandOf of input
+    if isBlank of (verbOf of input)
+        give trim of input
+    give verbOf of input

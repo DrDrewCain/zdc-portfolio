@@ -401,3 +401,21 @@ html {
 .dot-active  { background: #e2c85f; }
 .dot-paused  { background: linear-gradient(90deg, #e2c85f 50%, transparent 50%); }
 .dot-rebuilding { background: linear-gradient(90deg, #e2c85f 50%, transparent 50%); }
+
+/* --- the terminal overlay -------------------------------------------------- */
+.term {
+  background: rgba(8, 7, 5, 0.94);
+  backdrop-filter: blur(6px);
+  font-family: PlexMono, ui-monospace, monospace;
+}
+.term-body {
+  border: 1px solid var(--edge); border-radius: 8px; background: #0c0a08;
+  font-size: 13px; line-height: 1.65; color: #cfc7b8; white-space: pre-wrap;
+}
+.term-line { display: block; }
+.term-input { border: 1px solid var(--edge); border-radius: 8px; background: #0c0a08; margin-top: 10px; }
+.term-field {
+  background: transparent; border: none; outline: none; color: var(--ink);
+  font-family: PlexMono, ui-monospace, monospace; font-size: 13px;
+}
+.term-field::placeholder { color: #4f4a40; }
