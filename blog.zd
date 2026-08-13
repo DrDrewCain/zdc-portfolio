@@ -217,10 +217,21 @@ component Reading with post
                 # post.title` is a compile error, and so is `Text post.body`.
                 Prose post.body, class is "prose"
 
+# How far down the document the reader is, as a whole percent. `from
+# scroll` is a source signal the browser writes — the same family as the
+# clock, and nothing in this program may write it. `round` gives an
+# `Option` because a `Decimal` can be infinite, so it is unwrapped once.
+state travelled is client Decimal from scroll
+state percent is client Whole from valueOr with maybe is (round of travelled), fallback is 0
+
 # The tmux status line the real site opens with. Every piece is an
 # element; the monospace and the amber tag are two classes.
+# `sticky`, so the bar stays at the top while the document moves under it —
+# which is what makes the percentage worth showing at all. Both words are in
+# the style vocabulary, so this is the program saying it rather than the
+# stylesheet: `position` takes a keyword and `sticky` is one of them.
 component Status
-    Row class is "status", padding is 8, gap is 14, align is "center"
+    Row class is "status", position is "sticky", top is 0, layer is 10, padding is 8, gap is 14, align is "center"
         Text "mark@portfolio", class is "tag", padding is 4
         Text "0:now", class is "tab"
         Text "1:about", class is "tab"
@@ -228,6 +239,9 @@ component Status
         Text "3:range", class is "tab"
         Text "4:blog*", class is "tab-on"
         Row grow is 1
+        Row gap is 3, align is "center", class is "pct"
+            Text percent
+            Text "%"
         Text "[~]", class is "clock"
 
 component Shell with children

@@ -216,3 +216,7 @@ body {
 .tagline { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; line-height: 20px; color: #aaa295; }
 .slash { color: var(--amber); }
 .rss { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: var(--amber); text-decoration: underline; text-underline-offset: 3px; }
+
+/* The scroll readout. Amber like the real one, and tabular so the digits
+ * do not shuffle the bar sideways as the number changes. */
+.pct { color: var(--amber); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
