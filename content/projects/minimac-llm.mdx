@@ -1,0 +1,97 @@
+---
+title: MiniMacLLM-127M
+oneLiner: A 127 million parameter continual learning language model with a modern architecture, built from first principles and trained end to end on a MacBook in one long weekend.
+status: active
+stack: [Python, PyTorch]
+order: 4
+timeline: four day sprint, Oct 30 to Nov 2 2025, 52 commits
+---
+
+There is a belief, widely held and mostly untested by the people holding it,
+that you cannot do meaningful language model work without a GPU cluster. That
+is true of frontier models and false of understanding, and the gap between
+those two claims is where this project lives.
+
+MiniMacLLM is a decoder-only transformer written from scratch. Not fine-tuned,
+not a reference implementation left mostly intact. Trained end to end on a
+laptop.
+
+## The architecture, and why each piece is there
+
+Twelve layers, 768 hidden dimensions, an 8,000-token BPE vocabulary, a
+2,048-token context window. **127,224,576 parameters**, a number I can state
+exactly because I built the thing that produces it.
+
+The components are current practice rather than the 2017 paper, which was the
+point of the exercise. Each is a specific decision:
+
+- **Grouped query attention at a 4:1 ratio.** Multi-head attention gives every
+  head its own key and value projections, and at inference all of those have
+  to live in the KV cache, which is the dominant memory cost of generation.
+  Multi-query attention collapses them to a single shared set and gives up
+  quality for it. GQA is the middle position: four query heads share one
+  key/value pair, cutting cache size roughly fourfold for a quality cost close
+  to noise. On a machine with unified memory shared against everything else
+  running, that is not an optimisation. It is what makes the model runnable at
+  all.
+- **Rotary position embeddings.** Position encoded as a rotation applied to
+  queries and keys rather than a vector added to the input. Attention scores
+  end up depending on relative distance, which is what the model actually
+  needs, and the scheme degrades gracefully past its trained length instead of
+  falling off the cliff that learned absolute embeddings do.
+- **SwiGLU activations.** A gated feed-forward block, empirically better per
+  parameter than ReLU or GELU in that position, which matters more the smaller
+  the budget is.
+- **RMSNorm.** LayerNorm without the mean-centring step. Slightly cheaper and
+  in practice no worse, so it is a free win and I took it.
+
+None of these are my inventions. Assembling them from first principles and
+watching a coherent model come out the far end is a different kind of
+understanding from reading the papers, and it is the kind that transfers.
+
+## Continual learning without catastrophic forgetting
+
+This is the actual research feature and the reason the project has a second
+act.
+
+The default behaviour of a neural network trained on new data is to overwrite
+what it previously knew. Gradient descent has no notion that certain weights
+are carrying old capabilities; it moves whatever reduces loss on what is in
+front of it right now. Train a converged model on a fresh corpus and the old
+performance collapses. The industry answer is to retrain from scratch on a
+combined dataset, which is affordable with a cluster and absurd with a laptop.
+
+MiniMacLLM keeps training on new data without losing what it already knows,
+and that is what makes it a research object rather than a demo. A small model
+you can afford to retrain repeatedly is the correct instrument for studying
+this particular problem, because the experiment loop is hours rather than
+weeks.
+
+## What it actually cost
+
+Trained end to end on WikiText-2 in **2.5 hours on an M3 Max**, reaching a
+training loss of 5.32.
+
+I want to be honest about that figure. A 5.32 training loss on WikiText-2 is
+not a good language model in any absolute sense. It is a model that has
+clearly learned the structure of English and would embarrass itself in
+conversation. That is fine, because the claim is not that a laptop produces a
+competitive model. The claim is that a laptop produces a *working* one, on a
+real corpus, in an afternoon, with every architectural component implemented
+rather than imported.
+
+Empty file to trained model in four days and 52 commits.
+
+## Why it is here
+
+Because the alternative path (read the papers, use the framework, trust the
+abstractions) leaves you with knowledge you cannot check. Writing the
+attention mechanism yourself means knowing exactly what shape everything is
+and precisely why the cache costs what it costs. That is the understanding
+that made the inference and serving literature I have read since land as
+obvious consequences rather than a wall of acronyms.
+
+The architecture is the whole of this project, and it sits at the top of a
+stack whose lower layers show up elsewhere on this site:
+
+<DeepStack focus="Model" />

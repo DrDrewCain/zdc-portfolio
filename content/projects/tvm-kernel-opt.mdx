@@ -1,0 +1,98 @@
+---
+title: TVM Kernel Optimization
+oneLiner: Hand-scheduled DNN primitives compiled to CPU, GPU and FPGA with TVM, ranked first in the class on measured runtime.
+status: shipped
+stack: [Python, TVM, CUDA, TensorIR]
+order: 3
+timeline: Mar to Apr 2024, Cornell ECE 5545, 99 commits
+---
+
+Machine Learning Hardware and Systems at Cornell, taught by Mohamed
+Abdelfattah, grades this assignment on a benchmark rather than on a rubric.
+Every submission runs on the same hardware, the runtimes get compared, and
+faster solutions earn higher marks. Mine came first in the class.
+
+The work is compiler scheduling, not model design. TVM separates what a
+computation does from how it runs, so the operator stays a mathematical
+definition while the schedule decides tiling, memory placement, thread
+mapping, and vector width. AutoTVM was banned for this assignment, which is
+the part that makes it worth showing: nothing here came from an autotuner
+searching the space overnight. Every split, reorder, cache, and bind was
+chosen by reading the generated TensorIR and the memory access pattern behind
+it.
+
+## What got optimized
+
+Four primitives, each written and then scheduled by hand:
+
+| Primitive | Baseline | Optimized | Speedup |
+| --- | --- | --- | --- |
+| GEMM, GPU | 85.21 ms | 3.33 ms | 25.6x |
+| 2D depthwise separable convolution, GPU | 0.428 ms | 0.054 ms | 7.9x |
+| 1D convolution, GPU | 0.405 ms | 0.057 ms | 7.1x |
+| 1D convolution, CPU | 0.672 ms | 0.087 ms | 7.7x |
+
+GEMM carried the largest win because it had the most headroom to give. A naive
+matrix multiply on a GPU is bound by global memory traffic: every thread reads
+its operands straight from DRAM, and the same values get fetched over and over
+by neighbouring threads. The schedule that turned an 85 millisecond kernel into
+a 3 millisecond one is four decisions stacked on each other:
+
+- tile the output into 64 by 64 blocks and bind those to `blockIdx`
+- split each block again so that one thread owns a 4 by 4 patch of the output
+  rather than a single element, and bind that to `threadIdx`
+- split the reduction axis by 16 and `compute_at` the cached operands there, so
+  each thread pulls its working set once per k tile instead of once per multiply
+- vectorize the innermost axis
+
+The second one is doing most of the work. A thread computing sixteen outputs
+instead of one reuses every value it loads sixteen times, in registers, and the
+loads it does perform are amortized across all of them.
+
+Both schedules perform identical arithmetic. The difference is entirely in
+which level of memory the operands are read from, and how many times:
+
+<MemoryLadder />
+
+Note which level won. The textbook answer for GEMM is to stage tiles in shared
+memory so a whole block can read them, and I wrote that version; the one that
+actually benchmarked fastest caches to `local` scope instead, keeping the
+working set in registers per thread. Shared memory pays a synchronization cost
+that only earns its keep when threads genuinely read the same values, and with
+a 4 by 4 register tile each thread is mostly reading its own. The same
+inversion showed up on the 1D convolution, which is what made me stop treating
+it as a fluke.
+
+The convolutions tell a different story. They are small and already close to
+memory bound, so the wins came from cache locality rather than raw reuse. On
+CPU the progression is legible in three steps: 0.672 ms unoptimized, 0.203 ms
+after splitting and reordering the loops so the innermost iteration walks
+contiguous memory, and 0.087 ms once intermediate results were cached and
+`compute_at` moved the producer inside the consumer's loop nest so the
+intermediate never had to round trip through memory at all.
+
+On GPU the same operator wants a different answer. An early version staged
+data in shared memory, which is the reflex you learn from GEMM, and it landed
+at 0.131 ms. Keeping the working set in per thread local memory instead
+reached 0.057 ms. Shared memory is the right tool when many threads read the
+same values; when they do not, the synchronization it requires is pure cost.
+That inversion is the single most useful thing the assignment taught me: the
+optimization that wins on one operator is actively wrong on the next one, and
+the only way to know which is which is to look at who reads what.
+
+The FPGA target rounded out the exercise, compiling the same 1D convolution
+definition through a third backend without touching the operator itself.
+
+## Why it is here
+
+Most of my work is systems and product. This is the piece that says the
+interest in making models run goes a layer below the model, into the compiler
+and the memory hierarchy where the time is actually spent. It is also the only
+project on this site that was scored against other people on a stopwatch.
+
+In stack terms it is the two layers most people never touch:
+
+<DeepStack focus="Schedule,Hardware" />
+
+Source is a GitHub Classroom repository and stays private under academic
+integrity rules, so there is no public link to give.

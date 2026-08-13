@@ -1,0 +1,84 @@
+---
+title: MiniTorch
+oneLiner: A deep learning framework rebuilt from zero, from scalar autodifferentiation up to fused CUDA kernels, following Sasha Rush's Machine Learning Engineering course.
+status: shipped
+stack: [Python, Numba, CUDA]
+order: 5
+timeline: Sep to Dec 2023, Cornell Tech CS 5781, 229 commits
+---
+
+MiniTorch is Sasha Rush's teaching library for Machine Learning Engineering at
+Cornell Tech. The premise is that you do not really know what a framework does
+until you have written one, so the course hands you a skeleton of the PyTorch
+API with the implementations removed and you fill them back in, module by
+module, against a test suite that refuses to let you fake it.
+
+Five modules, each one a layer underneath the last, each in its own repository.
+The commit count is the sum across all five.
+
+## Module 0, foundations
+
+Operators, functional utilities, and the testing discipline the rest of the
+course leans on. Property based tests rather than fixed examples, because a
+derivative that happens to be right for one input tells you nothing.
+
+## Module 1, autodifferentiation
+
+The module that changes how you read every training loop afterwards. You build
+a scalar autograd engine: a `Variable` that records the operations performed on
+it, a chain rule implementation, and a topological sort that walks the graph
+backwards accumulating gradients. Every operation needs both a forward and a
+backward, written by hand.
+
+Once you have written `backward` for a dozen operators yourself, `loss.backward()`
+stops being a magic incantation. It is a graph traversal, and the reason it is
+fast is that it visits each node once.
+
+## Module 2, tensors
+
+Scalars are a correct autograd engine and a useless one, because the graph has
+a node per number. This module replaces them with tensors, which means
+implementing strides, broadcasting, indexing, and reshaping so that a single
+node holds a whole array and the graph stays small.
+
+Strides are the idea worth keeping. A tensor is a flat block of memory plus a
+tuple describing how to walk it, which is why transposing can be free: you
+permute the strides and never touch the data. Broadcasting falls out of the
+same representation, as a stride of zero along an axis you want repeated.
+
+## Module 3, GPUs and parallel programming
+
+The same operations again, this time compiled and parallelised with Numba, then
+written as CUDA kernels. Elementwise maps and zips, reductions, and matrix
+multiply, plus operation fusion so that a chain of pointwise operations becomes
+one pass over memory instead of one pass each.
+
+This module is where the ECE 5545 work later plugged straight in. Fusing
+operations to avoid round trips through global memory is the same instinct that
+makes a tiled GEMM twenty five times faster than a naive one; MiniTorch teaches
+it as a framework author, TVM teaches it as a compiler author.
+
+## Module 4, deep learning
+
+Convolution, pooling, softmax, dropout, and enough of a training loop to do
+multiclass classification, all running on the framework built in the previous
+four modules. The payoff is that nothing in the final model reaches outside the
+code you wrote.
+
+## Why it is here
+
+Everything else in the machine learning section of this site sits on top of
+this one. The stack it belongs to looks like this, and the right hand column is
+the part worth reading:
+
+<DeepStack focus="Autodifferentiation,Tensors,Operators" />
+
+Most machine learning work lives at the top two layers and treats everything
+below as a provider. That is a reasonable way to get things done and a bad way
+to understand why they are slow. Writing the transformer in MiniMacLLM-127M is a different activity
+once you have implemented the autograd it trains through, and hand scheduling
+kernels in TVM is a different activity once you have written the naive versions
+those schedules are competing against.
+
+Source is a GitHub Classroom repository and stays private under academic
+integrity rules, so there is no public link to give.

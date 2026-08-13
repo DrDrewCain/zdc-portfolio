@@ -1,0 +1,93 @@
+---
+title: AppMeee
+oneLiner: A unified inbox pulling fourteen messaging platforms into one timeline, where the encryption survives the trip across services instead of being stripped at the seam.
+status: overhauling
+stack: [TypeScript, Matrix, Electron, Node.js, Docker, Turborepo]
+order: 10
+timeline: Nov 2025 to Feb 2026, 823 commits
+---
+
+I have fourteen places where someone can reach me and nowhere I can see all of
+them. That is the problem, and it is not a new one. Unified inboxes get
+attempted regularly, and the reason most are unsatisfying is almost always the
+same.
+
+The easy way to build one is to hold everybody's credentials on a server, log
+in as them, pull the messages down, and render them in a list. It works, it
+demos beautifully, and it means one company can read every private
+conversation its users have on every platform. Any service that offered end to
+end encryption has had that guarantee quietly removed the moment its messages
+arrive in that list.
+
+AppMeee is the version that refuses that trade.
+
+## Why Matrix, and not a rack of API clients
+
+Every bridge runs over Matrix, and that is the decision the whole project
+rests on.
+
+Matrix is a federated messaging protocol with encryption built into the
+protocol rather than layered on top, and the mautrix bridge family already
+speaks Matrix on one side and a specific platform on the other. Building on it
+means the unified timeline is a Matrix client and the encryption boundary sits
+at the edges, not in the middle. There is no stage where plaintext has to
+exist on a server for the product to function.
+
+It also makes self-hosting real rather than rhetorical. The homeserver and the
+entire bridge fleet deploy from a separate infrastructure-as-code repository,
+so anyone who would rather not trust me does not have to. That offer only
+means something if the architecture puts the trust boundary somewhere the user
+controls, which is the second argument for Matrix over fourteen REST
+integrations.
+
+The cost is real and worth stating plainly. Bridges are stateful, long-lived
+processes holding live sessions, and they fail in platform-specific ways.
+Running fourteen is genuinely harder than calling fourteen APIs. The
+encryption guarantee is what buys that complexity, and if you do not care
+about the guarantee, this is a considerably worse design than the easy one.
+
+## The parts that are not just a list
+
+iMessage is the exception to everything. It cannot be bridged from Linux,
+because it needs a Mac with a signed-in Apple ID, so it arrives through a
+relay backed by its own Swift protocol package that reads the local chat
+database and drives the Messages app. That project stands alone precisely
+because its constraints do not generalise to anything else here.
+
+The macOS desktop shell exists for the same reason, giving native iMessage
+access on the one machine that can legitimately provide it. Discord voice
+channels are joinable from the web app, which sounds like a small feature and
+is actually a separate real-time stack living beside the messaging one.
+
+The email reader is the piece I most enjoyed building: an editorial dark theme
+with full keyboard navigation, on the conviction that email is a *reading*
+interface and almost everyone keeps shipping it as a database browser.
+
+## The AI layer, and why it belongs here specifically
+
+Auto-replies, smart suggestions and conversation summarisation, working across
+every connected platform at once.
+
+This is the one capability that genuinely requires the unification to have
+happened first. A summariser inside Slack summarises Slack. A summariser
+sitting above a merged timeline can answer "what did I miss today" across
+fourteen networks, a different and far more useful question, and one that is
+only askable because everything upstream already agreed on a single message
+representation.
+
+## Scale, and the current overhaul
+
+Three months and 823 commits: a pnpm and Turborepo monorepo spanning the web
+app, the desktop shell, the bridge fleet and the AI agent, with Docker Compose
+bringing the whole thing up locally behind an optional bridges profile.
+Localised across English, Spanish, French, German and Japanese.
+
+The status says *overhauling*, and that is accurate rather than diplomatic.
+The first version ran its bridges in an arrangement that grew organically,
+which was fine at four and became the limiting factor at fourteen. The rebuild
+moves the bridge layer onto the dedicated, templated infrastructure described
+in the Matrix Infras project: declared, versioned, idempotent, rebuildable
+from a clean machine instead of maintained by hand.
+
+That is the honest state of it. The product thesis held; the operational
+foundation underneath had to be replaced before the thesis could scale.

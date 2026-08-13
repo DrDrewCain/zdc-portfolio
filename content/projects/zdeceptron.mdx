@@ -1,0 +1,150 @@
+---
+title: ZDeceptron
+oneLiner: A reactive dataflow language where placement is a property of state, so you write one program and the compiler derives the client, the server and the wire between them. Written in Rust, and it runs.
+status: active
+stack: [Rust, JavaScript, Logos, Ariadne, Boa, Playwright, Cloudflare Workers, Deno Deploy]
+repo: https://github.com/DrDrewCain/zdeceptron
+order: 2
+timeline: began 2 August 2026, in active development
+---
+
+Every web application is one program that was cut in half, and the developer
+maintains the cut by hand. You decide what lives in the browser and what lives
+on the server, then you write the API between them twice — once as a route,
+once as a fetch — and keep the two in agreement forever. Nothing checks that
+you got it right. The bugs that result are the ones where a secret ends up in
+a bundle, or a value the browser chose is trusted because it arrived through a
+function that looked internal.
+
+ZDeceptron makes placement a property of *state* rather than of code, and
+derives the cut.
+
+```
+secret state apiKey  is server  Text  from environment "GREETING_API_KEY"
+       state visits  is durable Whole starting 0
+       state name    is client  Text  starting ""
+       state greeting is server Text  from politeGreeting with name, apiKey
+```
+
+Four declarations, four different machines. `zdc build` on the program
+containing them emits `client.js`, `styles.css`, `index.html`, a manifest, and
+one file per derived server endpoint. `apiKey` and `GREETING_API_KEY` appear in
+none of the client output — and that is checked by grepping the built bundle,
+not asserted in a comment.
+
+Functions have no placement at all. `politeGreeting` runs on the server here
+because `greeting` is declared `server`, and the same function compiled into a
+client signal runs in the browser, byte for byte. There is no async colouring
+and no dependency array; `greeting` recomputes because it reads `name`, and the
+compiler knows that from the signal graph.
+
+## What is actually built
+
+Lexer, parser, name resolution, a Hindley–Milner type checker, the tier split
+that decides what goes where, an information-flow pass, a JavaScript code
+generator, a durable store, platform adapters, a dev server and a language
+server. Twenty crates, about 127,000 lines of Rust, 2,399 tests.
+
+`client`, `server`, `durable` and `static` programs all build, and the server
+half executes: two browser windows move together over live sync, held by a test
+that opens both. Thirty example programs compile, including a blog that reads
+real markdown off disk at build time.
+
+Around the compiler there is now a toolchain: `zdc new` scaffolds a project,
+`zdc fmt` gives it one canonical layout, `zdc doc` writes a program's
+declarations out as Markdown, `zdc dev` serves and reloads it, and `zdc deploy`
+generates a deployment. A `foreign` can name a package — a bare specifier
+mapped in `zd.toml`, or a URL — and hold, construct and call into what it
+imports, so `examples/tree-webgl/` drives real three.js from ZDeceptron with
+**no JavaScript file of its own**: three files, none of them `.js`.
+
+## The part I did not expect to spend the most time on
+
+Error messages, and it turned out to be the right place to spend it. Barik et
+al. (ICSE 2017, eye tracking, n = 56) measured that reading a compiler error is
+about as hard as reading source code, and that reading difficulty significantly
+predicts how long the task takes. Message length is a cost, not a free way to
+be helpful.
+
+So the inline diagnostic carries only what a reader needs in order to act — the
+claim and the spans, inside a 200 character budget a test enforces — and
+everything explaining *why* a rule exists lives behind `zdc explain CODE`. The
+common mistakes print the fixed line rather than describing the alternatives:
+
+```
+Error: Expected a placement after `is`, found `Whole`.
+ 1 │ state votes is Whole starting 0
+   │                ──┬──
+   │                  ╰──── `Whole` is the type, and a placement goes before it
+   │ Note: the line as it would be accepted: state votes is client Whole starting 0
+```
+
+A test enumerates every diagnostic code from the compiler's own source and
+fails if one has no explanation, or if an explanation survives the code it
+described. A hand-maintained list would be correct on the day it was written
+and wrong on the day someone added a code, which is exactly the day the test
+needed to fail.
+
+## The honest problem
+
+The language has an information-flow type system. `secret` answers who may
+learn a value; `trusted` answers who chose it. The second one was supposed to
+carry a robustness property — a claim that an attacker cannot steer a
+declassification.
+
+**That claim is withdrawn, and it stays withdrawn.** Three independent
+adversarial passes broke the soundness argument, the third after the second had
+already been repaired. Every break had the same shape: a rule was stated over a
+classifier built to answer a different question. The worst of them was a
+counterexample that reconstructs a credit card number one digit at a time out
+of 160 prerendered URLs, with every parameter marked trusted and nothing
+endorsed, using two static lists that look like an ordinary pagination index.
+
+The rules are still there and still reject three of the twelve known attacks.
+What is gone is the sentence telling you they are enough. And because that
+prohibition had already been written down once in prose and had not held, it is
+now a test: a gate scans every shipped explanation for affirmative claim shapes
+and fails the build if one reappears. It bans the claim rather than the word,
+so a diagnostic saying a rule *does not* make your program safe still passes —
+that sentence is one I want written.
+
+Two more, stated plainly. Only the compiler can make a `Markup` value, from a
+file, at build time, so a value a program computes still cannot become one. And
+`zdc deploy` writes a complete deployment for Cloudflare Workers, Deno Deploy,
+AWS Lambda and Vercel, checked against vendor documentation and **never once
+against a vendor**.
+
+## Why the failures are in the repository
+
+The design document records its own reversals in place. A section states a
+rule, a later section refutes it with a program that breaks it, and a third
+marks it decided or withdrawn — without editing the first. It is a worse
+document to read and a much better one to trust, because the alternative is a
+spec that has only ever been right.
+
+It also has a failure mode I walked into: a decision can sit resolved in one
+section while an index three thousand lines away still lists it open. Two of
+the three design decisions I most recently sat down to make turned out to have
+been made already, and one of the two was implemented in the compiler the whole
+time. The tree was right and the summary was stale, which is an argument for
+checking claims by running the thing rather than by reading about it.
+
+## How it is built
+
+Rust, in twenty crates along the usual compiler seam, with `logos` for lexing
+and `ariadne` for the rendered diagnostics. Every test that executes generated
+JavaScript runs it through `boa`, an interpreter written in Rust, so the
+emission tests and the 55,000 row benchmark need no browser and no Node.
+
+Where `boa` is not enough, a real browser is. `boa` is not a DOM and models no
+HTML parser insertion modes at all, and that gap shipped a bug: a `Paragraph`
+holding a block element emitted a walk the shim and the emitter agreed on,
+both parity tests passed, and the page threw on load in every browser —
+because the parser closes a `p` before a block. So a second suite builds a
+program, serves it over HTTP and loads it in Chromium. It is what checks that
+a Content Security Policy is satisfiable, that a value survives a reload, and
+that a CSS selector the shim cannot parse actually matches something.
+
+The test suite runs on Linux, macOS and Windows. That was not
+box-ticking: its first run found sixteen failures from two root causes, and
+the tests it replaced had been comparing `None` with `None` and passing.

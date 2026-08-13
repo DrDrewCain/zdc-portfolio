@@ -1,0 +1,100 @@
+---
+title: Matrix Infras
+oneLiner: Infrastructure as code for the self hosted Matrix stack behind AppMeee, covering sixteen bridges and a homeserver, all of it rebuildable from a clean machine in one command.
+status: active
+stack: [Ansible, Jinja, Matrix, Synapse, PostgreSQL, Docker, Caddy]
+order: 14
+timeline: one day, 8 commits
+---
+
+AppMeee's premise is that fourteen messaging platforms can share one timeline
+without giving up end to end encryption. The part that pitch skips is that
+this requires you to *run a messaging network*, and a messaging network is not
+one service. It is a homeserver, a database, a cache, a reverse proxy with
+valid certificates, a TURN server so calls work behind NAT, and a separate
+long-lived bridge process per platform, each with its own credentials, its own
+session state, and its own way of breaking.
+
+Matrix Infras is the repository that makes that a declaration rather than a
+weekend of SSH.
+
+## Why not just install it
+
+The honest answer is that I tried the manual version first, which is how
+anyone arrives at infrastructure as code.
+
+The failure mode with a bridge fleet is not that installation is hard. Each
+individual piece is a documented `docker run` away. The failure mode is that
+sixteen bridges means sixteen appservice registration files, sixteen sets of
+tokens the homeserver has to be told about, sixteen config templates differing
+in small ways, and a homeserver config that must agree with all of them. Get
+one registration token out of sync and that bridge silently stops delivering
+while everything else keeps working. That is the worst possible failure,
+because nothing alerts and the product just quietly loses a platform.
+
+Hand-built infrastructure also cannot be rehearsed. If the only copy of the
+homeserver is the one running, then every change is performed on the live
+system and disaster recovery is a document describing what you believe you
+did.
+
+## What it manages
+
+Core services, all AppMeee-managed and deployed from this repository:
+
+| Service | Role |
+| --- | --- |
+| Synapse | The Matrix homeserver itself |
+| PostgreSQL 18 | Synapse's database, with performance tuning applied |
+| Redis | Cache, and the pub/sub channel Synapse workers require |
+| Caddy 2 | Reverse proxy, terminating TLS with Cloudflare origin certificates |
+| coturn | TURN/STUN, so voice and video traverse NAT |
+
+Then the bridges, all from the mautrix family: WhatsApp, Discord, Slack,
+Signal, Telegram, Google Messages, Facebook Messenger, Instagram, X/Twitter,
+Google Chat, Bluesky, LinkedIn, Google Voice, SMS, plus `mautrix-wsproxy` as
+the relay for iMessage and an optional double-puppeting appservice.
+
+The wsproxy entry is the interesting one, because it is where this repository
+meets a constraint it cannot solve. Every other bridge is a Linux process that
+can live on this host. iMessage cannot: it needs a Mac with a signed-in Apple
+ID, which is why the protocol work lives in its own project and reaches the
+homeserver through a relay rather than running beside its siblings.
+
+## The shape of the code
+
+Ansible playbooks with Jinja templates, an inventory, and a `Makefile` over
+the top so the common operations are one word rather than a remembered
+invocation.
+
+The property that matters is idempotence. Every task describes a desired state
+rather than a step to perform, so running the playbook against a half-
+configured host converges it instead of doubling it. That is what makes the
+difference between a script you run once on a fresh machine and a tool you can
+run on Tuesday afternoon against production because one bridge needs a config
+change.
+
+Templating is what makes sixteen near-identical bridges tractable. Each one is
+the same shape (a container, a config file, an appservice registration, a
+database) differing in name, port and a handful of platform-specific settings.
+Expressed as sixteen hand-written config files that is sixteen places for
+drift to hide. Expressed as one template over a list of bridge definitions,
+adding a seventeenth platform is a few lines of variables, and a change to how
+*all* bridges log is a change in one file.
+
+## What it actually bought
+
+Rebuilding the entire homeserver from a clean machine is one command.
+
+That sentence is the whole return. It means the infrastructure is disposable
+in the specific sense that matters: if the host is compromised, or the
+provider has an outage, or I need to move regions, the recovery path is
+provisioning and a playbook run rather than an archaeology project. It means
+changes can be tried on a throwaway host first. And it means the configuration
+is reviewable: the current state of production is a diff away, in git, rather
+than a thing I would have to log in and inspect.
+
+The first working version went from zero to deployed in a single day, across
+eight commits. That number is small because the problem is well understood and
+Ansible is doing the heavy lifting; I include it because the alternative, the
+hand-grown version, would have taken about the same day and left nothing
+behind that could be run a second time.

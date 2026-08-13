@@ -1,0 +1,107 @@
+---
+title: VoxMatch
+oneLiner: A voice first iOS social platform where the feed is ninety seconds of someone actually talking, and the matching algorithm weighs how they sound above what they wrote about themselves.
+status: active
+stack: [Swift, SwiftUI, Firebase, Google Cloud, Cloud Storage, Cloud CDN]
+order: 12
+timeline: Jul to Aug 2025, 175 commits
+---
+
+Every social platform I use rewards the same skill, which is producing a good
+caption. Photos got filtered, then video got edited, then both got optimised
+until the feed became a portfolio of production decisions. The thing that
+strikes me about voice is that it resists this. You can rehearse ninety
+seconds and people can still hear that you rehearsed it.
+
+VoxMatch is the app built on that bet: a social platform where the unit of
+content is a voice recording, and where how someone sounds is treated as
+signal rather than decoration.
+
+## Why voice is a hard primitive
+
+Voice is worse than text or images on almost every product axis, and it is
+worth being honest about that before defending it.
+
+It is not skimmable. You cannot scan ninety seconds of audio the way you scan
+a paragraph or a photo grid, so the usual feed mechanic (cheap glance, cheap
+rejection, keep scrolling) stops working. It is not searchable without a
+transcription pipeline. It is socially expensive to produce, because most
+people dislike their recorded voice and know it. And it is unusable in exactly
+the context where people scroll most, which is silently, in public, without
+headphones.
+
+Most of the design work follows from those four problems.
+
+The real-time waveform visualisation exists because a recording interface with
+no feedback is intimidating, and one with a live waveform is a toy: the
+difference between "speak into the void" and watching a thing react to your
+voice. The ninety-second cap is a commitment device: long enough to say
+something real, short enough that a bad take is cheap to throw away.
+
+The feed is a vertical TikTok-style scroll, which is a deliberate borrowing.
+If audio cannot be skimmed, the interface has to make the *commitment* to
+listen cheap and reversible, and full-screen-one-item-at-a-time is the best
+solved version of that.
+
+## The matching algorithm, and what the weights mean
+
+Matches score on four components:
+
+| Signal | Weight |
+| --- | --- |
+| Voice characteristics | 40% |
+| Shared interests | 30% |
+| Behavioural signals | 20% |
+| Proximity | 10% |
+
+The number worth defending is the 40%. Nearly every discovery product weights
+stated preferences and stated interests most heavily, because those are the
+fields it has. The consequence is that everyone gets matched on self-
+description, and self-description is close to the least reliable thing a
+person produces about themselves.
+
+Voice characteristics are not self-reported. Nobody fills them in. Weighting
+them highest is the product thesis expressed as a constant. The platform is
+betting that how someone sounds carries more compatibility information than
+what they typed into a profile field, and if that bet is wrong then the app
+has no reason to exist.
+
+Behavioural signals at 20% are the correction term: what you actually listen
+to all the way through, as against what you claimed to be interested in.
+Proximity takes 10% because it is a real constraint and a terrible primary
+sort.
+
+## What it actually is
+
+A finished app rather than a demo, which is where most of the 175 commits
+went:
+
+- Firebase-backed feed with likes, comments, shares and bookmarks that
+  persist, follow/unfollow, and real-time content syncing
+- Rich profiles: bio, display name, banner and avatar images, links across
+  five networks, music preferences, and interest categories spanning dating,
+  friends, business, hobbies, gaming and music
+- Threaded comments that take voice replies as well as text, which is the
+  single feature that most makes this feel like a voice platform rather than a
+  text platform with audio attachments
+- A challenge system with dedicated rooms, giving people a prompt to answer,
+  because the hardest screen in a voice app is the empty recording screen
+- Real-time user search, verified badges, privacy controls for hiding like and
+  share counts or disabling comments, and @-mention tagging
+- User-created custom colour themes on top of full dark and light mode
+- Firebase Analytics throughout, because a bet this specific has to be
+  measurable
+
+Hosting is Google Cloud: Cloud Storage for the audio with Cloud CDN in front,
+which is what stops a feed made of media files being unusable outside one
+region.
+
+## Six weeks
+
+July to August 2025, 175 commits, built as a summer sprint.
+
+What I took from it is that voice-first is not a feature you add to a social
+app. It changes the recording interface, the feed mechanics, the comment
+model, the moderation surface and the ranking function all at once, and
+compromising on any one of them leaves you with a normal social app that
+happens to support audio, which already exists and which nobody uses for this.

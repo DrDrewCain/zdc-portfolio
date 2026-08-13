@@ -1,0 +1,67 @@
+---
+title: Perceptrons From Scratch
+oneLiner: A multiclass perceptron written from scratch and an MLP built beside it, compared across four feature representations on two datasets that fail in opposite ways.
+status: shipped
+stack: [Python, PyTorch]
+order: 6
+timeline: Spring 2024, Cornell CS 5740, 56 commits
+---
+
+Natural Language Processing at Cornell, taught by Yoav Artzi. The first
+assignment gives you no classifier to import. The perceptron is written from
+nothing: a sparse weight table, a scoring function, and an update rule you
+implement yourself, with learning rate decay and a regularization term applied
+by hand on every update. The multilayer perceptron is built beside it in
+PyTorch, which is the point of the pairing rather than a shortcut around it,
+since running the two against identical features is what shows you what the
+extra capacity is and is not buying. Predictions go in against a test set whose
+labels you never see. Mine came first in the class.
+
+Two datasets, chosen because they fail in different ways. SST-2 is binary
+sentiment over single sentences, where the entire signal often hangs on one
+word and a negation twenty tokens away can flip it. 20 Newsgroups is twenty
+way topic classification over long documents, where the signal is diffuse and
+the difficulty is that several categories overlap almost completely.
+
+## What the work actually was
+
+The models are small. The interesting part was everything around them.
+
+Features were built by hand and compared rather than assumed: binary presence,
+raw counts, n-grams, and tf-idf weighting. Which one wins is not stable across
+the two datasets, and that is the lesson. Binary presence does well on short
+sentiment sentences because a single occurrence of "terrible" is as
+informative as three. Tf-idf does better on newsgroups because document length
+varies wildly and raw counts let long posts dominate, while the terms that
+actually separate the classes are the rare ones that down weighting surfaces.
+
+The feature matrices are enormous and almost entirely zero, so the pipeline is
+built on sparse representations throughout. A dense matrix for twenty
+newsgroups over a full vocabulary does not fit in memory in any useful way,
+and the training loop for the perceptron on that dataset still took about four
+hours to converge.
+
+Error analysis was a deliberate part of the deliverable rather than an
+afterthought. Misclassified examples were dumped for both the development and
+test splits and read by hand. That is where the tf-idf and negation findings
+came from: not from a metric moving, but from looking at which sentences the
+model got wrong and noticing they had a shape in common.
+
+## Why it is here
+
+It is the least sophisticated modelling on this site and one of the most
+useful things I have done, because running a hand written linear model and a
+neural one against identical features makes the comparison honest. The gap
+between them is smaller than the gap between a good representation and a bad
+one, on both datasets. Most of the win in a text classification problem is in
+what you feed the classifier rather than which classifier you picked, and that
+stays true a long way further up the model size curve than it is comfortable
+to admit.
+
+Source is a GitHub Classroom repository and stays private under academic
+integrity rules, so there is no public link to give.
+
+Everything here lives at the top of the stack, which is exactly why the
+layers underneath it became interesting later:
+
+<DeepStack focus="Model" />

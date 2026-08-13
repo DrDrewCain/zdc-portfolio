@@ -1,0 +1,88 @@
+---
+title: imsg-protocol
+oneLiner: Swift tooling for speaking the iMessage protocol from the command line, built as a library so the undocumented parts stay testable.
+status: active
+stack: [Swift, SQLite, ScriptingBridge]
+order: 15
+---
+
+Apple does not publish an iMessage API. What Apple publishes is a Mac that can
+send iMessages, and a SQLite database in your Library folder that records
+every one it has ever seen. If you want a program to participate in an
+iMessage conversation, those two facts are the entire surface area you get,
+and neither of them is an interface anyone designed for you to use.
+
+imsg-protocol is the layer that turns that surface area into something a
+program can call. It powers AppMeee's native iMessage integration, and it
+lives in its own repository for a reason I will get to.
+
+## Why this is harder than reading a database
+
+The naive version of this project is thirty lines: open `chat.db`, select from
+`message`, print the rows. That version works for about a day.
+
+The problems arrive in layers. Message text is not reliably in the `text`
+column. A great deal of it lives in `attributedBody`, a serialised archive
+holding the rich-text representation, so messages with formatting, links or
+mentions put their real content there and leave `text` unhelpful. Reactions
+are not fields on the message they react to; they are separate messages
+carrying an association type and a reference, so a thread only reads correctly
+if you resolve those back onto their targets. Sender identity has more than
+one representation and the obvious column is sometimes empty, so you need a
+fallback chain rather than a lookup. Attachments are rows pointing at paths
+that may be relative, may have moved, and may not have finished downloading.
+
+None of this is documented, all of it is load-bearing, and every one of those
+cases is a test file in this repository: `MessageStoreAttributedBodyTests`,
+`MessageStoreReactionsTests`, `MessageStoreSenderFallbackTests`. That naming
+is not incidental. Each exists because the straightforward reading of the
+schema produced a wrong answer, and the test is what stops the wrong answer
+coming back the next time someone refactors.
+
+Phone numbers deserve their own mention. The same person can appear as
+`+15551234567`, as `(555) 123-4567`, and as an email address across different
+rows, and any of those may be how a chat is addressed. Resolving a target to
+the identifier that will actually deliver runs through PhoneNumberKit and a
+normalisation pass, because getting this wrong does not throw an error. It
+sends your message to someone else.
+
+## How it is built
+
+Swift 6, macOS 14 and up, split deliberately into two products:
+
+- **`AppMeeeIMsgCore`**: a library. The message store, the watcher that
+  notices new rows, senders for messages and reactions, phone number
+  normalisation, attachment and chat-target resolution.
+- **`appmeee-imsg-protocol`**: an executable wrapping that library in a CLI
+  and an RPC server.
+
+Reading goes through SQLite.swift straight against the chat database. Sending
+goes through `ScriptingBridge`, linked as a framework, because scripting the
+Messages app is the only sanctioned path that actually delivers over iMessage
+rather than silently degrading to SMS.
+
+The library/executable split is the decision I would defend hardest. Every
+difficult behaviour described above lives in the library and is exercised by
+tests that build their own databases through `CommandTestDatabase` and
+`MessageStoreTestHelpers`. None of it needs a GUI, a signed-in Apple ID, or a
+human watching a window. The CLI is a thin router over that library; the RPC
+server is a second thin adapter over the same calls. Adding the RPC surface
+did not require re-testing any of the protocol handling underneath it, which
+is the whole return on drawing the boundary there.
+
+## Why it is a separate repository
+
+AppMeee needs iMessage. It also needs Discord, Slack, WhatsApp and eleven
+other networks, and it gets those through Matrix bridges running on Linux.
+iMessage is the one that cannot work that way: it needs a Mac, physically,
+with a real account signed in.
+
+Keeping the protocol layer as its own package keeps that constraint contained.
+AppMeee talks to a process with a defined interface instead of embedding
+Apple-only code inside a codebase that mostly does not run on Apple hardware.
+It also means the awkward part is independently testable, which matters more
+than usual when the thing being modelled is an undocumented schema Apple is
+free to change in any point release.
+
+That is the real argument for this project standing alone: the least stable
+code in a system should be the code that is easiest to run by itself.

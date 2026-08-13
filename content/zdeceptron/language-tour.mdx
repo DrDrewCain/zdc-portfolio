@@ -1,0 +1,116 @@
+---
+title: How the language works
+navTitle: How it works
+description: Placement, signals, and the boundary — the whole model of ZDeceptron in one page, with the parts you can poke.
+order: 1
+---
+
+# How the language works
+
+There is one idea. Everything else follows from it.
+
+> **Placement is a property of state, not of code.**
+
+You declare where each value lives. The compiler works out the rest: which
+code goes in the browser, which becomes a server endpoint, what crosses the
+wire, and what the browser is allowed to see.
+
+## The four placements
+
+Change the one word and watch everything else change with it.
+
+<PlacementExplorer />
+
+## Functions have no placement
+
+This is the part that surprises people, so it is worth stating flatly:
+
+```
+function politeGreeting with who
+    if who is ""
+        give "Hello, stranger."
+    give "Hello, " + who + "."
+```
+
+`politeGreeting` is not a server function or a client function. It is a
+function. If a `server` signal calls it, it runs on the server; if a `client`
+signal calls it, it runs in the browser — **byte for byte the same code**.
+
+There is no `async`, no `"use server"`, and no colour to propagate up the call
+chain. A function used on both sides is emitted into both bundles.
+
+## Signals, and no dependency arrays
+
+Every piece of state is a signal. `starting` declares one you set directly,
+`from` declares one the compiler recomputes:
+
+```
+state count   is client Whole starting 0
+state doubled is client Whole from count * 2
+```
+
+`doubled` re-derives when `count` changes. You do not list that dependency
+anywhere — the compiler knows it from the signal graph, because it read the
+expression.
+
+Press the buttons. Both numbers move, and nothing in the program says the
+second one should:
+
+<ZdExample
+  name="counter"
+  caption="The three handlers only ever touch count. doubled follows because the compiler read count * 2 and wired the graph — which you can confirm in the listing, where no handler mentions it."
+/>
+
+## The boundary shows up in the type
+
+When a value crosses a boundary, its type says so. That is `Remote of T`:
+
+```
+state greeting is server Text from politeGreeting with name
+
+view
+    when greeting
+        Loading           show Spinner
+        Failed with error show ErrorBar message is error.message
+        Ready with text   show Text text
+```
+
+You cannot forget to handle the failure, because there is nothing to read
+until you have named all three arms. The network is not hidden from you; it is
+made into a type.
+
+`static` is the interesting exception. It is evaluated at build time and
+inlined, so nothing crosses at run time, so it is plain `T` — no boundary, no
+`Remote`.
+
+## Secrets are enforced, not documented
+
+```
+secret state apiKey is server Text from environment "STRIPE_KEY"
+```
+
+A `secret` value reaching the view is a compile error. This is checked by
+grepping the built bundle for the value, rather than asserted in a comment —
+if `apiKey` appeared in `client.js`, the compiler's own test suite would fail.
+
+## Check yourself
+
+Reading is not remembering. Four questions, each a rule you will meet in the
+first hour:
+
+<WhereDoesItRun />
+
+## What this buys, concretely
+
+A guestbook — client input, a server-side greeting, a durable visit counter —
+is one file with no fetch, no API route, no schema, no migration and no deploy
+config. `zdc build` on it emits the client bundle *and* one file per derived
+server endpoint, and `apiKey` appears in none of the client output.
+
+## Where to go next
+
+- [The examples](/docs/examples) — thirty working programs, ordered by
+  what they teach, including the ones that exist to record what the language
+  **cannot** do yet.
+- [The standard library](/docs/standard-library) — what the prelude gives you,
+  and why adding a name to it costs something.

@@ -1,0 +1,79 @@
+---
+title: SpaceTrader Wars
+oneLiner: A space trading game where a simulated economy and combat feed each other, written in Rust and shipped finished rather than abandoned at the interesting part.
+status: shipped
+stack: [Rust]
+order: 16
+---
+
+The trading game is one of the oldest computer game forms and it survives
+because the core loop is genuinely good: buy low somewhere, carry it somewhere
+else, sell high, lose some of it to something that went wrong on the way. It
+is a game about *reading a system* rather than reacting quickly, which is a
+pleasure that has nothing to do with reflexes.
+
+SpaceTrader Wars is my version, and the thing I wanted to get right is the
+part most implementations skip.
+
+## Why the economy has to be simulated rather than scripted
+
+The cheap way to build this is a price table with random noise. Every planet
+has a base price per good, you jitter it a bit on arrival, and the player
+looks for the biggest gap. It plays acceptably for about twenty minutes, at
+which point the player realises there is nothing to learn: the noise is noise,
+the optimal strategy is to check everything and take the largest spread, and
+no amount of skill improves on that.
+
+A simulated economy is a different game because prices are *consequences*.
+Scarcity somewhere makes a good expensive there, which makes the route
+profitable, which draws traffic, which relieves the scarcity. The player is
+not reading a random number; they are reading a system with state and
+momentum, and it is possible to be genuinely good at that.
+
+Combat is what closes the loop. In a pure trading game, conflict is an
+interruption, a tax on transit that occasionally deletes your progress. When
+combat and the economy interact, disruption on a route is itself an economic
+event: a dangerous corridor stays profitable because fewer traders will run
+it, and the risk premium is a real number the player can decide to accept.
+Danger becomes something to price rather than something to avoid.
+
+That coupling is the design. Routes, prices and conflict as three things that
+determine each other, rather than a trading game with fighting bolted on.
+
+## Why Rust for a game
+
+Two honest reasons, and neither is that a trading simulation needs the
+performance.
+
+**A fast loop is a design tool.** Simulation tuning is empirical. You change
+how supply responds to demand, you run it, you see whether the resulting
+economy is interesting or degenerate. There is no analysis that substitutes
+for watching it play. When a full simulation run is nearly instant you tune by
+iteration, and when it is slow you tune by argument, and tuning by argument
+produces worse games. Native compiled speed here buys design bandwidth, not
+frame rate.
+
+**Fearless refactoring is the real one.** A game like this changes shape
+repeatedly during development, because the whole point is discovering which
+mechanics are fun and deleting the ones that are not. Rust's ownership rules
+and exhaustive matching mean a substantial restructuring either compiles or
+tells you precisely where it does not. Add a new good, a new event type, a new
+hostile behaviour, and the compiler enumerates every place that now needs a
+decision. For a codebase whose requirements are deliberately unstable, that is
+worth more than it is for one whose requirements are known.
+
+## Shipped
+
+The status says *shipped*, and that word is doing deliberate work.
+
+Simulation projects are unusually easy to abandon in a good state: the economy
+runs, the numbers move, the interesting engineering is done, and what remains
+is balance, edge cases, an ending, and the tedium of making something a
+stranger can actually play. A great many of these exist as compelling engines
+with no game on top.
+
+This one is finished and playable, which is the part I am actually pleased
+about.
+
+A much smaller descendant of the idea is playable right here: press `~` and
+type `trader`.

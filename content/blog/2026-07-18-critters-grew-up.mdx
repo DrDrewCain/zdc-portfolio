@@ -1,0 +1,47 @@
+---
+title: The critters grew up
+summary: What started as a catch-them-all toy in the terminal now has levels, evolutions, gym leaders, a world map, and sprites that stopped being blurry. Notes from the build.
+date: "2026-07-18"
+---
+
+The critter game started simple. Walk in grass, something jumps out, you punch
+it and throw a net. It worked, but it had the depth of a puddle, and honestly
+the fights made no sense. You were the one throwing hands while a team of
+caught critters watched from your pocket.
+
+So the battle engine got rebuilt. Your critters fight for you now. Your lead
+steps up on every encounter, faster sides strike first, fainted teammates get
+replaced on the spot, and swapping costs you a turn like it should. Bare
+knuckles are still in there, but only as the desperate fallback they were
+always meant to be.
+
+Then came growth. Every critter levels from fights, and the curve is banded on
+purpose: quick gains early, a slow crawl later, no cap anywhere. A level 150
+critter barely edges out a level 99 one. I have strong feelings about games
+where a big number deletes the other team in one hit, so the math here refuses
+to let that happen.
+
+Evolution is the part I like most. Each individual rolls its own two evolution
+levels the moment you catch it, somewhere at the end of infancy and somewhere
+in middle age. Your rambit and mine will not grow up on the same day. When one
+evolves it gets a new name, a deeper palette, and the sprite itself changes:
+horns first, then a crown and claws. All three hundred species do this
+procedurally. Nobody hand-drew anything.
+
+There are gym leaders now too. Eight of them, from the linter up to the
+architect, each with three critters and a badge. No nets allowed, no waiting
+them out, and running away forfeits. Badges unlock hotter regions where the
+wild critters run above your best, which closes the loop: explore to train,
+train to challenge, challenge to unlock more to explore. The world remembers
+where you have been, and there is a map to prove it.
+
+Under all of that sits a boring fix that mattered more than any feature: every
+game canvas now renders at the display's real pixel density. Everything used to
+be drawn once and stretched, which on a retina screen means soft edges
+everywhere. Sharp pixels, colored tetromino tiles with beveled edges, a dino
+with an actual eye, cacti with arms, grass that sways. Small things. They add
+up.
+
+All of it lives behind the tilde key, same as before. The engine is pure
+functions with a hundred and thirty tests on it, which is a silly number for a
+terminal minigame and exactly the number it deserved.

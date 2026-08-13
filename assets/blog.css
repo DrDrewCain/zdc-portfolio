@@ -1,0 +1,181 @@
+/* blog.css — the portfolio's own design, measured off marksturman.com
+ * rather than invented.
+ *
+ * Every number here was read out of the live site's computed styles: the
+ * body is 16.8px on a 28.56px line, an `h1` is 60px of Instrument Serif at
+ * weight 400, an `h2` is 30px with 48px above and 24px below, a paragraph
+ * carries 24px beneath it, and inline code is #ffa96b. Guessing at those
+ * produced something readable and wrong, which is the failure this file
+ * exists to correct.
+ *
+ * The fonts are self-hosted because the compiler emits `style-src 'self'`,
+ * so an `@import` of the Google Fonts sheet is blocked. 74 KB of woff2 for
+ * three families, and nothing about the page depends on Google being up.
+ *
+ * `Prose` hands the browser HTML the compiler produced, so the elements
+ * inside it were never declared by the program and cannot carry a style
+ * argument. Descendant selectors are the only way to reach them, and that
+ * is what most of this file is. */
+
+@font-face { font-family: "PlexSans"; font-style: normal; font-weight: 400 600; font-display: swap;
+             src: url("./fonts/plex-sans.woff2") format("woff2"); }
+@font-face { font-family: "PlexMono"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url("./fonts/plex-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "PlexMono"; font-style: normal; font-weight: 600; font-display: swap;
+             src: url("./fonts/plex-mono-600.woff2") format("woff2"); }
+@font-face { font-family: "InstrumentSerif"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url("./fonts/instrument-serif.woff2") format("woff2"); }
+
+/* --- the palette, pinned ---------------------------------------------------
+ * This design is one scheme. Overriding the theme tokens on the page root
+ * is how a program opts out of following the reader's browser without
+ * opting out of the vocabulary — `color is "muted"` still means muted, it
+ * just means this muted. */
+/* On `:root`, not on `.page`. `base.css` declares the tokens at the root
+ * and paints `body` from them, so overriding them on a descendant leaves
+ * the body painted from the originals — which is a cream page behind a
+ * dark one, and exactly what happened. */
+:root {
+  --ink: #f2ede3;
+  --dim: rgba(242, 237, 227, 0.62);
+  --amber: #ffa96b;
+  --edge: rgba(242, 237, 227, 0.12);
+
+  --zd-ink: #f2ede3;
+  --zd-text: #f2ede3;
+  --zd-muted: rgba(242, 237, 227, 0.62);
+  --zd-line: rgba(242, 237, 227, 0.12);
+  --zd-surface: #0f0d0a;
+  --zd-raised: #17140f;
+  --zd-accent: #ffa96b;
+  --zd-onAccent: #0f0d0a;
+}
+
+/* The scheme is pinned: this is a brand, not a preference, so it is dark in
+ * a light browser too. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --zd-ink: #f2ede3;
+    --zd-text: #f2ede3;
+    --zd-muted: rgba(242, 237, 227, 0.62);
+    --zd-line: rgba(242, 237, 227, 0.12);
+    --zd-surface: #0f0d0a;
+    --zd-raised: #17140f;
+    --zd-accent: #ffa96b;
+    --zd-onAccent: #0f0d0a;
+  }
+}
+
+html, body {
+  background-color: #0f0d0a;
+  color: var(--ink);
+}
+
+.page {
+  background-color: #0f0d0a;
+  background-image: radial-gradient(120% 80% at 50% 0%, rgba(255, 169, 107, 0.05), transparent 60%);
+  color: var(--ink);
+  font-family: PlexSans, ui-sans-serif, system-ui, sans-serif;
+  font-size: 16.8px;
+}
+
+/* --- the status bar --------------------------------------------------------
+ * The tmux line the real site opens with. A `Row` in the program; the
+ * monospace and the amber tag are here. */
+.status {
+  font-family: PlexMono, ui-monospace, monospace;
+  font-size: 13px;
+  border-bottom: 1px solid var(--edge);
+  background: #0c0a08;
+}
+.tag { background: var(--amber); color: #0f0d0a; font-weight: 600; }
+.tab { color: var(--dim); }
+.tab-on { color: var(--ink); }
+.clock { color: var(--dim); }
+
+/* --- the breadcrumb -------------------------------------------------------- */
+.cd { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: var(--dim); }
+.cd-arrow { color: var(--amber); }
+
+/* --- post furniture -------------------------------------------------------- */
+.meta {
+  font-family: PlexMono, ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--dim);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.title {
+  font-family: InstrumentSerif, Georgia, serif;
+  font-weight: 400;
+  font-size: 60px;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  margin: 8px 0 0;
+}
+
+.card-title {
+  font-family: InstrumentSerif, Georgia, serif;
+  font-weight: 400;
+  font-size: 30px;
+  line-height: 1.15;
+  margin: 2px 0 0;
+}
+
+.card {
+  display: block;
+  border: 1px solid transparent;
+  border-bottom-color: var(--edge);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.card:hover { border-color: var(--edge); background: rgba(255, 169, 107, 0.04); }
+
+.filter {
+  font-family: PlexMono, ui-monospace, monospace;
+  font-size: 14px;
+  background: #0c0a08;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  color: var(--ink);
+  width: 100%;
+  box-sizing: border-box;
+}
+.filter:focus { outline: none; border-color: var(--amber); }
+.filter::placeholder { color: rgba(242, 237, 227, 0.35); }
+
+/* --- the rendered post ----------------------------------------------------- */
+.prose { max-width: 665px; font-size: 16.8px; line-height: 1.7; }
+.prose p { margin: 0 0 24px; color: rgba(242, 237, 227, 0.9); }
+.prose h2 {
+  font-family: InstrumentSerif, Georgia, serif;
+  font-weight: 400; font-size: 30px; line-height: 1.25;
+  margin: 48px 0 24px; color: var(--ink);
+}
+.prose h3 {
+  font-family: InstrumentSerif, Georgia, serif;
+  font-weight: 400; font-size: 23px; margin: 36px 0 16px; color: var(--ink);
+}
+.prose ul, .prose ol { margin: 0 0 24px; padding-left: 1.3em; color: rgba(242, 237, 227, 0.9); }
+.prose li { margin: 0.4em 0; }
+.prose a { color: var(--amber); text-decoration-color: rgba(255, 169, 107, 0.4); text-underline-offset: 3px; }
+.prose strong { font-weight: 600; color: var(--ink); }
+.prose em { font-style: italic; }
+.prose blockquote {
+  margin: 24px 0; padding: 2px 0 2px 20px;
+  border-left: 2px solid rgba(255, 169, 107, 0.35); color: var(--dim);
+}
+.prose code {
+  font-family: PlexMono, ui-monospace, monospace;
+  font-size: 0.9em; color: var(--amber); background: none; padding: 0;
+}
+.prose pre {
+  background: #0c0a08; border: 1px solid var(--edge); border-radius: 8px;
+  padding: 16px 18px; overflow-x: auto; line-height: 1.6; margin: 24px 0;
+}
+.prose pre code { color: rgba(242, 237, 227, 0.9); font-size: 14px; }
+.prose hr { border: none; border-top: 1px solid var(--edge); margin: 40px 0; }
+.prose img { max-width: 100%; height: auto; border-radius: 6px; }
+.prose table { border-collapse: collapse; width: 100%; margin: 24px 0; font-size: 15px; }
+.prose th, .prose td { border: 1px solid var(--edge); padding: 8px 12px; text-align: left; }
+.prose th { color: var(--ink); font-weight: 600; }

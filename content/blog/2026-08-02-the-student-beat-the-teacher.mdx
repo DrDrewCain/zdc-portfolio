@@ -1,0 +1,194 @@
+---
+title: The student beat the teacher
+summary: "A distilled 4B model outscoring the 120B model that supervised it is not a compression result, and a half-billion-parameter model beating GPT-5.4 on its own task is not a curiosity. Both say the same thing: generality has a price, it is paid on every narrow task, and most production work is narrow."
+date: "2026-08-02"
+---
+
+Distillation is usually explained as lossy compression. A big teacher model
+knows things; you train a small student to imitate its outputs; the student
+ends up cheaper and a bit worse, and you decide whether the discount is worth
+the quality you gave away.
+
+That framing survives right up until the student scores higher than the
+teacher.
+
+In the benchmark work I have been reading through, a fine-tuned Qwen3-4B
+matches or exceeds GPT-OSS-120B (a model thirty times its size, and the model
+that supervised it) on seven of eight benchmarks, with the eighth inside three
+percentage points. On SQuAD 2.0 the student beats its own teacher by
+**nineteen points**. [1]
+
+You cannot get that from compression. Compression's ceiling is the teacher. If
+the student is above the ceiling, the thing being transferred was not the
+teacher's knowledge, and the mental model needs replacing.
+
+## What is actually being transferred
+
+The nineteen-point gap is worth sitting with, because SQuAD 2.0 is a specific
+kind of benchmark. It is reading comprehension with a twist: a large fraction
+of the questions are deliberately **unanswerable** from the passage. Scoring
+well requires knowing when to decline.
+
+Now consider what a frontier general-purpose model has been shaped to do. It
+has been trained, extensively and on purpose, to be helpful, to produce a
+useful response to whatever it is handed. That instinct is correct almost
+everywhere, which is why so much effort went into installing it. On a
+benchmark where the right answer is frequently "the passage does not say", it
+is a systematic liability. The teacher is being punished for a disposition
+that makes it good at its actual job.
+
+The student inherits no such disposition. It saw this task, with this
+distribution, including the unanswerable cases, and it learned the decision
+boundary that this task rewards.
+
+So what distillation transfers is not the teacher's knowledge. It is the
+teacher's *judgement on a narrow distribution*, cheaply, at a scale where you
+could never have afforded to label that much data by hand. The teacher is a
+labelling function. Once you see it that way, the student exceeding it stops
+being paradoxical: the student is optimising the target metric, and the
+teacher is optimising something much larger of which the target metric is a
+small and distorted slice.
+
+Generality has a price. It is normally invisible because it is amortised
+across everything the model does. Narrow it to one task and the price becomes
+a measurable number, and here that number is nineteen points.
+
+## The magnitudes are not marginal
+
+The pattern holds well below 4B, which is the part I find genuinely
+surprising, and the most recent result is the one that should end the
+argument.
+
+Work published in June 2026 on relation extraction takes **Qwen2.5-0.5B**:
+five hundred million parameters, quantised to 4-bit, deployable on a single
+consumer GPU, fine-tunes it on pooled general-domain data, and puts it against
+frontier systems evaluated zero-shot under the same minimal protocol. Averaged
+across nine general-domain benchmarks it scores **0.83, against 0.69 for
+GPT-5.4 and 0.66 for Claude Sonnet 4.6**. On a seven-benchmark average the
+tuned models reach 0.844 (Llama-3.2-3B) and 0.828 (Qwen2.5-0.5B) versus 0.693
+and 0.662 for the two frontier systems. [2]
+
+I want to be precise about what that does and does not show, because it is
+easy to over-read. This is a *zero-shot* comparison against the frontier
+models: they were given the task cold, and the small models were trained on
+it. That is exactly the comparison a production team faces when deciding
+whether to fine-tune or call an API, and it is not a claim that a 0.5B model
+is in any general sense competitive with Claude Sonnet 4.6. It is a claim that
+on this task, with adaptation, the size advantage inverts, and it inverts by
+fourteen points at roughly three orders of magnitude fewer parameters.
+
+Tool calling shows the same shape. Liquid AI's LFM2.5-350M reaches 96–98%
+tool-call equivalence with a 120B teacher across three benchmarks after task-
+specific fine-tuning. [3] That is exactly the kind of task where this should
+work: the output space is constrained, the correctness criterion is
+mechanical, and the model does not need to know anything about the world
+beyond the schema in front of it.
+
+Across a broader sweep (fine-tuned models from 0.6B to 8B against ten frontier
+LLMs on eight datasets) task-specific small models match or beat frontier
+models at **10–100× lower inference cost** [3]; for the specific Qwen3-4B case
+above, the figure quoted is around 30× cheaper with the option of running
+entirely on-premises. [1]
+
+That range is doing real work. At 10× you are making a cost optimisation. At
+100× you are making a different set of architectural choices available: the
+model runs on the device, or in the request path without a network hop, or on
+every row of a batch job you previously could not have afforded to run at all.
+
+## Trained small, not shrunk
+
+The other thing worth correcting is the assumption that a small model is a big
+model with the air let out.
+
+The current generation is not built that way. As the survey work puts it,
+these models are trained on curated synthetic data, distilled from bigger
+teachers, and quantised from day one rather than compressed after the fact.
+[4] That last one matters more than it sounds: quantisation-aware training
+lets the model learn weights that survive low precision, instead of taking a
+model that learned in FP16 and hoping the rounding is benign.
+
+The result is that a 4B model in 2026 is not what a 4B model was in 2023. It
+is not a scaled-down frontier model. It is an architecture with a different
+design target, and the comparison that matters is not "how close to the
+frontier does it get" but "on the task you actually have, does anything else
+beat it per dollar".
+
+## Why this reads as familiar
+
+I built a 127M-parameter language model from scratch on a MacBook over four
+days, grouped query attention, RoPE, SwiGLU, RMSNorm, trained end to end on
+WikiText-2 in two and a half hours. The point of that exercise was that a
+useful research model does not require a GPU cluster.
+
+I also spent real time on NLP classifiers, and the thing I took from that work
+was that the classifier was almost never the bottleneck. The data was, and the
+label definitions were, and the evaluation was. Swapping in a bigger model was
+consistently the least effective lever available.
+
+Both of those experiences point the same way as these benchmarks, which is why
+I trust the benchmarks more than I otherwise would. The industry spent several
+years where "use a bigger model" was correct often enough to become the
+default move. It is now visibly wrong for a large class of production work,
+and the class it is wrong for (narrow, well-specified, high-volume, latency-
+sensitive) is most of what people actually deploy.
+
+## The honest limits
+
+Three, and they are not small.
+
+**You need the task pinned down.** The entire advantage comes from
+specialising to a distribution. If the distribution moves, the specialist
+degrades and the generalist does not, and you find out in production. A model
+this narrow is a commitment to a problem definition being stable.
+
+**You need evaluation you trust.** "Matches frontier performance" is a claim
+about a benchmark. If your eval does not capture what you care about, a fine-
+tune will happily climb the number while getting worse at your actual job, and
+it will do so faster than a general model would, because it is optimising
+harder. The measurement problem gets *more* important as the model gets more
+specialised, not less.
+
+**You are taking on a training pipeline.** Data curation, teacher inference
+costs, fine-tuning runs, drift monitoring, retraining. An API call has none of
+that. The 10–100× is inference cost, and inference cost is not the only cost.
+
+None of which changes the direction. The default of reaching for the largest
+available model is a bet that generality is free, and the measurements say
+generality is a service you pay for on every request, whether or not the task
+needs it.
+
+Most tasks do not need it. The 4B model on SQuAD 2.0 needed rather less than
+none, it needed the teacher's helpfulness removed.
+
+## References
+
+Every figure above is someone else's measurement. In order of appearance,
+dated, because a comparison against a superseded frontier model is not worth
+much:
+
+**[1]** distil labs, *We Benchmarked 12 Small Language Models Across 8 Tasks to
+Find the Best Base Model for Fine-Tuning* (10 December 2025). The fine-tuned
+Qwen3-4B vs GPT-OSS-120B comparison ("matches or exceeds ... on 7 of 8
+benchmarks"), the SQuAD 2.0 result (0.71 against the teacher's 0.52), and the
+~30× inference cost figure.
+`https://www.distillabs.ai/blog/we-benchmarked-12-small-language-models-across-8-tasks-to-find-the-best-base-model-for-fine-tuning/`
+
+**[2]** Christou & Tsoumakas, *Sub-Billion, Super-Frontier: Small Language Models
+Rival Zero-Shot Frontier LLMs on General and Literary Relation Extraction*,
+arXiv:2606.22606 (21 June 2026). The Qwen2.5-0.5B result against GPT-5.4 and
+Claude Sonnet 4.6, and the seven-benchmark averages.
+`https://arxiv.org/abs/2606.22606`
+
+**[3]** distil labs, *Benchmarks*. LFM2.5-350M tool-call equivalence against a
+120B teacher, and the "10-100x lower inference cost" framing across the sweep.
+`https://www.distillabs.ai/benchmarks/`
+
+**[4]** *How to Choose Between Small and Frontier Models*, Towards Data Science. The characterisation of current small models as synthetically trained, distilled
+and quantised from the start.
+`https://towardsdatascience.com/how-to-choose-between-small-and-frontier-models/`
+
+A note on what I deliberately left out: there is a well-known result showing a
+3.8B model reaching GPT-4o-level factual accuracy. I have not cited it,
+because GPT-4o is old enough now that clearing its bar says very little about
+clearing the current one. The comparisons worth making are the ones in [2],
+against models that are actually deployed today.

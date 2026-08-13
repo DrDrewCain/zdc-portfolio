@@ -1,0 +1,91 @@
+---
+title: Project Mercury
+oneLiner: An end to end encrypted messaging server written in Rust, built to find out what a backend looks like when privacy is the founding constraint rather than a later addition.
+status: active
+stack: [Rust]
+order: 13
+---
+
+AppMeee taught me something uncomfortable about encrypted messaging, which is
+how much of the ecosystem treats encryption as a feature that was added.
+
+You can tell from the shape of the systems. Encryption that arrives late shows
+up as a mode (a flag on a conversation, a separate kind of chat, a setting
+most users never find), and the architecture underneath still assumes a server
+that can read message contents, because that assumption was baked in while the
+product was being built and the encryption was retrofitted around it.
+Everything convenient is built on the plaintext path: search, previews,
+moderation, notifications with content in them, restoring history to a new
+device.
+
+Mercury is the counterfactual. A messaging server written from scratch where
+end to end encryption is the founding assumption, to find out what the design
+looks like when nothing was ever allowed to depend on the server reading
+anything.
+
+## What the constraint actually costs
+
+This is the interesting part, and the reason the project is worth building
+rather than just describing.
+
+If the server cannot read messages, a long list of ordinary features stop
+being straightforward and become design problems:
+
+- **Search** cannot happen server-side. Either the client holds enough of the
+  corpus to search locally, or you build searchable encryption and accept its
+  leakage, or the feature is gone.
+- **Notification content** cannot be assembled by the server, because the
+  server does not know what the message says. The push has to be a wake-up
+  call rather than a payload.
+- **History on a new device** cannot be a download, because the server has
+  ciphertext and not the keys. It becomes a key transfer problem, which is
+  really a trust and verification problem.
+- **Moderation and spam handling** lose their primary input entirely, which is
+  the genuinely hard one and where honest systems admit to trade-offs rather
+  than claiming to have solved it.
+- **Group membership** becomes cryptographic state that has to be agreed
+  rather than a row in a table the server owns.
+
+The point of building this is that each of those is a real decision with real
+consequences, and reading about them is not the same as being forced to pick.
+The server is where the constraint bites, which is why the server is the part
+I wanted to write.
+
+## Why Rust
+
+Two reasons, and they are different reasons.
+
+The first is the obvious one. A messaging server handles hostile input by
+definition: everything arriving from the network is attacker-controlled, and
+much of the work is parsing and framing, which is historically where memory
+safety bugs live and where they are most exploitable. Rust makes whole classes
+of those unrepresentable at compile time rather than caught in review. For a
+system whose entire value proposition is a security guarantee, a language that
+removes the most common category of security failure is not a preference.
+
+The second is performance with a clear conscience. Ownership means you can be
+deliberate about allocation on the hot path (knowing what is copied, what is
+borrowed, what lives how long) without the usual bargain where manual memory
+management buys speed by taking on risk. In a server whose job is holding many
+mostly-idle connections and moving small opaque payloads between them, per
+message overhead is what determines how much hardware the thing needs, and the
+ability to be precise about it without introducing use-after-free is exactly
+the combination Rust exists to provide.
+
+## Where it sits
+
+Mercury is the systems-level counterpart to AppMeee, and the pairing is
+deliberate.
+
+AppMeee is a pragmatist's answer to encrypted messaging: the networks already
+exist, people are already on them, so bridge them over a protocol that
+preserves encryption across the seam. It takes the world as it is.
+
+Mercury asks the other question. If you were not obliged to interoperate with
+anything, and privacy were the first requirement rather than a constraint
+applied to an existing design, what would you actually build?
+
+Working on both is the useful part. The bridging project keeps the server
+project honest about which features people genuinely will not give up, and the
+server project keeps making it obvious which of the bridged platforms'
+guarantees are real and which are marketing.

@@ -1,0 +1,162 @@
+---
+title: The standard library
+navTitle: Standard library
+description: What ZDeceptron's prelude provides, module by module, and the rules that decide what is allowed into it.
+order: 3
+---
+
+# The standard library
+
+ZDeceptron's standard library — the **prelude** — is written in ZDeceptron,
+not in JavaScript. That is the whole design, and the reason is stated in the
+compiler's own source: a language whose `List` operations are JavaScript calls
+has not defined its own semantics, it has borrowed them along with every
+coercion rule it exists to escape.
+
+The prelude is **8 modules over 28 `foreign` primitives**. Everything else is
+ordinary ZDeceptron built on top of those.
+
+## How it is compiled
+
+The library is a compilation unit rather than a set of compiler built-ins. Its
+sources are parsed and resolved into the *same arenas* as the program being
+compiled, so a reference to `valueOr` is an ordinary definition and no pass
+after resolution needs a rule for the fact that some definitions were not
+written by you. Three things follow from that rather than needing to be
+arranged:
+
+- **Dead code elimination is free.** It is the closure walk codegen already
+  does, so a program that never calls `join` does not ship it.
+- **Errors point at your call site.** A type error in a library call is
+  reported by the same code that reports one in a call to your own function,
+  at the argument's own span.
+- **It cannot drift from the language**, because it is checked by the compiler
+  that compiles it, on every build.
+
+## The placement invariant
+
+No prelude declaration is a `state`, or mentions one. The whole library is
+**colourless**: it has no placement, so a library call cannot add an edge to
+the signal graph and therefore cannot change any placement fact.
+
+This is asserted rather than assumed — the loader walks every declaration and
+refuses to start if one is ever a `state`, a `view`, a `route` or a `release`.
+
+## Naming has a real cost
+
+A prelude name is ambient in every module and lives in the ordinary namespace,
+so a program that declares one of its own is refused for shadowing a library
+name it cannot see.
+
+**Adding a name to the library therefore takes a word away from every program
+that will ever be written.** That is the same accounting the language applies
+to reserved keywords, and it is why the date layer is seven names rather than
+the fourteen a `yearOf`/`monthOf`/`dayOfMonthOf` surface would have cost.
+
+Some names carry a `list` or `map` prefix for a related reason: `take` and
+`first` are keywords, and `dropFirst` already belongs to the text module, so
+`listTake` and `listDrop` avoid a collision that a bare name would cause.
+
+---
+
+## The modules
+
+### `text`
+
+Length and indexing, case, trimming, splitting and joining, prefix and suffix
+tests, search, slicing, padding, and case-insensitive comparison.
+
+`textLength`, `textAt`, `uppercase`, `lowercase`, `trim`, `split`, `newline`,
+`slice`, `sliceStep`, `startsWith`, `endsWith`, `dropFirst`, `textContains`,
+`indexOf`, `before`, `after`, `beforeLast`, `afterLast`, `withoutPrefix`,
+`withoutSuffix`, `replace`, `lines`, `unlines`, `isBlank`, `repeat`,
+`repeatFrom`, `padStart`, `padEnd`, `equalsIgnoringCase`
+
+### `number`
+
+Rounding and comparison, parsing text into numbers, roots and powers,
+formatting for display, bitwise operations on the low 32 bits, and a seeded
+pseudo-random generator written in the language.
+
+`floor`, `round`, `decimalOf`, `min`, `max`, `abs`, `clamp`, `quotient`,
+`mod`, `parseDecimal`, `parseWhole`, `exactWhole`, `wholeOr`, `decimalOr`,
+`sqrt`, `power`, `fixedText`, `numberText`, `moneyText`, `groupedText`,
+`groupedDigits`, `groupFrom`, `leadingGroup`, `bitAnd`, `bitOr`, `bitXor`,
+`shiftLeft`, `shiftRight`, `wrappingProduct`, `toUnsigned32`, `nextSeed`,
+`mixA`, `mixB`, `mixC`, `randomBits`, `randomBelow`, `randomDecimal`
+
+### `list`
+
+The largest module. Folds that answer a question about a whole list, taking a
+list apart by position, and building one up.
+
+`listLength`, `listAt`, `first`, `last`, `isEmpty`, `rest`, `copyFrom`,
+`reverse`, `reverseFrom`, `listContains`, `listContainsFrom`, `sumOf`,
+`sumFrom`, `join`, `joinFrom`, `joinAllButLast`, `joinUntil`, `indices`,
+`indicesFrom`, `filled`, `filledFrom`, `anyOf`, `anyFrom`, `allOf`, `allFrom`,
+`countOf`, `countFrom`, `minOf`, `minFrom`, `smallerOf`, `maxOf`, `maxFrom`,
+`largerOf`, `listTake`, `listTakeFrom`, `listDrop`, `insertAt`, `removeAt`,
+`setAt`, `flatten`, `flattenFrom`, `withoutDuplicates`,
+`withoutDuplicatesFrom`, `range`, `rangeFrom`, `zip`, `zipFrom`
+
+`insertAt` and `removeAt` change a list's *length*; `setAt` changes its
+*contents* at an index. Note that indexing is bounds-checked: `listAt` returns
+`Option of T`, not `T`.
+
+### `map`
+
+Length and lookup, keys and values, membership, entries, construction,
+removal, merging.
+
+`mapLength`, `mapAt`, `mapKeyAt`, `keys`, `keysFrom`, `values`, `valuesFrom`,
+`mapContains`, `atOr`, `keyOfOr`, `keyOfFrom`, `entries`, `entriesFrom`,
+`mapOf`, `mapOfFrom`, `mapRemove`, `mapRemoveFrom`, `mapMerge`, `mapMergeFrom`,
+`mapValues`
+
+### `option`
+
+`valueOr`, `isSome`, `isNone`
+
+Three names, because `Option` is eliminated by `when` rather than by function
+calls. These exist for the cases where a `when` would be noise.
+
+### `remote`
+
+`readyOr`, `isReady`
+
+The same shape for `Remote of T`, the type a value takes when it crosses a
+boundary.
+
+### `encode`
+
+`urlEncoded`, `jsonEncoded`, `base64Encoded`, `queryPart`, `queryText`,
+`queryFrom`
+
+### `time`
+
+`clock`, `dayOf`, `civilDateOf`, `civilTimeOf`, `weekdayOf`, `momentOf`, plus
+the records `CivilDate` and `CivilTime`.
+
+These are spelled with the "civil" of the calendar literature rather than as
+`Date` and `Time`, which are the two nouns a program is most likely to want
+for a record of its own — see the naming cost above.
+
+`clock` is worth singling out: it is the one prelude primitive that does
+**not** carry the purity marker, because its result is not a function of its
+arguments. That matters to the compiler's integrity analysis, where a value
+derived from `clock` is Untrusted.
+
+---
+
+## What is not here
+
+The library is deliberately incomplete, and the gaps are recorded rather than
+hidden:
+
+- **No heap or priority queue.** The shortest-path example spends three linear
+  passes where a binary heap would spend one logarithmic one, and says so.
+- **No two-dimensional structure.** A dynamic-programming table has to be
+  built flat, in the order the recurrence visits it.
+
+Both are visible in the [examples](/docs/examples), which is where the
+language's limits are easiest to see.

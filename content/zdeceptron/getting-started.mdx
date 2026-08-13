@@ -1,0 +1,133 @@
+---
+title: Getting started
+navTitle: Getting started
+description: Install the ZDeceptron compiler, write your first program, and run it — with no bundler, no config file, and no package manager.
+order: 0
+---
+
+# Getting started
+
+**ZDeceptron 0.1.0 is released.** One command puts the compiler on your PATH,
+and it needs nothing alongside it — no Node, no package manager, no bundler.
+
+The major version is `0`, which is a promise about change rather than about
+quality: a program is guaranteed to keep compiling across a patch release and
+is not guaranteed to across a minor one. Anything that breaks a program is
+written down in the changelog, with the repair.
+
+## Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DrDrewCain/zdeceptron/main/scripts/install.sh | sh
+```
+
+That fetches the binary for your platform from the GitHub release and checks
+it against the SHA-256 published beside it. Or, with a Rust toolchain:
+
+```sh
+cargo install zdc-cli
+```
+
+The crate is `zdc-cli` and the binary is `zdc` — twenty crates go up with each
+release, because reaching the binary from crates.io means everything it links
+is there too, and cargo fetches them for you.
+
+Either way:
+
+```sh
+zdc --version
+# zdc 0.1.0
+```
+
+Building from source still works and is the same compiler:
+
+```sh
+git clone https://github.com/DrDrewCain/zdeceptron
+cd zdeceptron && cargo build --release
+```
+
+## Your first program
+
+Put this in `hello.zd` — and then type in the box, because this is that
+program, running:
+
+<ZdExample
+  name="hello"
+  code="open"
+  caption="Not a screenshot and not a transcription. zdc compiled examples/hello.zd during this site's build, and the page imported the client.js it emitted."
+/>
+
+There is no string interpolation: a value reaches the page by being named, as
+`Text name` does. One phrasing per construct is a rule the language keeps
+deliberately.
+
+Build it yourself:
+
+```sh
+zdc build hello.zd -o dist
+```
+
+You now have a `dist/` containing exactly this:
+
+```
+boot.js  client.js  index.html  manifest.json  runtime/  styles.css
+```
+
+Open `index.html`. Type in the box; the text below it follows.
+
+`client.js` is an ES module exporting `main(container)`, and `boot.js` is the
+two lines that call it with `#app`. That is the whole of the bundle's
+contract with a page, and it is why the example above can share this one:
+every program mounts into a node you hand it rather than taking over a
+document.
+
+**There is no config file, no bundler entry point and no framework import.**
+The file is the program.
+
+## While you work
+
+`zdc dev` serves the file and rebuilds as you edit, with live reload and
+compile errors rendered on the page rather than hidden in a terminal:
+
+```sh
+zdc dev hello.zd
+```
+
+## The whole command surface
+
+| Command | What it does |
+|---|---|
+| `zdc check` | Resolve every name and typecheck. No output written. |
+| `zdc build` | Compile into a runnable bundle. |
+| `zdc dev` | Serve, rebuilding and reloading as you edit. |
+| `zdc explain` | Print the rule behind a diagnostic code. |
+| `zdc parse` | Print the syntax tree. |
+| `zdc deploy` | Generate everything one platform needs — and report what it cannot do. |
+| `zdc lsp` | Language server, over stdin and stdout. |
+
+## When something is refused
+
+Diagnostics carry a code, and the code is a question you can ask:
+
+```
+Error: Expected a placement after `is`, found `Whole`.
+ 1 │ state votes is Whole starting 0
+   │                ──┬──
+   │                  ╰──── `Whole` is the type, and a placement goes before it
+   │ Help: run 'zdc explain E0101' for the rule
+   │ Note: the line as it would be accepted: state votes is client Whole starting 0
+```
+
+The inline message stays deliberately short — reading a compiler error costs
+about as much as reading source code, so the message carries only what you
+need in order to act. Everything about *why* a rule exists lives one command
+away:
+
+```sh
+zdc explain E0101
+```
+
+## Next
+
+Read [how the language works](/docs/language-tour). It is one idea, and you
+can hold it in your head in about five minutes.

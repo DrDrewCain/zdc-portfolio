@@ -1,0 +1,229 @@
+---
+title: The examples, and what each one is for
+navTitle: Examples
+description: A reading order for the programs in ZDeceptron's examples directory, grouped by what they teach rather than by what the compiler manages — several of them compiled by the real compiler and running on the page.
+order: 2
+---
+
+# The examples, and what each one is for
+
+The programs in [`examples/`](https://github.com/DrDrewCain/zdeceptron/tree/main/examples) all
+pass `zdc check` and produce a bundle from `zdc build`. There is deliberately
+no count here: the directory grows, and a number written into prose is the
+first thing about a page like this to become false.
+
+`STATUS.md` also has a table of these files. It is a different document on
+purpose: it records **what the compiler manages**, file by file, as evidence.
+This one is ordered by **what you want to learn**, which is not the same
+order and rarely the same sentence.
+
+Every example is a working program. Run any of them:
+
+```sh
+zdc build examples/guestbook.zd -o dist
+```
+
+Or read them here, because several are **running on this page**. `zdc build`
+compiled them from the files in that directory while this site was being
+built, and each one is mounted from the `client.js` it emitted. Nothing below
+is a screenshot, a recording, or a reimplementation in JavaScript.
+
+That is worth one more sentence, because it is the reason for the arrangement
+rather than a remark about it. **If one of these examples stops compiling,
+this site stops building.** A page that quotes a language decays quietly: the
+compiler moves, the page does not, and a reader finds out by pasting a snippet
+that no longer works. These pages cannot decay that way without going down
+first.
+
+---
+
+## Start here
+
+Three files, in this order, and you will have seen the whole idea.
+
+| File | What it teaches |
+|---|---|
+| [`hello.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/hello.zd) | The smallest program there is: one piece of `client` state, one view. No build config, no bundler entry point, no framework import — the file is the program. |
+| [`counter.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/counter.zd) | `starting` declares state you set directly; `from` declares state the compiler recomputes. There is no dependency array: `doubled` re-derives because it reads `count`, and the compiler knows that from the signal graph. |
+| [`guestbook.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/guestbook.zd) | The whole point of the language in one file. Three placements, no fetch, no API route, no schema, no migration, no deploy config. You declare where state lives and the compiler derives the network. |
+
+If you read only one, read `guestbook.zd`. It is also the file the `README`
+uses to demonstrate that `apiKey` reaches no client output — a claim checked
+by grepping the built bundle rather than asserted.
+
+It is also the one example on this page that **cannot** run on it, and the
+reason is the thing it teaches. A static site is files on a CDN; `guestbook.zd`
+declares state that lives somewhere else, so the compiler derived a store and
+three endpoints for it, and this page has neither. It is compiled on every
+build anyway, and the file names below are read out of the manifest `zdc`
+wrote rather than typed into this page:
+
+<ZdExample
+  name="guestbook"
+  caption="Nothing in the source names a route, a handler, a schema or a fetch. The three files above are what the compiler produced from the words server and durable, and they are the reason a CDN is not enough."
+/>
+
+## Placement: where state lives
+
+The language's one sentence is that placement is a property of state. These
+are the files where that does the work.
+
+| File | What it teaches |
+|---|---|
+| [`tally.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/tally.zd) | `durable` state that is not a counter. `guestbook.zd`'s `visits` is a `Whole`, and a store that only ever holds numbers is not much of a store; this is the same three-line story with a `Map of Text to Whole`, which is the shape most real durable state has. |
+| [`writing.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/writing.zd) | The `static` placement, running. Content is computed at build time and inlined, and the program emits `rss.xml` into the bundle as a *file* rather than an endpoint. |
+| [`voting-board.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/voting-board.zd) | A live voting board. Every construct in the language appears here — useful as a reference sheet once the basics are familiar, and dense as a first read. |
+
+## Content, routing, and modules
+
+| File | What it teaches |
+|---|---|
+| [`blog.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/blog.zd) | The `static` placement reading **real files off disk** through the `build` capabilities, then rendering the markdown inside the compiler. Verified to build with an empty `PATH`, so no toolchain is consulted. |
+| [`site.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/site.zd) | A multi-page site: five URLs out of one program, one emitted document per URL. A route is a `choice` plus a bijection onto URLs, so `when page` dispatches exactly as any `when` does. |
+| [`content.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/content.zd) | The posts `site.zd` publishes. A module is a unit of *naming* rather than of deployment, so the `static` list a route parameter ranges over can live in its own file. |
+| [`layout.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/layout.zd) | The two components `blog.zd` composes its pages out of — a component in one file, the view that uses it in another. |
+| [`model.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/model.zd) | What a module is. Nothing marks a declaration exportable: every top-level declaration is importable, and the importing file decides what it wants by naming it after `for`. |
+
+`blog.zd` is the one to see running, because what it demonstrates happened
+before the page existed. The posts below were read off disk and the markdown
+turned into elements *by the compiler*, on the machine that built this site;
+by the time anything reached a browser it was already a bundle with the
+content inlined. `static` state has no `Remote` type for exactly this reason —
+nothing crosses at run time, so there is no boundary to be `Remote` about.
+
+<ZdExample
+  name="blog"
+  caption="Composed out of components declared in layout.zd, a different file. A module is a unit of naming rather than of deployment, so a component and the view that uses it need not live together."
+/>
+
+## Composition and the view
+
+| File | What it teaches |
+|---|---|
+| [`components.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/components.zd) | User-defined components and modules. Written *before* the implementation existed, to test the design — building the compiler against it found four things wrong, all listed at the bottom of the file and corrected there. |
+| [`disclosure.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/disclosure.zd) | Components that render, as opposed to components that only describe. |
+| [`page.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/page.zd) | A page a content site would actually serve. Every element in it was unreachable before the element vocabulary opened up — the language could emit `div`, `span`, `h2`, `button` and `input`, so a portfolio could not render a paragraph, a list, an image, or a link. |
+| [`events.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/events.zd) | What a handler receives. `on click` used to emit a zero-argument arrow: a handler could say *that* something happened and never *what*. |
+| [`terminal-help.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/terminal-help.zd) | A multi-line text literal, and what it replaces. Ported from a real `help` command in the portfolio this language is measured against. |
+
+## Collections and the standard library
+
+| File | What it teaches |
+|---|---|
+| [`leaderboard.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/leaderboard.zd) | The pipeline, conditionals, and nested types. Un-writable until the standard library landed. `table at player.name` yields `Option of Whole`, because indexing is bounds-checked — unlike TypeScript's unchecked lookup. |
+| [`todo.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/todo.zd) | The canonical UI benchmark. It is the acceptance test for type declarations, the membership verbs, and the collection and record literals: every one of them appears in it. |
+
+Add an item, tick it, filter it away:
+
+<ZdExample
+  name="todo"
+  caption="The filter is not a query and the counts are not maintained. Both are derived state over the one list, recomputed when it changes because the compiler read the expressions that mention it."
+/>
+
+## Algorithms — programs whose answers are not obvious
+
+These compute rather than demonstrate. Each has a working interface, and each
+was written partly as evidence about what the language cannot yet do. The
+first six are the set `STATUS.md` counts as the algorithm examples;
+`dungeon.zd` is grouped here because it computes too, but it began as a port
+of existing TypeScript rather than as evidence.
+
+| File | What it teaches |
+|---|---|
+| [`graph-traversal.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/graph-traversal.zd) | Depth-first and breadth-first over a declared graph. The first example here whose answer is not obvious from reading it. |
+| [`shortest-path.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/shortest-path.zd) | Dijkstra over a weighted graph — **and the priority queue that is not there.** The cheapest route is not the shortest one, which is why it is a separate file rather than a flag on the last one. |
+| [`queens.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/queens.zd) | A backtracking search over a state space, with the state space on the page. |
+| [`knapsack.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/knapsack.zd) | What to take when the bag is too small for everything: eight items, 256 subsets. |
+| [`edit-distance.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/edit-distance.zd) | Levenshtein distance, the table it needs, and the two-dimensional structure the language does not have. |
+| [`sorting.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/sorting.zd) | Two sorts written in the language, beside the one the language provides, all three over the same twenty numbers. |
+| [`poker.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/poker.zd) | Five-card draw, and a total order over a structured value in a language that refuses comparators. Every hand is folded into one `Whole` so the whole comparison can be `>`. |
+| [`dungeon.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/dungeon.zd) | An accumulator that survives across iterations, ported from real TypeScript. |
+
+Two of them, running. Deal a few hands — one signal moves when you click, and
+the shuffle, both hands, their categories, their scores and the verdict all
+recompute from it:
+
+<ZdExample
+  name="poker"
+  caption="`sort each … by` takes a key, not a two-argument comparator, so a hand cannot be compared to a hand directly. scoreOf folds each one into a single number instead, and the comparison that decides the game is one greater-than."
+/>
+
+Then type in both boxes and watch the whole table redraw. The inputs are
+capped at twelve characters, and the file says why: a dynamic-programming
+table has to be filled in the order the recurrence visits it, and there is no
+way to write into an inner list, so the table is flat.
+
+<ZdExample
+  name="edit-distance"
+  caption="kitten to sitting is 3 — substitute k for s, substitute e for i, add a g. Nothing here is memoised by hand; the table is state derived from the two words."
+/>
+
+## The edges
+
+| File | What it teaches |
+|---|---|
+| [`gauge.zd`](https://github.com/DrDrewCain/zdeceptron/blob/main/examples/gauge.zd) | A `foreign` that owns a DOM node. Every other example renders through elements the compiler knows; this one hands a `<div>` to JavaScript and lets it draw, which is the only way a canvas, a chart, a map or a WebGL scene can exist in a ZDeceptron program. |
+
+Move the slider and the needle animates; hide the gauge and the module's
+`destroy` runs, cancelling its animation frame. `mount` is never called twice,
+so the canvas and its 2D context survive every write — which is the point of
+the handle having an `update` hook rather than the runtime re-running the
+constructor.
+
+<ZdExample
+  name="gauge"
+  caption="The only example here whose drawing code is JavaScript. gauge.js is copied into the bundle by the compiler, and this page loaded it from there — the same file, not a port."
+/>
+
+### One that this page will not run
+
+<ZdExample
+  name="webgl"
+  code="hidden"
+  caption="tree-webgl/webgl.zd drives three.js from ZDeceptron with no JavaScript file of its own. It compiles on every build of this site; it is not mounted, because doing so would mean this page fetching and executing a third party's module. The manifest records the origin, which is how the build step knows to leave it out rather than somebody remembering to."
+/>
+
+---
+
+## What the examples are evidence *against*
+
+Several of these files exist to record a limit rather than a feature, and
+they say so in their own comments. This is the fastest way to learn where the
+language currently stops:
+
+- **`shortest-path.zd`** — there is no heap in the prelude and no way to write
+  one better than a scan, so three linear passes replace a binary heap's one
+  logarithmic one. It says plainly that this is why the graph has seven towns.
+- **`edit-distance.zd`** — a dynamic-programming table has to be *built* in
+  the order the recurrence visits it, and flat, because there was no way to
+  write into an inner list. It caps its inputs at twelve characters for that
+  reason.
+- **`components.zd`** — kept as written-before-the-implementation, with the
+  four things the compiler found wrong listed at the bottom.
+
+For the current boundary in one place, see **Where it stops** in the
+[`README`](https://github.com/DrDrewCain/zdeceptron/blob/main/README.md).
+
+---
+
+## How this page runs them
+
+Every example above was compiled by `zdc build` during this site's build,
+from the file in the compiler's own repository. Two things follow.
+
+**Which ones can run here is not a matter of taste.** Each bundle carries a
+`manifest.json` naming the endpoints the compiler derived, the durable signals
+it found, and the third-party origins the program loads from. A program with
+none of those is self-contained, and a static site can serve it; anything else
+is compiled and then left unmounted, with the manifest's own list of what it
+needs printed in place of the program. So `guestbook.zd`, `tally.zd`,
+`leaderboard.zd`, `voting-board.zd` and `components.zd` cannot run here —
+they have `durable` or `server` state, which is a store and a function host —
+and `tree-webgl/webgl.zd` cannot, because it fetches three.js at run time.
+`site.zd` emits one document per URL rather than a single bundle, so it is a
+site rather than a component and does not fit in a box on a page either.
+
+**If one of them stops compiling, this page does not deploy.** That is the
+whole reason for the arrangement. The alternative — pasting the output of a
+compiler into a Markdown file — produces a page that is correct on the day it
+is written and silently wrong afterwards.

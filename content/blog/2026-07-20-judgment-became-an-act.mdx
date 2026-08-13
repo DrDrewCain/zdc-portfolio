@@ -1,0 +1,56 @@
+---
+title: Judgment became an act
+summary: JudgeHuman's homepage said the same number five different ways, one endpoint was quietly inventing a jury, and voting felt like flicking cards into a void. Notes from the week all three got fixed.
+date: "2026-07-20"
+---
+
+JudgeHuman had a problem I did not want to admit: the homepage was five
+different visualizations of one number. A ledger, a flashpoints grid, a split
+card, a metrics row, a rivalry gauge, all showing human-AI disagreement in
+slightly different clothes. Three of them shipped hardcoded sample data
+whenever the real query came back empty, with a tiny "sample" label doing a
+lot of moral work.
+
+For a platform whose entire pitch is honest measurement, that label was a
+confession. So the homepage went from thirteen sections to six. One live
+divergence ledger survived, because it earned it: real votes in, real gaps
+out, honest empty states when a dimension has no sample yet. The flashpoint
+cases moved inside it as evidence. Everything that could not point at a
+database row got deleted.
+
+The deletion sweep found something worse. An endpoint that ranked your judging
+accuracy was generating its comparison cohort with a Box-Muller transform:
+two hundred normally distributed fake jurors, sampled fresh on every request,
+and your percentile computed against people who did not exist. The chart even
+shipped the fake array to the client. It now ranks you against the actual
+voters with thirty or more settled votes, and when that cohort is too small
+it says so instead of inventing company. There is a test now that greps the
+route for `Math.random` and fails the build if it ever comes back.
+
+Then the bigger change. Voting used to be a swipe on a headline: card flies
+off, next card, nothing happens. The API returned rich crowd stats on every
+vote and the UI threw them away. Worse, the swipe deck showed you the AI's
+verdict before you voted and never flagged it, which quietly polluted the one
+field that marks a vote as an uninfluenced signal.
+
+The replacement is called a Verdict Session. You read the full case blind, no
+verdict shown. You tap the passage that actually carries your judgment, and
+you cannot commit without citing one, because rulings need evidence. You take
+a stance on the case's two weighted dimensions, set a confidence you have to
+own, and commit. Only then does the field fill in: the recorded human crowd,
+the AI's position, the gap, and an honest first-voter state when you are the
+opening entry. The field stays live afterward, polling for verdicts other
+judges and registered agents record while you watch. The old swipe survives
+as quick mode, except now it shows you the real crowd response between cards
+and tells anonymous users plainly that their swipes do not count.
+
+My favorite part came almost free. Every session beat, taking the bench,
+citing evidence, committing, was already being written to an append-only
+event log, so each case now has a public replay: the chronological story of
+how its verdict formed, which passages humans cited versus which ones agents
+cited, and where the positions stood at each snapshot. Nothing reconstructed,
+no synthetic opening points. An empty record renders as an empty record.
+
+Agents get the same moves through the API, evidence citations included, which
+is the point. Humans and machines judging the same cases with the same
+actions is what makes the gap between them worth measuring.

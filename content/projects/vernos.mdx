@@ -1,0 +1,87 @@
+---
+title: Vernos
+oneLiner: An AI decision analysis platform that runs Monte Carlo Tree Search over big life choices, stress tests every option against its downside, and refuses to simulate housing without real market data.
+status: overhauling
+stack: [TypeScript, Next.js, Express, Bun, Turborepo, Redis, Supabase, SwiftUI]
+order: 9
+timeline: Sep to Nov 2025, 159 commits
+---
+
+Ask a language model whether you should take the job in another city and it
+will give you a considered, balanced, fluent answer. The answer has one
+defect, which is that no part of it came from thinking through what actually
+happens next. It is a well-calibrated impression of what a thoughtful response
+looks like.
+
+Vernos is built on the position that the model is the wrong tool for the
+analysis and the right tool for the *translation*. The LLM turns a free-form
+description of a messy human situation into structured options. A simulation
+engine then does the reasoning, because reasoning about sequences of uncertain
+outcomes is a thing we have real algorithms for.
+
+## Why MCTS, and why run it twice
+
+Monte Carlo Tree Search is the method because a life decision has the
+structure MCTS is built for: a branching space of paths, uncertainty at every
+branch, no closed-form evaluation, and a payoff only visible some distance
+down the tree. You cannot enumerate it and you cannot solve it analytically,
+so you sample it many times and let the statistics accumulate where the
+sampling concentrates.
+
+The design decision I would defend hardest is that every option runs
+**twice**: a balanced base case, and a downside-weighted stress case.
+
+This is not a UI nicety. A single expected value hides the shape of the
+distribution, and the shape is the entire question for decisions like these.
+Two options can have identical means while one has a floor you would survive
+and the other has a floor that ends the plan. Most people, correctly, are not
+optimising expectation; they are trying not to be ruined. Running an explicit
+pessimistic pass surfaces that directly, instead of asking someone to intuit
+variance from a single number.
+
+Results are cached in Redis keyed per user, decision, option and mode, so re-
+examining an analysis is instant. Simulations are not cheap and people revisit
+these decisions repeatedly, which is what "high stakes" means behaviourally.
+
+## The part that keeps it honest
+
+The failure mode for a product like this is producing confident output from
+invented inputs. A beautiful simulation of a mortgage that assumed a made-up
+interest rate is worse than no simulation, because it launders a guess into
+something that looks like analysis.
+
+So housing decisions are enriched with real numbers. A dedicated market proxy
+service normalises HUD and FRED data into current mortgage rates, taxes,
+insurance and rent, and the simulation runs against the actual market rather
+than a plausible-sounding constant.
+
+Classification has a safety net for the same reason. The LLM does the initial
+sort into decision types, but heuristics guarantee that the critical
+categories (housing, career, investment) are detected even when the model is
+uncertain. Those are exactly the decisions where the enrichment matters most,
+and they are too important to leave to a classifier having an ambiguous day.
+If the model is unsure whether this is a housing decision, the correct
+behaviour is to check rather than to shrug.
+
+## How it is put together
+
+A Bun and Turborepo monorepo, split along the lines the workload actually
+imposes:
+
+- **Next.js web app**: the interface where a decision is described and read.
+- **Express API**: orchestrates the AI classification and MCTS pipeline.
+- **Background simulation workers on Bull queues**: because a full MCTS run
+  across every option in both modes is far too slow for a request/response
+  cycle. Making simulation a queued job rather than a blocking call is what
+  allows the runs to be thorough instead of budgeted to fit a timeout.
+- **Market proxy service**: isolating the external data providers, so HUD and
+  FRED being slow or down degrades enrichment rather than taking down
+  analysis.
+- **SwiftUI iOS shell**: consuming the same API, which is the return on having
+  built an API rather than a website with endpoints.
+
+The status says *overhauling*. The architecture above is sound and the thing
+that needs work is upstream of it: the quality of the option extraction, and
+how honestly the results communicate their own uncertainty. A simulation that
+is right about the distribution and wrong about the options is still wrong,
+and that is where the remaining difficulty sits.

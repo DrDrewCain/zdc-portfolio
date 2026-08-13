@@ -1,0 +1,236 @@
+---
+title: The window is not the memory
+summary: A million-token context window does not mean a model reasons over a million tokens. It means the cliff arrives later. The most useful finding in the literature is that a well-organised document is harder for a model to search than a shuffled one.
+date: "2026-08-02"
+---
+
+The number on the box is the context window. It is quoted the way RAM used to
+be quoted, and it invites the same reading: this is how much the thing can
+hold, so this is how much it can work with.
+
+That reading is wrong in a specific and measurable way, and the measurement is
+now good enough to design around. The short version is that a larger window
+moves the cliff further out. It does not flatten the curve, and it does not
+remove the cliff.
+
+## What was actually measured
+
+Chroma's context rot work [1] is the study I keep returning to, because it is
+built to remove the excuse. Eighteen models (five from Anthropic, seven from
+OpenAI, three from Google, three Qwen3 checkpoints) run against tasks
+engineered to be *trivial*, so that any degradation cannot be blamed on the
+task getting harder. Every experimental detail and number in this section is
+theirs.
+
+The classic benchmark here is Needle in a Haystack: hide a known sentence in a
+long document, ask for it back. Models do well on it, which is the problem.
+NIAH as usually run is a lexical match: the needle shares wording with the
+question, so the model is doing string retrieval with extra steps. Real work
+never looks like that.
+
+So the study varies the parts that matter:
+
+- **Needle–question similarity.** Eight needles per haystack across a
+  similarity range (0.445 to 0.775 on Paul Graham essays; 0.521 to 0.829 on
+  arXiv papers), so the retrieval target stops being a lexical gift.
+- **Distractors.** Zero, one, or four passages that are topically adjacent to
+  the answer and not the answer.
+- **Haystack structure.** The source text in its original order, versus the
+  same sentences shuffled.
+
+Plus a conversational task (LongMemEval, 306 prompts) run twice (once with a
+focused ~300-token prompt containing only what is relevant, once with the full
+~113k-token history) and a replication task where the model copies back a
+sequence of repeated words with one unique word inserted, scored on normalised
+Levenshtein distance.
+
+That last one deserves a moment. There is no retrieval, no reasoning, and no
+ambiguity. Copy this list. Models fail it as the list gets longer. Claude Opus
+4 outright refused 2.89% of the time, GPT-4.1 2.55%, Qwen3-8B 4.21%, and the
+Gemini family started emitting essentially random output somewhere around five
+to seven hundred words.
+
+You cannot attribute that to task difficulty. There is no difficulty. It is
+input length, on its own, degrading the ability to do a thing the model can
+obviously do.
+
+## Degradation is not a slope
+
+The finding that changed how I build is that the decay is **not linear**.
+
+The mental model most people carry (mine included, before I read this) is a
+gentle slope. Twice the context, slightly worse output, and you trade quality
+for convenience on a smooth curve. If that were true you could pick a point on
+the curve and live there.
+
+It is not a curve. Models hold roughly flat and then fall off, and where the
+edge sits depends on the model, the task, and how confusable the surrounding
+material is. Reported drops run 20–50% between 10k and 100k+ tokens on the
+harder NIAH variants. [1][3]
+
+A cliff you cannot see is worse than a slope, because every test you run below
+it looks fine. Your evals pass at 8k. Production sessions run at 60k. Nothing
+in the 8k result predicts the 60k result, and the failure does not announce
+itself as a context problem, it announces itself as the model getting dumber
+for no reason, on a Tuesday.
+
+## The part that inverts your instincts
+
+Here is the result I did not believe on first read.
+
+Take a haystack and shuffle its sentences into random order, destroying every
+bit of logical flow while keeping the topic. Models get **better** at finding
+the needle. Coherent structure hurt performance, consistently, across all
+eighteen models. [1]
+
+Sit with that. The well-organised version of the document is the harder
+version.
+
+The explanation, once you accept it, is not mysterious, and it is the reading
+the secondary literature has settled on: coherent text creates more plausible
+distractors, because adjacent passages share terminology, concepts and
+patterns. [3] That is the definition of good writing and it is also the
+definition of a good distractor. A logically flowing document is a document
+optimised for producing plausible near-misses. Shuffling it breaks the local
+consistency that made the wrong answers look right.
+
+The practical reading is uncomfortable for anyone who has spent effort making
+their material tidy: **a well-organised codebase is harder for a model to
+search than a disorganised one**, because every neighbouring module is a
+credible wrong answer. The similarity that makes your architecture legible to
+a human is exactly the similarity that makes retrieval ambiguous to a model.
+
+This is the same shape as something I wrote about while optimising GPU
+kernels: the schedule that wins on one operator is actively wrong on the next,
+and the only way through is to look at who reads what. Here the inversion is
+that the property you were taught to optimise for is load-bearing in the wrong
+direction.
+
+## Where long-horizon agents actually break
+
+The agent literature converges on a compatible answer from the other side.
+
+The interesting result is that when you take a long-horizon run that failed,
+extract the individual subproblems, and hand them to the same model fresh, it
+solves them at roughly its short-horizon benchmark rate. **The per-step
+reasoning is intact.** What degrades is state handling across time:
+subplanning errors and catastrophic forgetting, accumulating as the run gets
+longer. [4]
+
+So the failure is not that the model got worse at thinking. It is that by step
+forty the context contains thirty-nine steps of transcript, most of which is
+resolved, superseded, or noise, and the model is now doing needle-in-a-
+haystack against its own history: the *coherent* kind of haystack, where every
+previous attempt is a plausible-looking wrong answer about what to do next.
+
+More recent work on long-horizon search sharpens the failure mode into
+something more specific than "gets worse". Across four open models and three
+benchmarks, extensive context caused models to **give up outright or answer
+prematurely from insufficient evidence**, with the effect worsening as context
+grew. [2] That is not a degradation in capability, it is a degradation in
+*persistence*: the model abandons a search it could still have completed.
+Which matches the subjective experience of watching a long agent run go quiet
+and settle for something mediocre, and is a much easier thing to instrument
+for than "quality".
+
+Drew Breunig's taxonomy is the one everybody has borrowed, and it names four
+distinct failure modes rather than one: **poisoning**, where a hallucination
+enters the context and then gets referenced repeatedly; **distraction**, where
+the context grows long enough that the model over-focuses on it and neglects
+what it learned in training; **confusion**, where superfluous material in the
+context gets used and degrades the response; and **clash**, where newly
+accrued information conflicts with what is already in the prompt. [5] The
+remediations map onto four verbs (write, select, compress, isolate) and the
+discipline is mostly deciding which verb applies where.
+
+The numbers on doing this deliberately are not marginal. Anthropic reports
+that on an internal agentic-search evaluation, context editing alone improved
+performance by 29%, and context editing combined with a memory tool by 39%. In
+a 100-turn web search evaluation, context editing also cut token consumption
+by 84% while letting agents finish workflows that would otherwise have died of
+context exhaustion. [6] That is a larger delta than most model upgrades,
+obtained by throwing tokens away.
+
+The most interesting structural proposal remains ACE (Agentic Context
+Engineering, from SambaNova with Stanford and UC Berkeley) which stops
+treating context as a static prompt and splits the job three ways: a Generator
+that produces reasoning trajectories, a Reflector that analyses successes and
+failures and extracts concrete insights, and a Curator that organises those
+insights into structured, incremental updates: contexts as *evolving
+playbooks* rather than static prompts. The context becomes a thing the system
+maintains rather than a thing you wrote once. Reported gains are +10.6% on
+agent benchmarks and +8.6% on the finance domain, and on the AppWorld
+leaderboard it matched the top-ranked production agent while using a smaller
+open-source model. [7]
+
+## What I changed
+
+Three things, all of them boring.
+
+**I stopped treating window size as headroom.** The budget is not the window.
+The budget is however much material I can keep genuinely relevant, which is
+far smaller and has to be actively defended. Everything that enters context
+should have earned its place.
+
+**I started compacting on purpose rather than on overflow.** Waiting for the
+window to fill means compaction happens at the worst possible moment, under
+the most pressure, with the least room to be careful. Summarising a finished
+sub-task while it is still fresh costs one cheap call and removes a whole
+region of confusable history.
+
+**I stopped assuming clean structure would help retrieval.** It helps me. For
+the model, near-identical neighbours are the problem, and the fix is
+discriminating detail (what makes this module *different*) rather than more
+consistency.
+
+None of this is exotic. It is the same lesson as the one I ran into with a
+triangulation pipeline that quietly dropped every continent: the components
+were each correct, and the defect lived in the seam between what one produced
+and what the next assumed. Here the seam is between "the model can accept a
+million tokens" and "the model can reason over a million tokens", and those
+are simply not the same claim.
+
+The window is a capacity. The memory is a design problem, and it is yours.
+
+## References
+
+Nothing above is my measurement. Sources in order of first use, with dates, so
+you can judge how stale each one is:
+
+**[1]** Chroma Research, *Context Rot: How Increasing Input Tokens Impacts
+LLM Performance* (July 2025). The eighteen-model study: NIAH variants,
+needle–question similarity ranges, distractor conditions, the shuffled-vs-original
+haystack result, LongMemEval, the repeated-words task and the refusal rates.
+`https://www.trychroma.com/research/context-rot`
+
+**[2]** Xia, Wang, Huang & Liu, *Diagnosing and Mitigating Context Rot in
+Long-horizon Search*, arXiv:2606.29718 (29 June 2026). Four open models, three
+benchmarks, seven context-management strategies; finds that extensive context
+causes models to give up outright or answer prematurely.
+`https://arxiv.org/abs/2606.29718`
+
+**[3]** *Context Rot: Why LLMs Degrade as Context Grows*, Morph. Secondary
+write-up, source of the "coherent text creates more plausible distractors"
+reading of Chroma's structure result.
+`https://www.morphllm.com/context-rot`
+
+**[4]** Wang, Bai, Sun, Wang, Zhang, Hu, Schroder, Mutlu, Song & Nowak, *The
+Long-Horizon Task Mirage? Diagnosing Where and Why Agentic Systems Break*,
+arXiv:2604.11978 (13 April 2026). The result that subproblems extracted from
+failed long-horizon runs are solved at short-horizon rates.
+`https://arxiv.org/abs/2604.11978`
+
+**[5]** Drew Breunig, *How Long Contexts Fail* (22 June 2025). The
+poisoning / distraction / confusion / clash taxonomy, quoted closely above.
+`https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html`
+
+**[6]** Anthropic, *Managing context on the Claude Developer Platform*. The 29%,
+39% and 84% figures.
+`https://claude.com/blog/context-management`
+
+**[7]** Zhang, Hu, Upasani, Ma, Hong, Kamanuru, Rainton, Wu, Ji, Li, Thakker, Zou
+& Olukotun, *Agentic Context Engineering: Evolving Contexts for Self-Improving
+Language Models*, arXiv:2510.04618 (6 October 2025, revised 29 March 2026).
+Generation / reflection / curation, contexts as evolving playbooks, and the
++10.6% agent and +8.6% finance figures.
+`https://arxiv.org/abs/2510.04618`

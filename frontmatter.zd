@@ -1,0 +1,76 @@
+# frontmatter.zd — reading a post's header at build time.
+#
+# WHY THIS FILE EXISTS AT ALL. `examples/blog.zd` in the compiler's own
+# repository writes its post titles out by hand, and says why:
+#
+#   > Front matter is a second grammar inside the file, and parsing one
+#   > needs text operations the language does not have — there is no
+#   > `split`, no `first line`, and `at` over `Text` is not defined. So the
+#   > three are written out here… That is a missing library, not a missing
+#   > capability.
+#
+# The library is no longer missing. `split`, `lines`, `before`, `after`,
+# `trim`, `startsWith`, `withoutPrefix` and `withoutSuffix` are all in
+# `text.zd` now, so the header parses in the language and a post's title
+# comes off the post. That comment is the one thing about this that was
+# out of date rather than untrue — it was true when it was written.
+#
+# WHAT A HEADER IS, HERE. Three fences and the fields between them:
+#
+#     ---
+#     title: The ruler is made of people
+#     summary: "…"
+#     date: "2026-08-02"
+#     ---
+#     the body
+#
+# This is not a YAML parser and does not pretend to be one. It reads
+# `key: value` off a line, trims it, and takes surrounding quotes off. No
+# nesting, no lists, no block scalars, no anchors — every one of which is
+# a thing the portfolio's front matter does not contain, and the day it
+# does, this refuses to guess rather than reading half of it.
+
+# Everything after the opening fence.
+function afterOpeningFence of raw
+    give after with value is raw, delimiter is "---"
+
+# The header: between the opening fence and the closing one.
+function headerOf of raw
+    give before with value is (afterOpeningFence of raw), delimiter is "---"
+
+# The body: everything after the closing fence. A file with no header at
+# all yields the whole file, because `after` of a delimiter that is not
+# there gives the text unchanged — which is the right answer for a plain
+# markdown file with no front matter.
+function bodyOf of raw
+    give after with value is (afterOpeningFence of raw), delimiter is "---"
+
+# --- reading one field -----------------------------------------------------
+
+# The first line whose key matches. `""` when there is none, which is what
+# makes a missing field an empty title rather than a build that stops.
+function lineFor with items, key, index
+    when listAt with value is items, index is index
+        None
+            give ""
+        Some with line
+            if startsWith with value is (trim of line), prefix is (key + ":")
+                give line
+            give lineFor with items is items, key is key, index is index + 1
+
+# `after` the *first* colon, so a value containing one — and the summaries
+# here do — keeps everything past it.
+function unquoted of value
+    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "\""), suffix is "\""
+
+function fieldOf with raw, key
+    give unquoted of (trim of (after with value is (lineFor with items is (lines of (headerOf of raw)), key is key, index is 0), delimiter is ":"))
+
+# --- the slug --------------------------------------------------------------
+#
+# `content/blog/the-ruler-is-made-of-people.mdx` → `the-ruler-is-made-of-people`.
+# `afterLast` and `beforeLast` rather than a split, because a path has one
+# last separator and one last dot and both are the ones that matter.
+
+function slugOf of path
+    give beforeLast with value is (afterLast with value is path, delimiter is "/"), delimiter is "."

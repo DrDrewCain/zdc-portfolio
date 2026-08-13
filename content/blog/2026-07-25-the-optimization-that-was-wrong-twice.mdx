@@ -1,0 +1,140 @@
+---
+title: The optimization that was wrong twice
+summary: Shared memory is the answer everyone teaches for GEMM on a GPU. I wrote that version, benchmarked it, and it lost to the naive-looking one.
+date: "2026-07-25"
+---
+
+Machine Learning Hardware and Systems at Cornell grades one assignment on a
+stopwatch. You implement four DNN primitives in TVM, everyone's submission runs
+on the same hardware, and the runtimes get ranked. AutoTVM is banned, so there
+is no autotuner to hide behind: you pick every split, every reorder, every
+memory placement yourself, by reading the generated IR and reasoning about who
+reads what.
+
+The thing I actually learned was not a technique. It was that the technique
+everyone teaches for this exact problem was wrong for my version of it, and
+that I only found out because the grade came from a measurement instead of a
+rubric.
+
+## The textbook answer
+
+A naive matrix multiply on a GPU is bound by memory, not arithmetic. Each
+thread computes one output element, and to do that it walks a row of A and a
+column of B, reading both from global memory one value at a time. A global read
+costs on the order of four hundred cycles. The multiply costs one. The kernel
+spends essentially all of its life waiting.
+
+The fix every tutorial reaches for is shared memory. Threads in a block are
+reading overlapping data, so instead of each of them fetching from DRAM
+independently, the block cooperatively stages a tile of A and a tile of B into
+shared memory once, synchronises, and then everyone reads from there at roughly
+thirty cycles instead of four hundred.
+
+This is correct. It is the standard answer because it is usually right. I wrote
+it, and it was much faster than naive.
+
+Then I wrote a version that never touches shared memory at all, and that one
+was faster still.
+
+## What actually won
+
+The schedule that benchmarked fastest looks like this, stripped of the setup:
+
+```python
+y_outer, y_inner = s[C].split(y, factor=64)
+x_outer, x_inner = s[C].split(x, factor=64)
+s[C].bind(x_outer, te.thread_axis("blockIdx.x"))
+s[C].bind(y_outer, te.thread_axis("blockIdx.y"))
+
+k_outer, k_inner = s[C].split(k, factor=16)
+
+y_inner_out, y_inner_in = s[C].split(y_inner, factor=4)
+x_inner_out, x_inner_in = s[C].split(x_inner, factor=4)
+s[C].reorder(k_outer, y_inner_out, x_inner_out, k_inner, y_inner_in, x_inner_in)
+s[C].bind(y_inner_out, te.thread_axis("threadIdx.y"))
+s[C].bind(x_inner_out, te.thread_axis("threadIdx.x"))
+
+AS = s.cache_read(A, "local", [C])
+BS = s.cache_read(B, "local", [C])
+s[AS].compute_at(s[C], k_outer)
+s[BS].compute_at(s[C], k_outer)
+
+s[C].vectorize(x_inner_in)
+```
+
+The line that matters is `cache_read(A, "local", [C])`. Local, not shared. The
+operands get staged in registers, private to a single thread, and no other
+thread can see them.
+
+That should be worse. Registers are per thread, so nothing is being shared and
+the same value may well be loaded by several threads independently. The whole
+argument for shared memory is that this duplication is waste.
+
+It is waste. It is just cheaper than the alternative, because of the two splits
+above it.
+
+Each thread does not own one output element. It owns a 4 by 4 patch of the
+output, sixteen elements. So every value it pulls into a register gets used
+sixteen times before it is discarded, and the `compute_at(s[C], k_outer)` means
+it pulls that working set once per k tile rather than once per multiply. The
+reuse that shared memory was supposed to buy me across threads, register tiling
+already bought me inside a single thread.
+
+And once the reuse is already paid for, shared memory stops being free. It
+requires a barrier. Every thread in the block has to arrive before any of them
+can read the staged tile, which means the block runs at the speed of its
+slowest thread, repeatedly. When threads genuinely need each other's data that
+is a fine trade. When each one is mostly chewing on its own 4 by 4 patch, it is
+a synchronisation tax on a benefit you already have.
+
+## The second time
+
+I would have written this off as a quirk of GEMM if it had not happened again.
+
+The 1D convolution on GPU got the same treatment, because by then staging into
+shared memory was a reflex. That version measured 0.131 ms. The version that
+kept the working set in per-thread local memory measured 0.057 ms. Same
+operator, same hardware, same reasoning, and the reflex lost by more than a
+factor of two.
+
+Twice is a pattern. The rule I actually walked away with is narrower and more
+useful than "use shared memory for GEMM":
+
+> Shared memory pays for itself when threads read the same values. Work out
+> whether yours do before you reach for it.
+
+That question has an answer you can derive. It is not a matter of taste. But it
+is also not a property of the operator, which is what the tutorial framing
+implies. It is a property of the operator *and the schedule you already chose*
+for it. Tile per-thread work aggressively enough and you can optimise your way
+out of needing the optimisation everyone recommends.
+
+## The numbers
+
+Four primitives, baseline against final:
+
+| Primitive | Baseline | Optimized | Speedup |
+| --- | --- | --- | --- |
+| GEMM, GPU | 85.21 ms | 3.33 ms | 25.6x |
+| 2D depthwise separable convolution, GPU | 0.428 ms | 0.054 ms | 7.9x |
+| 1D convolution, GPU | 0.405 ms | 0.057 ms | 7.1x |
+| 1D convolution, CPU | 0.672 ms | 0.087 ms | 7.7x |
+
+The CPU convolution is worth a note of its own, because it is the one case
+where the progression is legible in stages rather than in one jump. Unoptimised
+it ran at 0.672 ms. Splitting the output and reduction axes and reordering them
+so the innermost loop walks contiguous memory took it to 0.203 ms. Caching the
+intermediate and using `compute_at` to move the producer inside the consumer's
+loop nest, so the padded intermediate never round-trips through memory at all,
+took it to 0.087 ms. Three ideas, each roughly halving the previous one, none
+of them changing a single arithmetic operation.
+
+That is the part that stays with me. Across all four kernels the arithmetic
+never changed. Every version computed exactly the same products and sums in
+exactly the same quantity. The entire 25.6x is a story about which level of the
+memory hierarchy the operands were sitting in when they were needed, and the
+fastest answer to that was not the one I had been taught to give.
+
+The submission came first in the class. I am reasonably sure the reason is not
+that I knew more techniques than anyone else, but that the grade was a number,
+so I kept measuring after the point where the schedule already looked correct.

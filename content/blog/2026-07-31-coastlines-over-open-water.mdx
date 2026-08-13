@@ -1,0 +1,126 @@
+---
+title: Coastlines over open water
+summary: Simplifying a coastline preserves its shape to within a tolerance you choose. It does not preserve the one property the next stage of the pipeline required, and nothing in the pipeline was in a position to notice.
+date: "2026-07-31"
+---
+
+Gridwright draws a map without asking the network for one. No tiles, no
+basemap service, no key in an environment variable — the continents ship inside
+the bundle as triangles, a hundred and forty-three kilobytes of them, and the
+renderer fills the land the same way it fills anything else.
+
+Getting there means turning polygons into triangles, because a GPU has no
+opinion about polygons. The standard method is ear clipping: find three
+consecutive vertices whose triangle contains no other vertex of the ring, cut it
+off, repeat. It is the first algorithm anyone reaches for and it is the right
+one here.
+
+Ear clipping has a precondition. The ring must be *simple* — it must not cross
+itself. That sentence is in every description of the algorithm, and I read it,
+and I still spent an evening on a map that drew coastlines over open water.
+
+## The symptom
+
+The first bundled map was wrong in a way that was easy to see and hard to
+interpret. Small islands rendered perfectly. Every continent was missing —
+not misplaced, not malformed, simply absent, so the coastlines drew as thin
+outlines over the same blue as the ocean.
+
+The obvious reading is that something breaks at size. Big rings have more
+vertices, more vertices means more of whatever is going wrong, and the fix is
+somewhere in the triangulator's handling of large inputs. I spent real time
+inside the triangulator on that theory. The triangulator was fine.
+
+## What simplification actually promises
+
+Natural Earth's 10m coastlines are more detail than a browser needs, so the
+pipeline simplifies first, with Douglas–Peucker. Keep the two endpoints of a
+span, find the point furthest from the chord between them, and if that distance
+is under tolerance, discard everything in between; otherwise split at that point
+and recurse into both halves.
+
+What this guarantees is a bound on displacement: no point of the output sits
+further than the tolerance from the input. That is a strong and useful promise
+and it is the one everybody quotes.
+
+Here is what it does not promise. Douglas–Peucker judges each point against the
+chord its own neighbours span. It never asks whether that chord crosses some
+other part of the same ring. Where a coastline runs back close to itself — a
+peninsula beside a bay, a fjord, an isthmus — a chord that is a perfectly legal
+shortcut across one stretch can pass straight through another stretch a few
+hundred metres away.
+
+I measured it on the Afro-Eurasia part, the largest single ring in the dataset:
+
+```
+source     81,512 points     0 self-crossings
+simplified 14,194 points    75 self-crossings
+```
+
+Zero to seventy-five. The input was simple, the output was not, and the
+simplifier did nothing wrong — it delivered exactly the guarantee it makes.
+Simplicity was never among them.
+
+A ring that crosses itself has no ear decomposition. There is no set of ears
+that clips it down to nothing, so the triangulator ran out of candidates with
+work remaining and dropped the shape. Every continent is large enough and
+convoluted enough to have at least one of these. Small islands are convex
+enough that they never do. That is the whole size correlation, and it is not
+about size.
+
+## The fix, and where it must not be applied
+
+`repair()` finds each crossing and cuts out the smaller of the two loops it
+creates — the sliver the simplifier folded over — leaving a ring that is simple
+and still within tolerance of the original. Where excising that loop would cost
+more than a quarter of the shape, it refuses and reports instead, because
+deleting half a landmass to satisfy a triangulator is not a repair.
+
+Finding the crossings has its own cost. A fourteen-thousand-point ring is a
+hundred million segment pairs if you test them naively, so crossings are found
+through a uniform grid over segment bounding boxes.
+
+The part I did not anticipate is that this must run on *some* layers and not
+others. A river crossing another river is not a defect. Borders meet; rivers
+join; the crossing is the geography. Running the repair over those layers would
+cut real geometry out to fix a problem that does not exist there. So it runs on
+the filled layers only — the ones that get triangulated, which are exactly the
+ones where simplicity is a requirement rather than an accident.
+
+## The log line that was in the wrong place
+
+The pipeline had been telling me all along. It printed a count of shapes that
+defeated triangulation. It read:
+
+```
+7 of 6838 shapes defeated triangulation
+level 1 land
+```
+
+The count was printed *before* the heading of the layer it belonged to. So the
+line that meant "level 0 lost seven shapes" sat directly above the words
+`level 1 land`, and every time I scanned that output I read it as a note about
+the layer underneath it, where seven strays out of thousands is unremarkable
+noise. The message that said every continent was missing was on screen for the
+entire evening, correctly computed, attached to the wrong heading.
+
+That is a worse bug than the geometry one. The geometry bug was a real gap
+between two components' assumptions, the kind that is genuinely difficult to
+see coming. The logging bug took a correct diagnostic and made it argue for the
+opposite conclusion.
+
+## What I took from it
+
+The lesson is not "read the preconditions", though I had in fact read them. It
+is that a precondition is a claim about a *contract between two stages*, and
+neither stage is positioned to check it. The simplifier cannot know that its
+consumer needs simple output; it was written years before this pipeline and
+honours its own contract exactly. The triangulator cannot fix an input it was
+handed. Both components were correct in isolation. The defect lived in the seam,
+which is where they usually live, and which is the one place no unit test looks.
+
+There is now an assertion between them. It costs a grid build and a pass over
+the segments, on a pipeline that runs offline and produces a file, and it turns
+a class of silent wrong output into a loud failure. That trade is almost always
+worth taking, and it is easier to see that after you have shipped a map of the
+Atlantic with no Europe in it.

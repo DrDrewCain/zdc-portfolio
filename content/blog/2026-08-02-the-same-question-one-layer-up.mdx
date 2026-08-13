@@ -1,0 +1,234 @@
+---
+title: The same question, one layer up
+summary: Hand-scheduling GPU kernels taught me that the win is never in the arithmetic, it is in which level of memory the operands are read from. LLM serving turns out to be the same question asked about a cache that did not exist when I learned it.
+date: "2026-08-02"
+---
+
+A while ago I spent a semester hand-scheduling deep learning primitives in
+TVM, with the autotuner banned, which meant every tile size and memory scope
+was a decision someone had to justify. The thing I came away with was narrower
+than I expected and more portable than I expected: **the arithmetic is never
+the problem**. Two schedules performing byte-identical multiply-accumulates
+can differ by 25×, and all of that difference is in which level of memory the
+operands came from and how many times each one was fetched.
+
+I have been reading through the LLM serving literature, and it is the same
+question. The cache is different and the numbers are much bigger, but the
+shape of the reasoning is one I already own, which is a nice thing to
+discover.
+
+## Decoding is a bandwidth problem wearing a compute costume
+
+Start with why serving is hard at all, because it is not the obvious reason.
+
+Generating a token requires reading the model's weights and running attention
+over everything generated so far. The naive version recomputes the keys and
+values for the whole prefix on every single step, which is quadratic and
+absurd, so every real system keeps them, the KV cache. Now each step reads the
+cache instead of rebuilding it.
+
+That trade is obviously correct and it relocates the bottleneck rather than
+removing it. During decode you are producing *one token at a time*. The
+arithmetic per step is trivial. What is not trivial is that you must stream
+the weights and the entire KV cache through the memory system to produce that
+one token.
+
+The arithmetic intensity (useful FLOPs per byte moved) is terrible. The GPU is
+mostly idle, waiting. This is exactly the regime the naive GEMM was in: every
+thread reading operands straight from DRAM, the hardware starved not for
+compute but for delivery.
+
+And the cache is enormous. A 70B model at 8K context runs roughly 20GB of KV
+cache *per request*; a batch of 32 is around 640GB. [1] The thing you are
+streaming dwarfs the thing you are computing.
+
+The 2026 survey literature has stopped treating this as an implementation
+detail and started treating the KV cache as **a first-order memory object in
+LLM serving**, analysed along four axes (locality, lifetime, ownership and
+substrate) across more than thirty production systems. [2] That framing is the
+tell. When something gets its own memory taxonomy, it has become the thing the
+system is built around.
+
+## The waste was not in the algorithm, it was in the allocator
+
+Here is the part that delighted me, because it is not an ML result at all.
+
+Early serving systems allocated KV cache contiguously. A request arrives, you
+do not know how long the output will be, so you reserve enough for the maximum
+sequence length and generate into it. Simple, and it makes the attention
+kernel easy to write.
+
+It also wastes 60–80% of the cache. [3] Three separate ways:
+
+- **Internal fragmentation**: you reserved 8K tokens and the reply was 200.
+- **Reservation waste**: the slots you have reserved but not yet written are
+  unusable by anyone else, for the whole life of the request.
+- **External fragmentation**: variable reservation sizes leave holes between
+  allocations that no incoming request fits into.
+
+Anyone who has written an allocator recognises all three immediately, and
+recognises the fix, because operating systems solved this in the 1960s. Stop
+requiring contiguity. Introduce a layer of indirection.
+
+PagedAttention splits the KV cache into fixed-size pages (commonly 16 tokens)
+allocated on demand, with a block table mapping a sequence's logical token
+positions to wherever its pages physically live. The attention kernel is
+rewritten to gather through that table instead of walking a contiguous span.
+
+The waste drops to **under 4%**, and the residue is bounded and explicable: at
+a block size of 16, the most you can waste on a sequence is 15 tokens in its
+final partly-filled page. [3] That is it. Reservation waste goes to zero
+because you never reserve ahead. External fragmentation goes to zero because
+every page is the same size, which is the entire reason paging beat
+segmentation in the first place.
+
+The memory you free up becomes batch size (reported 2–4× larger batches on the
+same hardware [3]) and batch size on a bandwidth-bound workload is close to
+free throughput, because the weights you stream get amortised across more
+sequences.
+
+There is a bonus that falls out of the indirection and was not the point:
+sequences that share a prefix can share pages. A system prompt used by a
+thousand concurrent requests exists once, with a reference count, in the way
+any copy-on-write scheme would do it.
+
+## Then stop wasting the arithmetic you already paid for
+
+Paging fixes the storage. It does not fix the fact that generating N tokens
+means N sequential passes over the weights.
+
+Speculative decoding attacks that directly, and the trick is lovely. Run a
+small cheap draft model to propose the next few tokens. Then run the large
+model over that proposed sequence **in a single forward pass**, checking each
+position against what it would have produced itself. Accept the longest
+correct prefix, discard the rest, repeat.
+
+The critical property is that verification is parallel where generation is
+serial. Checking five proposed tokens costs about the same as generating one,
+because you were bandwidth-bound and not compute-bound: you had spare
+arithmetic and no spare bandwidth, and verification spends the surplus. Output
+is provably identical to what the target model would have emitted alone; this
+is an acceleration, not an approximation.
+
+Two developments make it broadly usable. Intel Labs and the Weizmann Institute
+presented three algorithms at ICML 2025 that decouple speculative decoding
+from vocabulary alignment, so a draft model no longer has to share a tokeniser
+with its target, any small model can accelerate any large one, losslessly,
+with off-the-shelf weights and no retraining. Their SLEM algorithm reports up
+to 2.8× over autoregressive decoding on summarisation, programming and long-
+context tasks, and the methods have since landed in Hugging Face Transformers.
+[4][5] And SpecInfer generalises the single proposed sequence into a *tree* of
+candidate continuations verified together, so one pass can accept a branch
+rather than a line. [6]
+
+The wrinkle, which the survey work flags and I would not have anticipated, is
+that speculation and paging interact badly: accepting a variable-length prefix
+each round produces **non-linear KV trajectories**, so the cache does not grow
+one token at a time any more and the allocator has to cope with speculative
+pages that may be discarded. [2] Two optimisations that are clean in isolation
+make each other's bookkeeping harder, which is, again, the seam being where
+the difficulty lives.
+
+## Making the cache smaller instead of just tidier
+
+The third front is compressing the cache itself, and this is where the TVM
+lesson repeats most exactly.
+
+The obvious approach is per-token eviction: score tokens by attention weight,
+drop the low scorers. It works until it doesn't, because tokens are not
+independent, evicting scattered individual tokens shreds the structure that
+made the remaining ones interpretable.
+
+ChunkKV changes the unit. Compress *semantic chunks* rather than isolated
+tokens, on the reasoning that a coherent span retained whole is worth more
+than the same token budget scattered across a document. RocketKV stages it
+instead: coarse-grained eviction first to cheaply remove the clearly
+irrelevant, then fine-grained compression on the survivors, so the expensive
+scoring only ever runs on a reduced set. [6] The ACL 2026 survey organises
+this whole space along three behavioural axes (temporal (when the cache is
+accessed), spatial (where it is stored) and structural (how it is
+represented)) which is a better map than the usual list of technique names.
+[6]
+
+Alongside that, FP8 has settled in as the default numeric format on Hopper-
+class hardware, the point on the quality/throughput curve people actually
+ship, halving cache bytes against FP16 for a quality cost that is usually
+unmeasurable at the application level. [1]
+
+## The thing that transfers
+
+The reason I wanted to write this down is the symmetry.
+
+In the TVM work, the textbook answer for GEMM was to stage tiles in shared
+memory so a whole block could read them. I wrote that version. The version
+that actually benchmarked fastest cached to `local` scope instead, keeping the
+working set in registers, because with a 4×4 register tile each thread was
+mostly reading its own values and shared memory's synchronisation cost was
+buying nothing. The right answer depended entirely on **who reads what**.
+
+Every technique above is the same question about a cache one layer up:
+
+- Paging asks *who reads this page*, and the answer "several sequences with a
+  shared prefix" is what makes deduplication possible.
+- Speculative decoding asks *what else could be in flight*, and exploits the
+  gap between what the hardware can compute and what it can deliver.
+- Chunked compression asks *what is this token worth to its neighbours*, and
+  answers that it is worth more as part of a span than alone.
+
+None of it is about the model. The model is a fixed function; the arithmetic
+is already decided. All of the engineering lives in the memory hierarchy,
+exactly where it lived when the thing being scheduled was a convolution on a
+single GPU, and exactly where I suspect it will keep living.
+
+The stopwatch is bigger now. The question has not changed.
+
+## References
+
+Sources in order of first use, dated, because half of this field's numbers go
+stale within a year:
+
+**[1]** Xu, Khaira & Singh, *KV Cache Optimization Strategies for Scalable and
+Efficient LLM Inference*, arXiv:2603.20397 (20 March 2026). Cache sizing figures
+and the FP8 practice note.
+`https://arxiv.org/abs/2603.20397`
+
+**[2]** Li, Wang & Chen, *From Tensor Buffer to Distributed Memory Hierarchy: A
+Survey of KV Cache Management for LLM Serving*, arXiv:2607.02574 (30 June 2026).
+The KV cache as a first-order memory object; the locality / lifetime / ownership
+/ substrate axes; the non-linear KV trajectories that speculative decoding
+creates. Covers more than thirty KV-management systems.
+`https://arxiv.org/abs/2607.02574`
+
+**[3]** Kwon, Li, Zhuang, Sheng, Zheng, Yu, Gonzalez, Zhang & Stoica, *Efficient
+Memory Management for Large Language Model Serving with PagedAttention*,
+arXiv:2309.06180 (12 September 2023). The original vLLM paper: the 60–80% waste
+figure, the sub-4% result, block size 16, and the batch-size gains. Old by this
+field's standards and still the primary source for the mechanism.
+`https://arxiv.org/abs/2309.06180`
+
+**[4]** *Accelerating LLM Inference with Lossless Speculative Decoding Algorithms
+for Heterogeneous Vocabularies*, Intel Labs and the Weizmann Institute of
+Science, ICML 2025. Three lossless algorithms removing the shared-vocabulary
+constraint; SLEM's 2.8× figure.
+`https://icml.cc/virtual/2025/poster/43675`
+
+**[5]** Intel Newsroom, *Intel and Weizmann Institute Speed AI with Speculative
+Decoding Advance*. The plain-language write-up and the Hugging Face
+Transformers integration.
+`https://newsroom.intel.com/artificial-intelligence/intel-weizmann-institute-speed-ai-with-speculative-decoding-advance`
+
+**[6]** Jiang, Yang, Zhang & Liu, *Towards Efficient Large Language Model
+Serving: A Survey on System-Aware KV Cache Optimization*, ACL 2026 Findings
+(University of Melbourne, Huazhong University of Science and Technology). Companion repository. Source for the SpecInfer, ChunkKV and RocketKV
+descriptions and the temporal / spatial / structural taxonomy.
+`https://github.com/jjiantong/Awesome-KV-Cache-Optimization`
+
+Further reading, not quoted above:
+
+**[7]** *SmallKV: Small Model Assisted Compensation of KV Cache Compression for
+Efficient LLM Inference*, arXiv:2508.02751 (August 2025, revised January 2026).
+`https://arxiv.org/abs/2508.02751`
+
+**[8]** *DSpark: Confidence-Scheduled Speculative Decoding with
+Semi-Autoregressive Generation*, arXiv:2607.05147 (July 2026).
+`https://arxiv.org/abs/2607.05147`

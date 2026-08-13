@@ -296,19 +296,19 @@ view title is "2048"
         if board.score > best
             set best to board.score
 
-    Column class is "page", font is "system", align is "center", padding is 24, gap is 18
+    Column class is "t48", font is "system", align is "center", padding is 24, gap is 18
 
         Row gap is 16, align is "center", width is 340
-            Heading "2048", class is "brand"
+            Heading "2048", class is "t48-brand"
             Row grow is 1
-            Column class is "chip", padding is 10, radius is 8, align is "center", minWidth is 84
-                Text "SCORE", class is "chip-label", size is "tiny", weight is "700"
+            Column class is "t48-chip", padding is 10, radius is 8, align is "center", minWidth is 84
+                Text "SCORE", class is "t48-chip-label", size is "tiny", weight is "700"
                 Text board.score, weight is "800"
-            Column class is "chip", padding is 10, radius is 8, align is "center", minWidth is 84
-                Text "BEST", class is "chip-label", size is "tiny", weight is "700"
+            Column class is "t48-chip", padding is 10, radius is 8, align is "center", minWidth is 84
+                Text "BEST", class is "t48-chip-label", size is "tiny", weight is "700"
                 Text best, weight is "800"
 
-        Column class is "grid", padding is 8, radius is 12, position is "relative"
+        Column class is "t48-grid", padding is 8, radius is 12, position is "relative"
             Row gap is 8
                 each spot in (listTake with items is positions, count is 4)
                     Tile (cellOf with cells is board.cells, index is spot)
@@ -323,17 +323,17 @@ view title is "2048"
                     Tile (cellOf with cells is board.cells, index is spot)
 
         if board.over
-            Column class is "banner", padding is 14, radius is 10, align is "center", gap is 8
+            Column class is "t48-banner", padding is 14, radius is 10, align is "center", gap is 8
                 Text "No moves left.", weight is "800"
-                Button "new game", class is "go", padding is 12, radius is 8, cursor is "pointer"
+                Button "new game", class is "t48-go", padding is 12, radius is 8, cursor is "pointer"
                     on click
                         set board to (freshBoard of (nextSeed of board.seed))
 
         Row gap is 10, align is "center"
-            Button "new game", class is "go", padding is 12, radius is 8, cursor is "pointer"
+            Button "new game", class is "t48-go", padding is 12, radius is 8, cursor is "pointer"
                 on click
                     set board to (freshBoard of (nextSeed of board.seed))
-            Text "arrow keys to play", class is "hint", size is "small"
+            Text "arrow keys to play", class is "t48-hint", size is "small"
 
         if board.won
-            Text "2048 reached.", class is "won", weight is "700"
+            Text "2048 reached.", class is "t48-won", weight is "700"

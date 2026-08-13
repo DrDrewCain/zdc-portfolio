@@ -1,0 +1,127 @@
+---
+title: The classifier was never the problem
+summary: A perceptron written from scratch and an MLP built beside it, on two datasets that fail in opposite ways. The neural net won by a little. The feature representation won by a lot.
+date: "2026-07-25"
+---
+
+The first assignment in Yoav Artzi's NLP course hands you two datasets and no
+classifier. You write a multiclass perceptron from nothing, build a multilayer
+perceptron beside it, and submit predictions against a test set whose labels
+you never see.
+
+The obvious way to read that setup is as a contest between the two models. It
+is not. Both models are a rounding error next to the thing you feed them, and
+the assignment is arranged so that you cannot avoid noticing.
+
+## Two datasets that fail differently
+
+SST-2 is binary sentiment over single sentences. The signal is dense and
+local: one word usually carries the label, and the failures are things like
+negation scope, where "not terrible" contains the strongest negative token in
+the sentence and means the opposite of it.
+
+20 Newsgroups is twenty-way topic classification over long documents. The
+signal is diffuse, since no single word decides it, and the failures are
+categorical overlap. `talk.religion.misc`, `soc.religion.christian` and
+`alt.atheism` are three labels sitting on top of substantially the same
+vocabulary, and a bag of words has no mechanism for telling them apart.
+
+Picking two problems that break in opposite directions is what makes the
+feature question visible. On one dataset presence matters; on the other,
+proportion does.
+
+## The perceptron
+
+The linear model is genuinely hand-written. Weights live in a sparse table
+rather than a dense matrix, because a dense one over the newsgroups vocabulary
+is mostly zeros and does not earn its memory. Scoring is a dot product over
+whichever features actually fired. The update rule, when the prediction is
+wrong, moves weight toward the correct class and away from the predicted one:
+
+```python
+self.weights[target][feature] += self.lr * (
+    value - regularization_strength * self.weights[target][feature]
+)
+self.weights[prediction][feature] -= self.lr * (
+    value + regularization_strength * self.weights[prediction][feature]
+)
+```
+
+The regularization term is folded directly into the update rather than added
+as a separate penalty, which keeps weights from running away on features that
+appear constantly. Learning rate starts at 0.001 and decays by a factor of 0.9
+every five epochs.
+
+None of this is sophisticated. It is about thirty lines of real logic. On 20
+Newsgroups it took roughly four hours to converge.
+
+## The MLP
+
+The neural version is PyTorch, and the pairing is the point rather than a
+shortcut around it. Vocabulary-sized input into a 512-unit hidden layer, ELU
+activation, dropout at 0.3, then a linear output layer. Adam with weight decay,
+and early stopping on validation loss with a patience of five epochs.
+
+ELU rather than ReLU mattered more than I expected. With a sparse
+high-dimensional input, a lot of hidden units receive very little signal, and
+ReLU's flat negative region lets those units die permanently. Once a unit's
+pre-activation is negative for every example, its gradient is zero forever and
+it stops learning. ELU keeps a small gradient down there, so units that start
+badly can recover.
+
+The MLP beat the perceptron. It did not beat it by as much as the difference
+in machinery suggests it should.
+
+## What actually moved the numbers
+
+Four representations, compared rather than assumed: binary presence, raw
+counts, n-grams, and tf-idf.
+
+The result that stuck is that the winner is not stable across the two
+datasets, and the reason is legible once you look at the documents rather than
+the scores.
+
+On SST-2, binary presence is hard to beat. The inputs are single sentences, so
+a word appearing three times instead of once is not three times the evidence.
+It is usually the same evidence, repeated. Counting it thrice mostly adds
+noise.
+
+On 20 Newsgroups, raw counts actively hurt, and tf-idf wins clearly. Document
+lengths vary enormously, so under raw counts a long rambling post dominates the
+feature space through sheer volume of common words. The terms that actually
+separate `sci.crypt` from `sci.med` are the rare ones, and inverse document
+frequency is precisely the operation that promotes them and suppresses the
+words every post contains.
+
+Same classifier, same hyperparameters, opposite answer. The representation was
+carrying the decision.
+
+## Reading the errors instead of the metric
+
+The part of this assignment I would repeat on every project since: dumping
+misclassified examples for the dev and test splits and reading them by hand.
+
+A confusion matrix on newsgroups tells you the three religion-adjacent classes
+are being mixed up, which is unsurprising and not actionable. Reading forty
+actual misclassified posts tells you something more useful, which is that many
+are quote-heavy replies, where the visible text is mostly somebody else's
+message being answered, so the features describe the quoted post rather than
+the reply. That is a preprocessing problem wearing a modelling problem's
+clothes, and no amount of hidden units fixes it.
+
+The negation finding on SST-2 came the same way. The accuracy number cannot
+tell you that the failures share a shape. You have to look.
+
+## The thing worth keeping
+
+I came in expecting the interesting comparison to be perceptron against MLP.
+It was not. The gap between the two models was consistently smaller than the
+gap between a good feature representation and a bad one on the same model.
+
+That generalises further than it has any right to. The instinct it built, that
+when something is not working the first question is what the model is being
+shown rather than how much capacity it has, has been right far more often than
+reaching for a bigger architecture, at every scale I have worked at since.
+
+The models here are the least sophisticated on this site. The habit is one of
+the most useful things I took from any course.

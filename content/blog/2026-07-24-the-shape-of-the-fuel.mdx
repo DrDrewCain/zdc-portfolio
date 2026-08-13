@@ -1,0 +1,62 @@
+---
+title: The shape of the fuel
+summary: The fire behind the hero is the one from the PlayStation port of DOOM, running at 190 by 120. Getting it to dome instead of burn as a flat wall came down to changing what it burns, not what you see.
+date: "2026-07-24"
+---
+
+Fire is mostly a decay curve and a good palette. That is the whole insight behind
+the effect on the front page, and it comes from the PlayStation port of DOOM in
+1995, on hardware with no shaders and very little to spare.
+
+It works like this. Keep a grid of heat values. Hold the bottom row at maximum.
+Then every cell above copies the cell below it, minus a small random amount, and
+shifted sideways by another small random amount. That is it. There is no physics,
+no particles, and nothing that knows it is a flame. Run it thirty times a second
+and the eye does the rest.
+
+The sideways shift is the part people leave out when they reimplement it. Without
+it you get heat rising in straight columns, which reads as a gradient. With it,
+the tongues lean and fork, because a cell can inherit from a neighbour instead of
+from directly below. One random number does all of that work.
+
+I run mine at 190 by 120 and scale it up with nearest neighbor, so the pixels
+stay square and visible. Smoothing it would have been one CSS property and would
+have thrown away the only thing that makes it worth having. The palette is 37
+stops built from the same ember values the rest of the site uses, so the fire
+comes out of the design instead of sitting on top of it.
+
+The first version had a problem. It burned as a flat wall, edge to edge, because
+the original algorithm holds the entire bottom row at maximum and the original
+was drawing a full screen. On a page with words on it, a rectangle of fire looks
+like a rectangle.
+
+The obvious fix is to mask it. Put a soft shape over the top, fade the edges, move
+on. I tried that and it looked exactly like what it was, which is a rectangle
+with something in front of it. The flame kept reaching the corners and being cut
+off there, and cropping never hides that.
+
+The fix that worked was to stop touching the output and change the input. The
+bottom row is a raised cosine now instead of a straight line, hot in the middle
+and cold at both ends. Nothing else changed. Because a tongue can only climb as
+high as the heat feeding it, the flame domes on its own, and the curve you see at
+the edges is the shape of the fuel rather than a mask sitting over it. Fire that
+runs out of fuel looks different from fire that has been cut, even when the
+silhouette is similar, and you can tell without knowing why.
+
+That made the pointer interaction almost free. If the shape of the fuel decides
+the shape of the flame, then feeding it somewhere new bends it there. Moving
+across the hero adds a soft bump of heat under the cursor, the bump decays a
+little every frame, and the fire leans over and then settles back on its own. No
+new code path. Same function, different argument.
+
+It runs on a canvas rather than in a shader, which sounds backwards for something
+this pixel heavy. At this size it is a few thousand array writes per frame, which
+is cheaper than standing up a WebGL pipeline for it, and it has no context to
+lose. It stops drawing entirely once it scrolls off screen. If you have reduced
+motion turned on it settles for a hundred and twenty frames and then holds still,
+because the point was the picture, not the movement.
+
+The simulation has no DOM in it, which turned out to matter for a second reason.
+The social preview images this site generates run the same code at build time and
+lay the heat out as coloured blocks. The flame on those cards is not a screenshot.
+It is the same fire, stopped.

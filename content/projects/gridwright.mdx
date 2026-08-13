@@ -1,0 +1,322 @@
+---
+title: gridwright
+oneLiner: A Rust engine for cross-border energy system optimisation. Builds a sixteen million variable power model in a tenth of a second — about fifteen times faster than the Python tooling, on a third of the memory — then solves it with a simplex written from scratch.
+status: active
+stack: [Rust, HiGHS, Clarabel, Rayon, Arrow, WebAssembly]
+repo: https://github.com/DrDrewCain/gridwright
+order: 7
+timeline: Jul 2026, 739 tests
+---
+
+Models that decide where grids and renewables get built are routinely made less
+accurate on purpose. PyPSA-Eur, the open model of the European power system,
+recommends clustering the network down to a couple of hundred nodes, and running
+at realistic resolution needs a commercial Gurobi licence. The reason is not the
+solver. The energy modelling literature says it plainly: Python is
+"non-competitive" at *building* optimisation problems compared to Julia or C++,
+and that bottleneck "hinders large-scale optimization".
+
+So spatial fidelity gets traded away, in models that inform national
+decarbonisation policy. gridwright attacks the part that is actually slow.
+
+A wright is a builder, and that was the original distinction. HiGHS and Gurobi
+solve these problems well, and competing with decades of simplex engineering
+would be a bad use of anyone's time. The problem is getting the model *to* them.
+
+## The measurement
+
+The premise above is a quotable claim, and quoting is not measuring. It went
+unmeasured for most of this project's life, which was the wrong way round: it is
+the thing the whole design rests on.
+
+Same model, same machine, same session. A 256-bus network over a year at hourly
+resolution, built in linopy and in gridwright. Only construction is timed. Both
+hand the result to the same solver afterwards and that part was never in
+dispute.
+
+| | gridwright | linopy 0.9.0, properly | linopy as I first scripted it |
+| --- | --- | --- | --- |
+| Variables | 16,258,560 | 16,258,560 | 16,258,560 |
+| Constraints | 6,167,040 | 6,167,040 | 6,167,040 |
+| Nonzeros | 29,153,280 | 29,153,216 | 29,153,216 |
+| Construction, to a matrix | **0.096 s** | 1.54 s | 200.8 s |
+| Peak memory | **1.50 GB** | 3.45 GB | 22.4 GB |
+
+**That third column is mine, not linopy's, and this page used to quote it as
+though it were.** It said two thousand times faster on eleven times less memory.
+Both numbers were real measurements of a benchmark I had written badly.
+
+The script built a generators-by-buses-by-snapshots intermediate to express a
+sum in which all but three terms per bus are zero. It looks like ordinary xarray
+and it is not what the library is for. Written the way PyPSA itself writes it —
+`groupby` for per-bus sums, indexed `sel` for a line's two ends — linopy
+produces the identical matrix about a hundred and thirty times faster than my
+version of it.
+
+So the honest figures are **about fifteen times on construction time and 2.3× on
+memory**. That is worth having and it is not the claim I was making.
+
+What does not survive the correction is the conclusion I drew from it. I had
+written that twenty-two gigabytes is where a laptop stops, and that this is the
+mechanism by which spatial fidelity gets traded away. At 3.45 GB it is not the
+mechanism, and on this model a two-to-four times memory advantage is not the
+difference between running and not running.
+
+What does survive is narrower and still worth stating: a purpose-built assembler
+beats a general-purpose algebraic modelling layer by one to two orders of
+magnitude, and both general-purpose layers I measured — linopy and JuMP — land
+within a factor of two of each other. That is a claim about the shape of the
+tool rather than about the language, which is notable, because the quote this
+project started from was about the language.
+
+An earlier version of the benchmark also had a degenerate flow constraint, which
+gave linopy less to build. The committed one produces matching nonzero counts,
+to within sixty-four out of twenty-nine million.
+
+## How
+
+Two phases with a hard line between them. Every variable block is allocated up
+front, sequentially, one contiguous block per component spanning every snapshot.
+After that every index is a pure function of block and offset, so constraint
+families are assembled in parallel into per-thread batches that share nothing
+and lock nothing, then merged once.
+
+Three decisions carry most of it. Time series are stored component major, and
+nodal balance is parallelised over buses rather than snapshots, so one layout
+serves both access patterns and nothing in the hot path is strided. The CSR to
+CSC transpose is a parallel counting sort with per-thread histograms and a two
+dimensional scan, which makes the scatter provably disjoint and therefore free
+of atomics. The finished matrix reaches HiGHS as three raw pointers through
+`Highs_passModel`; the safe wrapper crate takes rows one at a time, which would
+have meant disassembling the matrix in order to rebuild it inside someone
+else's types.
+
+That last decision is the same instinct as the TVM work: the fastest version of
+an operation is usually the one that refuses to materialise an intermediate
+nobody asked for.
+
+## What the fast build does not buy
+
+Worth saying, because it cuts against the headline. Solving that same year is
+where the time actually goes, and the solve is superlinear: 20 seconds at 16
+buses, 194 at 32, and at 64 it did not finish in seven minutes. Construction is
+0.0 to 0.1% of runtime.
+
+So the fast build does not make a full-resolution annual model tractable.
+Decomposition does. The same year through a rolling horizon of 96-hour windows
+takes 8.5 seconds at 32 buses against 194, and finishes at 128 where solving
+whole does not. And rolling performs 122 builds instead of one, and construction
+*still* does not register.
+
+What the fast build actually buys is narrower and real: the model fits in
+memory, it rebuilds fast enough to edit interactively, and a scenario sweep
+assembling it hundreds of times is not absurd. I would rather state that than
+the version that sounds better.
+
+## The solver, after all
+
+The plan not to write a solver did not survive contact with the target. The
+interface this is heading towards runs in a browser, and every mature LP solver
+is a C or C++ library. So there is now a bounded variable revised simplex in the
+repository, with explicit artificial variables for phase one, and dual
+extraction, which is the part that matters: the dual of a nodal balance row is
+the electricity price at that bus, and the price is the single most useful
+number an energy model produces.
+
+It is checked against HiGHS on the IEEE test networks, on PEGASE 1354, a real
+European system four times the largest of them, and on all 118 nodal prices of
+case118. Where the two disagree, HiGHS is right and the differential test says
+so.
+
+The first version held the basis inverse densely, which cost `m²` memory and
+`O(m²)` per pivot however sparse the basis actually was. Replacing it with a
+sparse LU took 864 rows from 1.2 seconds to 45 milliseconds. The real win was
+not the sparsity itself but the symbolic step: the factorisation was scanning
+every earlier pivot for each column, which is `O(m²)` over the whole
+factorisation regardless of the matrix. Four hundred million iterations per
+refactorisation at twenty thousand rows, spent finding nothing. A depth-first
+search over the structure of `L` finds exactly the pivots that contribute, and
+the rows it visits are exactly the rows the result occupies. Twenty thousand
+rows went from 111 seconds to 22.
+
+It also branches now, so unit commitment runs in a browser. It used to decline
+integer problems, which was honest and left the WebAssembly build unable to run
+one of the two things people most want.
+
+## Three optimisations I measured and did not keep
+
+The more useful half of that work, and the part I would want read.
+
+**Forrest-Tomlin updates.** The standard remedy for the accumulated pivots
+between refactorisations. Whether it is worth building is answerable without
+building it: vary the refactorisation interval and watch the total. Fitting
+`base + A/k + B·k` to five intervals gave a base of 3.03 seconds and, at the
+optimum, 0.07 seconds of update application. It addresses 2.3% of a solve and
+would replace it with something rather than nothing.
+
+**A fill-reducing column ordering.** Greedy minimum degree follows the singleton
+cascade an LP basis is full of and halves the fill: 1,241 nonzeros against
+2,450. It is also 15 to 30% slower end to end, because the ordering runs on
+every refactorisation while the fill it saves only shortens the triangular
+solves. Implemented twice, once naively and once with flat arrays and linked
+buckets; the second beat the first and still lost.
+
+**Partial pricing.** Dantzig's rule materialises every column on every
+iteration, so scanning fewer looks obvious. Across windows from 500 columns to
+all of them the total moved by less than noise: a cheaper scan buys a worse
+entering variable and they cancel. It is in the code and switched off, because
+the mechanism is sound and this is a fact about the shape of energy models.
+They have a few times as many columns as rows, and partial pricing earns its
+keep where columns vastly outnumber them.
+
+Each is recorded with its numbers so that nobody, including me, repeats them.
+The one that did pay was the refactorisation interval: 64 to 256, worth 4%.
+
+## AC power flow, and the gap nothing convex can close
+
+DC power flow is a linearisation, and it is wrong about the things reactive
+power decides. The AC version here follows the Jabr second order cone
+relaxation, which replaces voltage angles with `u = |V|²`,
+`R = |Vᵢ||Vⱼ|cos θ` and `I = |Vᵢ||Vⱼ|sin θ`, and turns one exact equality into
+an inequality:
+
+```
+R² + I² = uᵢuⱼ    becomes    R² + I² ≤ uᵢuⱼ
+```
+
+The direction that survives is the convex one. The direction that is dropped is
+reverse convex, so its feasible set is nonconvex by construction and no cone can
+express it. Everything the plain relaxation returns is a lower bound, and when
+the inequality is slack the voltages it reports describe no physical state.
+
+Closing that needed spatial branch and bound, which is the piece I am most
+pleased with. Over a box, `R² + I²` lies under the affine function through the
+box corners, and `uᵢuⱼ` lies over its McCormick underestimator. So requiring
+`secant ≥ McCormick` is *implied* by the equality Jabr threw away, which means
+no feasible point is ever cut off, and both sides collapse onto the truth as the
+box closes. Splitting boxes is then what buys tightness, and the least bound
+over any partition stays valid, so the search can stop early with a number
+rather than a hope.
+
+It works. On IEEE 57 the relaxation is only a bound at the root, and 33 nodes
+prove the optimum to eleven decimal places. On IEEE 118 the bound climbs and the
+cone gap falls twenty five fold.
+
+## Data, which turned out to be most of the problem
+
+Someone with a network to model has a file, not a format. It came from a
+transmission operator, a ministry, a paper's supplementary material or a
+colleague, and being made to identify it first is a tax on the people the tool
+exists to serve. So `load_any` takes a path and returns a network, reading nine
+formats: CSV and Parquet directories, MATPOWER, PSS/E RAW across revisions 29 to
+35, PowerModels JSON, a lossless native JSON, spreadsheets, PyPSA netCDF, and
+CIM/CGMES.
+
+The conversions that decide whether a reader is useful are the unit conventions,
+and they are the ones that fail quietly rather than loudly. A PowerModels case
+writes a 47.8 MW load as `0.478`, and its cost coefficients scale the opposite
+way from the quantities they multiply. PyPSA and CIM state line impedance in
+ohms where the optimisation wants per unit, and reading one as the other gives a
+132 kV line a susceptance 170 times too small: a network where power will not
+flow, and the optimiser sheds load to explain it. PSS/E moved its transformer
+section between revisions and states winding voltages three different ways.
+Every one of those produces a file that loads without complaint and is wrong, so
+every one has a test that pins the number.
+
+The IEEE 14 bus system is now carried in six encodings, and a test asserts they
+all read to the same network.
+
+Writing is half of an import layer and it only recently existed. MATPOWER, PSS/E
+and PyPSA's CSV dialect can be written; each reports what the format could not
+hold, because a writer that silently dropped storage would produce a file
+someone trusted. PyPSA's netCDF cannot: a conformant file needs HDF5 dimension
+scales, which need object references, which are file offsets not known until the
+file has been laid out. A `.nc` that xarray refuses to open is worse than none.
+
+None of it needs a filesystem. Every reader takes bytes as well as a path,
+because a browser has no filesystem and a file picker hands over a name and a
+buffer. That includes netCDF, through a pure Rust HDF5 implementation, and
+Parquet, which needed its default Zstandard codec swapped for pure Rust ones so
+the whole layer cross compiles. Formats, model assembly and the solver all build
+for `wasm32-unknown-unknown`.
+
+## What it models
+
+Linear optimal power flow with DC flow physics for AC lines and transport limits
+for controllable HVDC, storage with round trip efficiency and cyclic state of
+charge, and load shedding priced at the value of lost load, so an unservable
+system reports where and when it failed rather than the single word
+`INFEASIBLE`. On top of dispatch: capacity expansion, which is the question
+policy actually asks; unit commitment over a rolling horizon, carrying reservoir
+levels and commitment states between windows so a model does not invent start up
+costs that were already paid; N-1 security through line outage distribution
+factors, which costs rows rather than columns; hydro cascades with head effects;
+N-1 security through line outage distribution factors; hydro cascades with head
+effects on both available capacity and energy conversion; and budgets for
+carbon, water and land, which turn out to be one row with different
+coefficients.
+
+Demand used to be served or shed, and shedding is priced at the value of lost
+load, a number in the thousands chosen to mean never do this. All four ways
+demand can fail to be served are now distinct, because they answer different
+questions: shed, shifted to another snapshot with the energy conserved, declined
+on a willingness-to-pay curve, or curtailed under an interruptible contract a
+bounded number of times. A data centre is plausibly all four depending on the
+workload.
+
+Emissions get their own accounting, because production and consumption are
+different questions and the difference is the whole argument about carbon
+borders. Production is what was emitted inside a region, and is easy.
+Consumption is what was emitted on behalf of the electricity a region used,
+which needs flows traced back through the network, and because an importer may
+be re-exporting that is a linear system per snapshot rather than a single pass.
+On IEEE 118 the traced consumption adds back up to production through 186 meshed
+lines, which is the conservation identity any correct tracing has to satisfy.
+Average and marginal intensity are reported separately, since they differ by
+several times and answer different questions.
+
+## The part worth writing down
+
+Several tests were wrong before the code was, and the best of them taught me
+something about the formulation rather than about the test.
+
+A triangle of transport lines turned out to have no unique flow solution.
+Circulating power around a zero cost loop is free, so the optimum is a family
+rather than a point, and the solver returned an answer with 100,000 MW going in
+circles. It was right and my assertion was not. Separately, a carbon cap test
+passed for the wrong reason: the clean option was cheap enough to build on
+economics alone, so the budget never bound and the test proved nothing.
+
+The one I keep thinking about came from a phase shifting transformer. A phase
+shifter exists for exactly one purpose, which is to push power along one path
+rather than another, and the AC model could not see it at all. Not a wiring
+mistake: the Jabr cone is invariant under rotation of `(R, I)`, and a phase
+shift is precisely such a rotation, so it maps the feasible set onto itself and
+carries the optimum with it. No plain relaxation can distinguish a network with
+a phase shifter from one without, on any network whatsoever. Only the spatial
+search, narrowing boxes until the cycle envelopes have teeth, makes the device
+visible.
+
+Chasing that turned up a real correctness bug. A small cone gap was being read
+as "this solution is physical", and it is not: the cone is a statement about
+each branch on its own and says nothing about whether angles close around a
+loop. A solution can satisfy every branch exactly and still route power around a
+cycle in a way no set of voltages could produce. Cycle consistency is now
+measured from the solution and folded into the reported status.
+
+The README states plainly where this does not help. Run the benchmark with a
+solve attached and construction is around 0.1% of total runtime, because HiGHS
+takes seconds and assembly takes milliseconds. If a model already solves
+comfortably, none of this buys anything, and you should use PyPSA. The case is
+narrower and worth being precise about: it is for the models that are currently
+not being run at all, and a hundred millisecond build is really a claim about
+the memory it did not need.
+
+## Licensing
+
+AGPL, with a commercial licence available separately. The split is about
+reciprocity rather than company size: if you publish your modelling, which is
+the entire point of publishing a decarbonisation pathway, the AGPL costs you
+nothing. If you need the surrounding stack closed, that is a different kind of
+use and it can fund the work. A revenue threshold would have been arbitrary and
+would have penalised exactly the large public bodies this exists to serve.

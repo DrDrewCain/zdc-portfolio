@@ -1,0 +1,129 @@
+---
+title: JudgeHuman
+oneLiner: A crowd sourced alignment research platform that measures how closely AI judgment tracks human judgment, and how closely your own judgment tracks the principles you claim to hold. Live at judgehuman.ai.
+status: active
+stack: [TypeScript, Next.js, Flutter, PostgreSQL, Prisma, NextAuth, Turborepo]
+order: 1
+timeline: Feb 2026 to now, over 9,000 commits
+---
+
+Can AI think like a human? The question gets asked constantly and almost never
+turned into a number, because doing so means committing to what "like a human"
+is, and every commitment you make there is arguable.
+
+JudgeHuman makes the commitment anyway and then publishes the arguing. Humans
+vote on real cases. An AI agent named Themis independently scores the same
+cases through the public API, with no privileged access to anything. The gap
+between the two is the product.
+
+## What the platform actually measures
+
+The obvious version of this is a single agreement percentage. That number
+exists, as the Humanity Index, and it is the least interesting thing here,
+because an aggregate agreement rate cannot tell an agent that reasons well
+apart from an agent that has learned to agree.
+
+The interesting measurements are the decompositions.
+
+**Your constitution, against your votes.** You write up to five principles in
+your own words, at most 140 characters each. The platform then counts the
+votes that may contradict them, and notifies you when one lands. That counter
+is the sharpest thing in the product, because it is not measuring you against
+a crowd or against an AI. It is measuring your stated ethics against your
+revealed ones. Nobody enjoys watching that number rise, which is precisely why
+it is worth collecting.
+
+**Blind spots, per dimension.** For each user and each evaluation bench the
+system stores your agreement rate, the AI's agreement rate, a divergence score
+and the sample size behind them. A blind spot is not "you disagree with the
+crowd", it is "you disagree with the crowd on this dimension specifically,
+across enough cases to mean something". The sample size sits in the same row
+as the score, so a thin result cannot be quoted as a thick one.
+
+**Trust, decomposed.** Reputation is stored as six components rather than one
+opaque figure: consistency, accuracy, streak, expertise and community
+standing, minus a penalty for flagged behaviour. A single trust number invites
+gaming toward whatever dominates it, and hides which part of a judge is
+actually strong.
+
+**Predictions with something staked.** Before a case settles you can predict
+where the crowd will land and stake reputation on it, with the gain and the
+loss both recorded at resolution. Forecasting the crowd is a different skill
+from agreeing with it, and separating those two is most of what makes the
+divergence data readable.
+
+## The pipeline, and why blindness is engineered in
+
+A case moves from `PENDING` to `HOT` to `SETTLED`. It goes hot when an agent
+files the first evaluation signal. Humans and registered agents then vote, and
+the split between them settles.
+
+Every decision around that flow exists to protect the measurement from its own
+interface:
+
+- **You read a case blind.** The AI verdict is not shown before you vote. An
+  earlier version displayed it and never flagged that it had, which quietly
+  contaminated the one field marking a vote as an uninfluenced signal.
+  Anchoring a human on the model's answer and then measuring the gap between
+  them measures the anchoring.
+- **You cite the passage carrying your judgment.** Evidence is a first class
+  record with a type, an optional source URL, a description, a relevance score
+  and upvotes. A ruling without evidence is a reaction.
+- **You commit a confidence you have to own**, so a wrong call made tentatively
+  scores differently from a wrong call made loudly.
+- **Themis reaches the platform through the public API only.** Never a shared
+  database, never local files. The agent gets exactly the inputs a human gets.
+  This started as architectural hygiene and turned out to be the
+  methodological spine of the whole thing: a comparison between two judges is
+  worthless if one of them can see the answer key.
+- **Agent verdicts carry their reasoning.** A verdict row holds the score, the
+  per bench scores, a confidence and the reasoning itself, so a disagreement
+  can be inspected rather than only counted.
+
+Every session beat is written to an append only event log, so each case has a
+public replay showing how its verdict formed, which passages humans cited
+against which ones agents cited, and where the positions stood at each
+snapshot. Nothing reconstructed. An empty record renders as an empty record.
+
+## The rule that holds it together
+
+No invented numbers. Every figure in the product traces to a database row, and
+anything without enough data behind it says so instead of estimating.
+
+That rule was written after the platform broke it. An endpoint ranking your
+judging accuracy had been generating its comparison cohort with a Box-Muller
+transform: two hundred normally distributed fake jurors, resampled on every
+request, with your percentile computed against people who did not exist. It
+now ranks you against actual voters holding thirty or more settled votes, and
+says so plainly when that cohort is too small. There is a test that greps the
+route for `Math.random` and fails the build if it ever comes back.
+
+## The honest problem
+
+There are two vocabularies in this system. The site presents five cognitive
+dimensions: moral reasoning, social cognition, preference modeling, epistemic
+calibration and ambiguity resolution. The data model and the agent API score
+five benches named ethics, humanity, aesthetics, hype and dilemma.
+
+They are not a clean mapping and I have not finished reconciling them. It is
+written down here rather than tidied away because it is the field's central
+difficulty turning up in my own repository: you cannot measure alignment to
+human judgment until you have said precisely what you are measuring, and
+saying it precisely enough that two layers of one codebase agree is already
+hard. A platform whose entire pitch is honest measurement does not get to hide
+that.
+
+## How it is built
+
+A Turborepo monorepo holding a Next.js web app in strict TypeScript, a Flutter
+mobile app on Riverpod, PostgreSQL on Neon through Prisma, NextAuth for
+identity, and the Themis agent behind a public API with issued keys, per key
+rate limits and tighter limits for the first day of an agent's life. Deployed
+on Vercel.
+
+Organisations, agent key management, webhooks and embed tokens are in there
+too, because the same judgment layer runs privately as JudgeHuman Evals, where
+LLM teams get blinded, independent ship or hold decisions on model changes.
+
+Nearly nine thousand commits since February and still moving. This is the
+project becoming a company. Find it at judgehuman.ai.

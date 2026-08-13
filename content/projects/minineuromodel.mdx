@@ -1,0 +1,34 @@
+---
+title: MiniNeuroModel
+oneLiner: Neural network experiments from scratch, the research sandbox behind MiniMacLLM.
+status: active
+stack: [Python, PyTorch]
+order: 8
+---
+
+The experimentation ground for architectures and training techniques: GAN
+versus WGAN comparisons, continual learning strategies, and the groundwork
+that grew into MiniMacLLM-127M. Where ideas get tested before they earn a
+bigger parameter budget.
+
+The GAN work started as a way to make a specific failure legible. A standard
+GAN trained on a narrow dataset collapses: the generator finds one output the
+discriminator cannot reject and produces it forever, and the loss curve does
+not obviously tell you this is happening. Swapping the Jensen-Shannon
+objective for the Wasserstein distance changes what the critic is measuring,
+and the resulting loss actually correlates with sample quality instead of
+oscillating independently of it. Watching those two runs side by side is a
+better explanation of why the objective matters than any derivation of it.
+
+The theory behind this half of the repository comes from Deep Generative
+Models with Volodymyr Kuleshov at Cornell Tech, which covers the model
+families as one continuum rather than a list: autoregressive models, latent
+variable models and the variational bound, normalizing flows, adversarial
+training, energy based models, and score based and diffusion methods. The
+framing that stuck is that these differ mainly in which intractable quantity
+they agree to approximate and what they get to keep exactly in return. This
+repository is where a few of those tradeoffs got built small enough to watch.
+
+Like the rest of the research work, this sits at the model layer:
+
+<DeepStack focus="Model" />
