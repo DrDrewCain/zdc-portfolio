@@ -1,0 +1,252 @@
+# projects.zd — the projects, read off disk, and the two measurements taken
+# from them.
+#
+# Same division as `posts.zd`: the records, the reading and the arithmetic
+# are here; `WorkRow` and the growth rings are in `site.zd` because they
+# link and render.
+
+use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
+use "./layers" for layerNames, reaches, oneIfReaches
+
+# --- the projects ----------------------------------------------------------
+#
+# The same three capabilities as the posts, over a different directory. A
+# project carries a one-liner, a status, a stack and an order rather than a
+# date and a summary, and `order` is a number written in the file so the
+# author decides the sequence rather than the filesystem.
+
+# ⚠️ TWO RECORDS, AND THE REASON IS MEASURED RATHER THAN TIDY.
+#
+# `Project` carries the rendered body, which for sixteen posts is most of a
+# megabyte. Per-document dead-code elimination does not reach inside a
+# record: a page that touches the list gets every field of every row, so
+# the *home page* — which shows a title, a one-liner and a stack — was
+# shipping all sixteen bodies, and each project page was shipping the
+# fifteen it does not render. 693 KB a document, and the flash before the
+# text appears is that bundle downloading and running.
+#
+# `Listing` is the same rows without the body. The index reads `cards`, the
+# detail page reads `projects`, and the two are built from one pass over
+# the directory so they cannot disagree.
+record Listing
+    slug      is Text
+    title     is Text
+    oneLiner  is Text
+    status    is Text
+    stack     is Text
+    shown     is Text
+    timeline  is Text
+    rank      is Whole
+
+record Project
+    slug      is Text
+    title     is Text
+    oneLiner  is Text
+    status    is Text
+    stack     is Text
+    shown     is Text
+    timeline  is Text
+    rank      is Whole
+    body      is Markup
+
+state projectSlugs is static List of Text starting ["appmeee", "clawfreelance", "gridwright", "imsg-protocol", "judgehuman", "matrix-infras", "minimac-llm", "minineuromodel", "minitorch", "nlp-classifiers", "project-mercury", "spacetrader-wars", "tvm-kernel-opt", "vernos", "voxmatch", "zdeceptron"]
+
+state projects is static List of Project from readProjects with directory is "content/projects"
+
+function readProjects with directory
+    from build list directory
+    map each path to (projectFrom of path)
+
+function projectFrom of path
+    give projectFromRaw with path is path, raw is build read path
+
+# `order` comes out of the header as text and has to be a number to sort by.
+# `parseWhole` gives an `Option`, because a header can say anything.
+function projectFromRaw with path, raw
+    give Project with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), oneLiner is (fieldOf with raw is raw, key is "oneLiner"), status is (fieldOf with raw is raw, key is "status"), stack is (unbracketed of (fieldOf with raw is raw, key is "stack")), shown is (spaced of (unbracketed of (fieldOf with raw is raw, key is "stack"))), timeline is (fieldOf with raw is raw, key is "timeline"), rank is (valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")), fallback is 99), body is build markdown (linkified of (bodyOf of raw))
+
+# The effort, not the whole timeline. "Feb 2026 to now, over 9,000 commits"
+# is a period and an effort, and the listing's right-hand column wants only
+# the second — the original splits them with a regular expression, and this
+# takes the last comma-separated piece when it is a commit count.
+# ⚠️ ON COMMA-SPACE, NOT ON COMMA. "Feb 2026 to now, over 9,000 commits"
+# cut at its last comma is "000 commits" — the separator inside the number
+# is the same character as the separator between the fields. The original
+# matches the whole phrase with a regular expression for exactly this
+# reason; a thousands separator never has a space after it, so comma-space
+# tells the two apart without one.
+function effortOf of timeline
+    with tail is (trim of (afterLast with value is timeline, delimiter is ", "))
+    if textContains with value is tail, needle is "commits"
+        give tail
+    give ""
+
+# The commit count behind a project, out of its effort phrase: "over 9,000
+# commits" is 9000. The original matches `\d[\d,]*` with a regular
+# expression; this drops the separators and takes the first word that parses
+# as a number, which is the same answer by a different road.
+function commitsOf of timeline
+    give firstNumberIn with words is (split with value is (replace with value is (effortOf of timeline), old is ",", new is ""), using is " "), index is 0
+
+function firstNumberIn with words, index
+    when listAt with value is words, index is index
+        None
+            give 0
+        Some with word
+            when parseWhole of word
+                None
+                    give firstNumberIn with words is words, index is index + 1
+                Some with number
+                    give number
+
+# `stack` is a YAML list — `[TypeScript, Next.js]` — and the brackets are
+# the only part of that syntax this reads. Anything more is a YAML parser,
+# and `frontmatter.zd` says why there is not one.
+# `TypeScript, Next.js` reads as `TypeScript · Next.js`, which is how the
+# original joins it. Done here rather than in the view because the view
+# renders a `Text` and has nowhere to put a separator.
+# ⚠️ THE DISPLAY FORM IS A SECOND FIELD, NOT A REWRITE OF THE FIRST.
+# Formatting the stack in place broke the depth gauge silently: `layers.zd`
+# splits the declared stack on a comma, and once it had been joined with a
+# middot there were no commas left, so every tick went dark and nothing said
+# why. The raw list is what the program *reasons* about; `shown` is what a
+# reader sees.
+function spaced of value
+    give join with parts is (split with value is value, using is ", "), using is " · "
+
+function unbracketed of value
+    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["), suffix is "]"
+
+state ranked is static List of Project from byRank with all is projects
+
+function byRank with all
+    from all
+    sort each project by project.rank
+
+# The same rows, in the same order, without the body. Everything that only
+# needs to *list* a project reads this: the home page, the coverage chart
+# and the rings.
+state cards is static List of Listing from cardsOf with all is projects
+
+function cardsOf with all
+    from all
+    sort each project by project.rank
+    map each project to (Listing with slug is project.slug, title is project.title, oneLiner is project.oneLiner, status is project.status, stack is project.stack, shown is project.shown, timeline is project.timeline, rank is project.rank)
+
+# The rings, as one string. A `foreign` takes `Text` and `Decimal` and not a
+# `List of` a record, so the drawing is handed "9000,99,52,…" in running
+# order and works the geometry out itself — which is where the geometry
+# already lived.
+state rings is static List of Ring from ringsFrom with counts is (commitCounts with all is cards), index is 0, cursor is 18, taken is empty
+
+function commitCounts with all
+    from all
+    keep each project where (commitsOf of project.timeline) > 0
+    map each project to (commitsOf of project.timeline)
+
+# --- stack coverage --------------------------------------------------------
+#
+# The hero claims one person and the whole stack; this is the measurement of
+# it, and it is `static`, so it is computed once on the build host from the
+# same headers the project pages render. There is nowhere for it to drift to.
+
+record Coverage
+    layer is Text
+    count is Whole
+    width is Whole
+
+# How many projects reach one layer.
+function countFor with all, layer
+    from all
+    fold each project into total starting 0 to total + (oneIfReaches with stack is project.stack, layer is layer)
+
+# The busiest layer, which the bars are scaled against — the question is "is
+# any of this empty", not "what share is this", so the widest bar is the
+# fullest layer rather than the project count.
+function busiest with all, index, most
+    when listAt with value is layerNames, index is index
+        None
+            give most
+        Some with layer
+            give busiest with all is all, index is index + 1, most is (max with first is most, second is (countFor with all is all, layer is layer))
+
+state widest is static Whole from busiest with all is cards, index is 0, most is 1
+
+state coverage is static List of Coverage from coverageOf with all is cards
+
+function coverageOf with all
+    from layerNames
+    map each layer to (Coverage with layer is layer, count is (countFor with all is all, layer is layer), width is (percentOf with part is (countFor with all is all, layer is layer), whole is widest))
+
+# The bar widths are classes, and a class per whole percent would be a
+# hundred and one of them. Rounded to the nearest five, which is twenty-one
+# and is finer than the eye reads on a 14px bar.
+function rounded5 of percent
+    give 5 * (valueOr with maybe is (quotient with value is percent + 2, divisor is 5), fallback is 0)
+
+function percentOf with part, whole
+    if whole is 0
+        give 0
+    give valueOr with maybe is (quotient with value is part * 100, divisor is whole), fallback is 0
+
+# "5 of 5 layers" — how many are occupied at all.
+state spanned is static Whole from spannedOf with all is cards, index is 0, total is 0
+
+function spannedOf with all, index, total
+    when listAt with value is layerNames, index is index
+        None
+            give total
+        Some with layer
+            give spannedOf with all is all, index is index + 1, total is total + (oneIfAny of (countFor with all is all, layer is layer))
+
+function oneIfAny of count
+    if count > 0
+        give 1
+    give 0
+
+state missingProject is static Project from missingWork with title is "Not found"
+
+function missingWork with title
+    give Project with slug is "", title is title, oneLiner is "", status is "", stack is "", shown is "", timeline is "", rank is 99, body is build markdown ""
+
+function projectWith with all, slug, index, fallback
+    when listAt with value is all, index is index
+        None
+            give fallback
+        Some with project
+            if project.slug is slug
+                give project
+            give projectWith with all is all, slug is slug, index is index + 1, fallback is fallback
+
+record Ring
+    outer  is Whole
+    width  is Whole
+    shade  is Whole
+    wobble is Whole
+
+# MIN_WIDTH + log10(commits) * WIDTH_SCALE, exactly as `rings.ts` has it.
+function ringWidth of commits
+    with grown is (valueOr with maybe is (log10 of (decimalOf of (max with first is commits, second is 1))), fallback is 0.0)
+    give 11 + (valueOr with maybe is (round of (grown * 7.6)), fallback is 0)
+
+# Rings, pith outward: each one sits on the edge the last left.
+function ringsFrom with counts, index, cursor, taken
+    when listAt with value is counts, index is index
+        None
+            give taken
+        Some with commits
+            give ringsFrom with counts is counts, index is index + 1, cursor is cursor + (ringWidth of commits), taken is (append (Ring with outer is cursor + (ringWidth of commits), width is (ringWidth of commits), shade is (shadeFor with index is index, count is (listLength of counts)), wobble is (valueOr with maybe is (mod with value is index, divisor is 6), fallback is 0)) to taken)
+
+# Position on the soil-to-ember ramp, as one of eleven classes. Eased hard
+# toward the end for the reason the original gives: ring *area* grows with
+# radius, so spreading the ramp evenly across ring index spends two thirds
+# of the picture on the bright end and the disc reads as a plain orange
+# circle.
+function shadeFor with index, count
+    if count < 2
+        give 10
+    with t is ((decimalOf of index) / (decimalOf of (count - 1)))
+    with eased is (valueOr with maybe is (power with value is t, exponent is 1.9), fallback is 0.0)
+    give valueOr with maybe is (round of (eased * 10.0)), fallback is 0
+
+

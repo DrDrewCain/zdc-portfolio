@@ -1,0 +1,161 @@
+# posts.zd — the blog's posts, read off disk.
+#
+# The data and the arithmetic; the *view* stays in `site.zd`, because a
+# `Card` links to a route and a route variant cannot cross a module
+# boundary — `use "./routes" for Home` is refused, and there is no
+# re-export in v1. So the rule that fell out of the language is: what
+# reasons about a post lives here, what links to one lives with the routes.
+
+use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
+
+record Post
+    slug    is Text
+    title   is Text
+    summary is Text
+    date    is Text
+    # Minutes, worked out on the build host. The reader is handed a number,
+    # not the arithmetic and not the text it was measured from.
+    minutes is Whole
+    # `Markup`, not `Text`. `Text` sets `nodeValue`, so a post's `<h1>`
+    # would arrive as four visible characters. `build markdown` is the only
+    # expression that makes a `Markup` and `Prose` is the only element that
+    # renders one; neither converts to the other in either direction.
+    body    is Markup
+
+# `Entry`, not `Post`: `record Post` already has that name, and a route
+# variant and a record share one namespace. The compiler catches it as
+# "`Post` is missing `title`, `summary`, `date`, and `body`" — the record
+# constructor winning the name, which is exactly what happened.
+# --- how long a post takes to read ---------------------------------------
+#
+# Ported from `src/lib/reading-time.ts`, which opens by saying why the usual
+# implementation is wrong: prose and code are not consumed at the same rate.
+# People read prose linearly and *scan* code — slower per token, far fewer
+# tokens — so a post that is half fenced blocks gets badly overestimated by
+# a flat words-per-minute rate.
+#
+# So the two are counted separately, at 220 words a minute and 60 code lines
+# a minute, and the fences are split on rather than matched: a body cut on
+# "```" alternates prose, code, prose, code, so the even pieces are read and
+# the odd pieces are scanned. No regular expressions, because the language
+# has none — the punctuation that is not a word is replaced with spaces and
+# the rest is split on whitespace.
+
+function segmentsOf of body
+    give split with value is body, using is "```"
+
+# Every other piece, starting at `index`. `2` because the split alternates.
+function wordsFrom with pieces, index, total
+    when listAt with value is pieces, index is index
+        None
+            give total
+        Some with piece
+            give wordsFrom with pieces is pieces, index is index + 2, total is total + (wordsIn of piece)
+
+function codeLinesFrom with pieces, index, total
+    when listAt with value is pieces, index is index
+        None
+            give total
+        Some with piece
+            give codeLinesFrom with pieces is pieces, index is index + 2, total is total + (linesIn of piece)
+
+# A fenced block's own two fence lines are the delimiters that were split
+# away, so what is left is the content plus the newline each side of it.
+function linesIn of piece
+    with counted is (listLength of (lines of piece)) - 2
+    if counted < 0
+        give 0
+    give counted
+
+# Table pipes, heading markers and emphasis are punctuation rather than
+# words, so they become spaces before the split. `replace` is the prelude's.
+function despunctuated of piece
+    give replace with value is (replace with value is (replace with value is (replace with value is (replace with value is (replace with value is piece, old is "|", new is " "), old is "#", new is " "), old is ">", new is " "), old is "*", new is " "), old is "_", new is " "), old is (text of newline), new is " "
+
+function wordsIn of piece
+    from (split with value is (despunctuated of piece), using is " ")
+    fold each word into total starting 0 to total + (oneIfWord of word)
+
+function oneIfWord of word
+    if isBlank of word
+        give 0
+    give 1
+
+# Prose at 220 a minute plus code at 60 a minute, rounded. Anything with
+# content in it is at least a one-minute read: rounding a short post to zero
+# reads as an error rather than as brevity.
+function readingMinutes of body
+    with pieces is (segmentsOf of body)
+    with words is (wordsFrom with pieces is pieces, index is 0, total is 0)
+    with codeLines is (codeLinesFrom with pieces is pieces, index is 1, total is 0)
+    with raw is ((decimalOf of words) / 220.0) + ((decimalOf of codeLines) / 60.0)
+    with rounded is (valueOr with maybe is (round of raw), fallback is 1)
+    if (words + codeLines) is 0
+        give 0
+    if rounded < 1
+        give 1
+    give rounded
+
+function postFromRaw with path, raw
+    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), minutes is (readingMinutes of (bodyOf of raw)), body is build markdown (linkified of (bodyOf of raw))
+
+# ⚠️ THE ONE THING THE BUILD CAPABILITIES CANNOT DO, AND IT IS WORTH SAYING
+# PLAINLY.
+#
+# This list is written out, and everything else on the page is read off
+# disk. It was `from build list "content/blog"` first, and the compiler
+# refused it:
+#
+#   `slugs` is not a list of values the build host can evaluate, so a route
+#   parameter cannot be enumerated over it.
+#
+# A route parameter's `in` collection has to be a literal `static` list. So
+# `build list` can decide what a page *contains* but not what pages
+# *exist* — the directory populates the posts, and the URLs are declared.
+# Adding a post is therefore two edits: the file, and this line.
+#
+# The refusal is not arbitrary. The compiler emits one document per value
+# here, so the value set has to be settled before the build host has run
+# anything; `build list` runs during the build, which is after. Closing
+# that gap means letting a route enumerate over a build capability, and
+# that is a change to when the document set is decided, not a bug fix.
+state slugs is static List of Text starting ["2026-07-15-hello-world", "2026-07-16-things-that-move", "2026-07-18-critters-grew-up", "2026-07-20-judgment-became-an-act", "2026-07-24-the-shape-of-the-fuel", "2026-07-25-the-classifier-was-never-the-problem", "2026-07-25-the-optimization-that-was-wrong-twice", "2026-07-25-you-only-get-to-watch-one-person-think", "2026-07-31-coastlines-over-open-water", "2026-08-02-commitment-is-the-safety-feature", "2026-08-02-the-ruler-is-made-of-people", "2026-08-02-the-same-question-one-layer-up", "2026-08-02-the-student-beat-the-teacher", "2026-08-02-the-window-is-not-the-memory"]
+
+
+state posts is static List of Post from readPosts with directory is "content/blog"
+
+function readPosts with directory
+    from build list directory
+    map each path to (postFrom of path)
+
+# The file is read once and handed on. There is no `let`, so "read it once"
+# is spelled as a second function taking the text as a parameter.
+function postFrom of path
+    give postFromRaw with path is path, raw is build read path
+
+# Newest first. Sorted on the build host, so the order is the same on every
+# machine and costs the reader nothing.
+state ordered is static List of Post from newestFirst with all is posts
+
+function newestFirst with all
+    from all
+    sort each post by post.date
+
+# The "no such post" post, built once on the build host. It cannot be
+# constructed in the lookup below, because that runs in the browser and
+# `build markdown` is only readable while the build is running — E0361 says
+# so, and traces the call chain that reaches it.
+state missingPost is static Post from missing with title is "Not found"
+
+function missing with title
+    give Post with slug is "", title is title, summary is "", date is "", minutes is 1, body is build markdown ""
+
+function postWith with all, slug, index, fallback
+    when listAt with value is all, index is index
+        None
+            give fallback
+        Some with post
+            if post.slug is slug
+                give post
+            give postWith with all is all, slug is slug, index is index + 1, fallback is fallback
+

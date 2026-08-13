@@ -139,10 +139,6 @@
 .section-head { font-family: var(--font-mono); font-size: 14px; color: var(--color-muted); margin: 0; font-weight: 400; }
 .section-count { color: #6f6653; }
 
-.line { border-bottom: 1px solid var(--color-line); }
-.line-label { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent); }
-.line-title { font-size: 16px; color: var(--color-ink); }
-.line-detail { font-size: 14px; color: #8b8478; line-height: 1.6; }
 
 .status-tag {
   font-family: var(--font-mono); font-size: 11px;
@@ -373,6 +369,10 @@ html {
  * the middle so the mid bands read as timber rather than leather.
  */
 .rings { margin: 0 auto; }
+/* The colour is `!important` because the width arrives as an inline
+ * `border` shorthand — a reactive `border is` is a `setProperty` call — and
+ * an inline shorthand resets `border-color` to `currentColor`, which a
+ * class rule cannot outrank. */
 .ring {
   border-style: solid;
   box-sizing: border-box;
@@ -387,19 +387,69 @@ html {
 .wob4 { border-radius: 51% 49% 50% 50% / 51% 50% 49% 50%; }
 .wob5 { border-radius: 50% 50% 52% 48% / 49% 51% 50% 50%; }
 
-.shade0 { border-color: #4a412a; }
-.shade1 { border-color: #5b4c33; }
-.shade2 { border-color: #6b563d; }
-.shade3 { border-color: #7a6247; }
-.shade4 { border-color: #896d51; }
-.shade5 { border-color: #99785a; }
-.shade6 { border-color: #aa8361; }
-.shade7 { border-color: #bd8d67; }
-.shade8 { border-color: #d1976a; }
-.shade9 { border-color: #e7a06b; }
-.shade10 { border-color: #ffa96b; }
+.shade0 { border-color: #4a412a !important; }
+.shade1 { border-color: #5b4c33 !important; }
+.shade2 { border-color: #6b563d !important; }
+.shade3 { border-color: #7a6247 !important; }
+.shade4 { border-color: #896d51 !important; }
+.shade5 { border-color: #99785a !important; }
+.shade6 { border-color: #aa8361 !important; }
+.shade7 { border-color: #bd8d67 !important; }
+.shade8 { border-color: #d1976a !important; }
+.shade9 { border-color: #e7a06b !important; }
+.shade10 { border-color: #ffa96b !important; }
 
 .rings-label {
   font-family: var(--font-mono); font-size: 0.6875rem;
   text-transform: uppercase; letter-spacing: 0.18em; color: var(--color-muted);
+}
+
+/* --- the `now` list --------------------------------------------------------- */
+.line { border-bottom: 1px solid var(--color-line); }
+.line-label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--color-accent); }
+.line-title { font-size: 1rem; color: var(--color-ink); }
+.line-detail { font-size: 0.875rem; color: var(--color-muted); line-height: 1.6; }
+
+/* --- range, as a spec sheet ------------------------------------------------
+ * Three columns, measured off `range-section.tsx`: the domain, what it
+ * covers, and what it is written in. Alignment does the work — the
+ * languages line up in their own column, so the repeats across rows are
+ * visible by scanning down rather than being claimed. Nothing here is a
+ * link, so nothing here gets a hover state.
+ *
+ * Two tiers. The focus four answer "what does he actually do" and sit
+ * behind an accent rail; the rest stay legible underneath as evidence of
+ * range rather than competing with it.
+ */
+.range-row {
+  display: grid;
+  grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) minmax(0, 13rem);
+  column-gap: 2rem;
+  align-items: baseline;
+}
+.range-focus {
+  display: grid; row-gap: 2rem;
+  border-left: 2px solid rgba(255, 169, 107, 0.4);
+  padding-left: 1.5rem;
+}
+.range-focus .range-row { grid-template-columns: minmax(0, 17rem) minmax(0, 1fr) minmax(0, 13rem); }
+.range-rest { display: grid; row-gap: 1.75rem; }
+
+.range-area { font-family: var(--font-display); font-size: 1.5rem; line-height: 1.15; color: var(--color-ink); }
+.range-lead .range-area { font-size: 1.875rem; }
+.range-detail { font-size: 0.875rem; line-height: 1.65; color: var(--color-muted); }
+.range-lead .range-detail { font-size: 1rem; }
+.range-langs {
+  font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.65;
+  color: var(--color-accent);
+}
+
+/* The languages ride under the detail until there is room for a column. */
+@media (width < 64rem) {
+  .range-row, .range-focus .range-row { grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); }
+  .range-langs { grid-column: 2; margin-top: 0.5rem; }
+}
+@media (width < 40rem) {
+  .range-row, .range-focus .range-row { grid-template-columns: 1fr; }
+  .range-langs { grid-column: 1; }
 }

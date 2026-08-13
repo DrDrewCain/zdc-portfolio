@@ -1,4 +1,4 @@
-# blog.zd — the portfolio's writing, read off disk at build time.
+# site.zd — the entry: the routes, the shell, and every view that links.
 #
 # WHAT THIS REPLACES. Next.js reads the same directory with `gray-matter`
 # for the header and `next-mdx-remote` for the body, at request time or at
@@ -19,29 +19,12 @@
 # a post wants an interactive chart, that post needs a `component` in this
 # language and a way to name it from the file, and neither exists.
 
-use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
-use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, domains
+use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
+use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, Ring, rings, projectSlugs, rounded5
+use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
 use "./terminal" for screen, line, open, helpLines, whoamiLines, gamesLines, unknownLines, commandOf, argumentOf
 
-record Post
-    slug    is Text
-    title   is Text
-    summary is Text
-    date    is Text
-    # Minutes, worked out on the build host. The reader is handed a number,
-    # not the arithmetic and not the text it was measured from.
-    minutes is Whole
-    # `Markup`, not `Text`. `Text` sets `nodeValue`, so a post's `<h1>`
-    # would arrive as four visible characters. `build markdown` is the only
-    # expression that makes a `Markup` and `Prose` is the only element that
-    # renders one; neither converts to the other in either direction.
-    body    is Markup
-
-# `Entry`, not `Post`: `record Post` already has that name, and a route
-# variant and a record share one namespace. The compiler catches it as
-# "`Post` is missing `title`, `summary`, `date`, and `body`" — the record
-# constructor winning the name, which is exactly what happened.
 route Site
     Home    is "/"
     Writing is "/blog"
@@ -52,302 +35,6 @@ state page is client Option of Site starting address
 
 # Read at compile time and inlined. No boundary is crossed at run time, so
 # this is a `List of Post` and not a `Remote of List of Post`.
-state posts is static List of Post from readPosts with directory is "content/blog"
-
-function readPosts with directory
-    from build list directory
-    map each path to (postFrom of path)
-
-# The file is read once and handed on. There is no `let`, so "read it once"
-# is spelled as a second function taking the text as a parameter.
-function postFrom of path
-    give postFromRaw with path is path, raw is build read path
-
-# --- how long a post takes to read ---------------------------------------
-#
-# Ported from `src/lib/reading-time.ts`, which opens by saying why the usual
-# implementation is wrong: prose and code are not consumed at the same rate.
-# People read prose linearly and *scan* code — slower per token, far fewer
-# tokens — so a post that is half fenced blocks gets badly overestimated by
-# a flat words-per-minute rate.
-#
-# So the two are counted separately, at 220 words a minute and 60 code lines
-# a minute, and the fences are split on rather than matched: a body cut on
-# "```" alternates prose, code, prose, code, so the even pieces are read and
-# the odd pieces are scanned. No regular expressions, because the language
-# has none — the punctuation that is not a word is replaced with spaces and
-# the rest is split on whitespace.
-
-function segmentsOf of body
-    give split with value is body, using is "```"
-
-# Every other piece, starting at `index`. `2` because the split alternates.
-function wordsFrom with pieces, index, total
-    when listAt with value is pieces, index is index
-        None
-            give total
-        Some with piece
-            give wordsFrom with pieces is pieces, index is index + 2, total is total + (wordsIn of piece)
-
-function codeLinesFrom with pieces, index, total
-    when listAt with value is pieces, index is index
-        None
-            give total
-        Some with piece
-            give codeLinesFrom with pieces is pieces, index is index + 2, total is total + (linesIn of piece)
-
-# A fenced block's own two fence lines are the delimiters that were split
-# away, so what is left is the content plus the newline each side of it.
-function linesIn of piece
-    with counted is (listLength of (lines of piece)) - 2
-    if counted < 0
-        give 0
-    give counted
-
-# Table pipes, heading markers and emphasis are punctuation rather than
-# words, so they become spaces before the split. `replace` is the prelude's.
-function despunctuated of piece
-    give replace with value is (replace with value is (replace with value is (replace with value is (replace with value is (replace with value is piece, old is "|", new is " "), old is "#", new is " "), old is ">", new is " "), old is "*", new is " "), old is "_", new is " "), old is (text of newline), new is " "
-
-function wordsIn of piece
-    from (split with value is (despunctuated of piece), using is " ")
-    fold each word into total starting 0 to total + (oneIfWord of word)
-
-function oneIfWord of word
-    if isBlank of word
-        give 0
-    give 1
-
-# Prose at 220 a minute plus code at 60 a minute, rounded. Anything with
-# content in it is at least a one-minute read: rounding a short post to zero
-# reads as an error rather than as brevity.
-function readingMinutes of body
-    with pieces is (segmentsOf of body)
-    with words is (wordsFrom with pieces is pieces, index is 0, total is 0)
-    with codeLines is (codeLinesFrom with pieces is pieces, index is 1, total is 0)
-    with raw is ((decimalOf of words) / 220.0) + ((decimalOf of codeLines) / 60.0)
-    with rounded is (valueOr with maybe is (round of raw), fallback is 1)
-    if (words + codeLines) is 0
-        give 0
-    if rounded < 1
-        give 1
-    give rounded
-
-function postFromRaw with path, raw
-    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), minutes is (readingMinutes of (bodyOf of raw)), body is build markdown (linkified of (bodyOf of raw))
-
-# ⚠️ THE ONE THING THE BUILD CAPABILITIES CANNOT DO, AND IT IS WORTH SAYING
-# PLAINLY.
-#
-# This list is written out, and everything else on the page is read off
-# disk. It was `from build list "content/blog"` first, and the compiler
-# refused it:
-#
-#   `slugs` is not a list of values the build host can evaluate, so a route
-#   parameter cannot be enumerated over it.
-#
-# A route parameter's `in` collection has to be a literal `static` list. So
-# `build list` can decide what a page *contains* but not what pages
-# *exist* — the directory populates the posts, and the URLs are declared.
-# Adding a post is therefore two edits: the file, and this line.
-#
-# The refusal is not arbitrary. The compiler emits one document per value
-# here, so the value set has to be settled before the build host has run
-# anything; `build list` runs during the build, which is after. Closing
-# that gap means letting a route enumerate over a build capability, and
-# that is a change to when the document set is decided, not a bug fix.
-state slugs is static List of Text starting ["2026-07-15-hello-world", "2026-07-16-things-that-move", "2026-07-18-critters-grew-up", "2026-07-20-judgment-became-an-act", "2026-07-24-the-shape-of-the-fuel", "2026-07-25-the-classifier-was-never-the-problem", "2026-07-25-the-optimization-that-was-wrong-twice", "2026-07-25-you-only-get-to-watch-one-person-think", "2026-07-31-coastlines-over-open-water", "2026-08-02-commitment-is-the-safety-feature", "2026-08-02-the-ruler-is-made-of-people", "2026-08-02-the-same-question-one-layer-up", "2026-08-02-the-student-beat-the-teacher", "2026-08-02-the-window-is-not-the-memory"]
-
-state projectSlugs is static List of Text starting ["appmeee", "clawfreelance", "gridwright", "imsg-protocol", "judgehuman", "matrix-infras", "minimac-llm", "minineuromodel", "minitorch", "nlp-classifiers", "project-mercury", "spacetrader-wars", "tvm-kernel-opt", "vernos", "voxmatch", "zdeceptron"]
-
-# --- the projects ----------------------------------------------------------
-#
-# The same three capabilities as the posts, over a different directory. A
-# project carries a one-liner, a status, a stack and an order rather than a
-# date and a summary, and `order` is a number written in the file so the
-# author decides the sequence rather than the filesystem.
-
-record Project
-    slug      is Text
-    title     is Text
-    oneLiner  is Text
-    status    is Text
-    stack     is Text
-    timeline  is Text
-    rank      is Whole
-    body      is Markup
-
-state projects is static List of Project from readProjects with directory is "content/projects"
-
-function readProjects with directory
-    from build list directory
-    map each path to (projectFrom of path)
-
-function projectFrom of path
-    give projectFromRaw with path is path, raw is build read path
-
-# `order` comes out of the header as text and has to be a number to sort by.
-# `parseWhole` gives an `Option`, because a header can say anything.
-function projectFromRaw with path, raw
-    give Project with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), oneLiner is (fieldOf with raw is raw, key is "oneLiner"), status is (fieldOf with raw is raw, key is "status"), stack is (spaced of (unbracketed of (fieldOf with raw is raw, key is "stack"))), timeline is (fieldOf with raw is raw, key is "timeline"), rank is (valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")), fallback is 99), body is build markdown (linkified of (bodyOf of raw))
-
-# The effort, not the whole timeline. "Feb 2026 to now, over 9,000 commits"
-# is a period and an effort, and the listing's right-hand column wants only
-# the second — the original splits them with a regular expression, and this
-# takes the last comma-separated piece when it is a commit count.
-function effortOf of timeline
-    with tail is (trim of (afterLast with value is timeline, delimiter is ","))
-    if textContains with value is tail, needle is "commits"
-        give tail
-    give ""
-
-# The commit count behind a project, out of its effort phrase: "over 9,000
-# commits" is 9000. The original matches `\d[\d,]*` with a regular
-# expression; this drops the separators and takes the first word that parses
-# as a number, which is the same answer by a different road.
-function commitsOf of timeline
-    give firstNumberIn with words is (split with value is (replace with value is (effortOf of timeline), old is ",", new is ""), using is " "), index is 0
-
-function firstNumberIn with words, index
-    when listAt with value is words, index is index
-        None
-            give 0
-        Some with word
-            when parseWhole of word
-                None
-                    give firstNumberIn with words is words, index is index + 1
-                Some with number
-                    give number
-
-# `stack` is a YAML list — `[TypeScript, Next.js]` — and the brackets are
-# the only part of that syntax this reads. Anything more is a YAML parser,
-# and `frontmatter.zd` says why there is not one.
-# `TypeScript, Next.js` reads as `TypeScript · Next.js`, which is how the
-# original joins it. Done here rather than in the view because the view
-# renders a `Text` and has nowhere to put a separator.
-function spaced of value
-    give join with parts is (split with value is value, using is ", "), using is " · "
-
-function unbracketed of value
-    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["), suffix is "]"
-
-state ranked is static List of Project from byRank with all is projects
-
-# The rings, as one string. A `foreign` takes `Text` and `Decimal` and not a
-# `List of` a record, so the drawing is handed "9000,99,52,…" in running
-# order and works the geometry out itself — which is where the geometry
-# already lived.
-state rings is static List of Ring from ringsFrom with counts is (commitCounts with all is ranked), index is 0, cursor is 18, taken is empty
-
-function commitCounts with all
-    from all
-    keep each project where (commitsOf of project.timeline) > 0
-    map each project to (commitsOf of project.timeline)
-
-# --- stack coverage --------------------------------------------------------
-#
-# The hero claims one person and the whole stack; this is the measurement of
-# it, and it is `static`, so it is computed once on the build host from the
-# same headers the project pages render. There is nowhere for it to drift to.
-
-record Coverage
-    layer is Text
-    count is Whole
-    width is Whole
-
-# How many projects reach one layer.
-function countFor with all, layer
-    from all
-    fold each project into total starting 0 to total + (oneIfReaches with stack is project.stack, layer is layer)
-
-# The busiest layer, which the bars are scaled against — the question is "is
-# any of this empty", not "what share is this", so the widest bar is the
-# fullest layer rather than the project count.
-function busiest with all, index, most
-    when listAt with value is layerNames, index is index
-        None
-            give most
-        Some with layer
-            give busiest with all is all, index is index + 1, most is (max with first is most, second is (countFor with all is all, layer is layer))
-
-state widest is static Whole from busiest with all is projects, index is 0, most is 1
-
-state coverage is static List of Coverage from coverageOf with all is projects
-
-function coverageOf with all
-    from layerNames
-    map each layer to (Coverage with layer is layer, count is (countFor with all is all, layer is layer), width is (percentOf with part is (countFor with all is all, layer is layer), whole is widest))
-
-# The bar widths are classes, and a class per whole percent would be a
-# hundred and one of them. Rounded to the nearest five, which is twenty-one
-# and is finer than the eye reads on a 14px bar.
-function rounded5 of percent
-    give 5 * (valueOr with maybe is (quotient with value is percent + 2, divisor is 5), fallback is 0)
-
-function percentOf with part, whole
-    if whole is 0
-        give 0
-    give valueOr with maybe is (quotient with value is part * 100, divisor is whole), fallback is 0
-
-# "5 of 5 layers" — how many are occupied at all.
-state spanned is static Whole from spannedOf with all is projects, index is 0, total is 0
-
-function spannedOf with all, index, total
-    when listAt with value is layerNames, index is index
-        None
-            give total
-        Some with layer
-            give spannedOf with all is all, index is index + 1, total is total + (oneIfAny of (countFor with all is all, layer is layer))
-
-function oneIfAny of count
-    if count > 0
-        give 1
-    give 0
-
-function byRank with all
-    from all
-    sort each project by project.rank
-
-state missingProject is static Project from missingWork with title is "Not found"
-
-function missingWork with title
-    give Project with slug is "", title is title, oneLiner is "", status is "", stack is "", timeline is "", rank is 99, body is build markdown ""
-
-function projectWith with all, slug, index, fallback
-    when listAt with value is all, index is index
-        None
-            give fallback
-        Some with project
-            if project.slug is slug
-                give project
-            give projectWith with all is all, slug is slug, index is index + 1, fallback is fallback
-
-# Newest first. Sorted on the build host, so the order is the same on every
-# machine and costs the reader nothing.
-state ordered is static List of Post from newestFirst with all is posts
-
-function newestFirst with all
-    from all
-    sort each post by post.date
-
-# The "no such post" post, built once on the build host. It cannot be
-# constructed in the lookup below, because that runs in the browser and
-# `build markdown` is only readable while the build is running — E0361 says
-# so, and traces the call chain that reaches it.
-state missingPost is static Post from missing with title is "Not found"
-
-function missing with title
-    give Post with slug is "", title is title, summary is "", date is "", minutes is 1, body is build markdown ""
-
-function postWith with all, slug, index, fallback
-    when listAt with value is all, index is index
-        None
-            give fallback
-        Some with post
-            if post.slug is slug
-                give post
-            give postWith with all is all, slug is slug, index is index + 1, fallback is fallback
-
 # --- the view --------------------------------------------------------------
 
 component Card with post
@@ -481,59 +168,18 @@ component LineItem with line
         if not (isBlank of line.detail)
             Text line.detail, class is "line-detail"
 
+# One row of the range spec sheet: the domain, what it covers, and what it
+# is written in. Three columns rather than a stack, so the languages line up
+# in their own column and the repeats across rows — Rust, TypeScript, Swift —
+# are visible by scanning down rather than being claimed.
+component RangeRow with line, tier
+    Row class is ("range-row " + tier)
+        Text line.label, class is "range-area"
+        Text line.title, class is "range-detail"
+        Text line.detail, class is "range-langs"
+
 # Five ticks, metal-first, lit for the layers this project reaches. The
 # rarest lit tick is the leftmost, which is the point of showing it.
-# --- the growth rings ------------------------------------------------------
-#
-# No JavaScript. The original is an SVG and the element vocabulary has no
-# SVG, so the first attempt was a `foreign` over a bespoke module — and a
-# bespoke module is exactly what a `foreign` should not be for. A `foreign`
-# earns its keep when it reaches something that already exists and the
-# language cannot: three.js, a canvas, a map. Writing new geometry into a
-# `.js` beside the program is writing the program somewhere else.
-#
-# So the rings are elements. A ring is a bordered box with a border radius,
-# which is a circle; the *wobble* — the thing that stops concentric bands
-# reading as a dartboard — is four unequal radii, and `radius` is a
-# `Lengths` in pixels so a percentage cannot be one. Six wobble classes
-# carry the shapes and the program picks between them by index, which is
-# the same trick the stripes use for colour: static shapes, dataflow
-# choosing which applies.
-#
-# The sizes are worked out here, in the language, with the `math.zd` this
-# branch added — `log10` for the ring width is the original's own formula.
-
-record Ring
-    outer  is Whole
-    width  is Whole
-    shade  is Whole
-    wobble is Whole
-
-# MIN_WIDTH + log10(commits) * WIDTH_SCALE, exactly as `rings.ts` has it.
-function ringWidth of commits
-    with grown is (valueOr with maybe is (log10 of (decimalOf of (max with first is commits, second is 1))), fallback is 0.0)
-    give 11 + (valueOr with maybe is (round of (grown * 7.6)), fallback is 0)
-
-# Rings, pith outward: each one sits on the edge the last left.
-function ringsFrom with counts, index, cursor, taken
-    when listAt with value is counts, index is index
-        None
-            give taken
-        Some with commits
-            give ringsFrom with counts is counts, index is index + 1, cursor is cursor + (ringWidth of commits), taken is (append (Ring with outer is cursor + (ringWidth of commits), width is (ringWidth of commits), shade is (shadeFor with index is index, count is (listLength of counts)), wobble is (valueOr with maybe is (mod with value is index, divisor is 6), fallback is 0)) to taken)
-
-# Position on the soil-to-ember ramp, as one of eleven classes. Eased hard
-# toward the end for the reason the original gives: ring *area* grows with
-# radius, so spreading the ramp evenly across ring index spends two thirds
-# of the picture on the bright end and the disc reads as a plain orange
-# circle.
-function shadeFor with index, count
-    if count < 2
-        give 10
-    with t is ((decimalOf of index) / (decimalOf of (count - 1)))
-    with eased is (valueOr with maybe is (power with value is t, exponent is 1.9), fallback is 0.0)
-    give valueOr with maybe is (round of (eased * 10.0)), fallback is 0
-
 component DepthGauge with stack
     Row gap is 2, align is "center"
         each layer in layerNames
@@ -567,7 +213,7 @@ component WorkRow with project
             Column class is "row-main"
                 Text project.title, class is "row-title"
                 Text project.oneLiner, class is "row-line"
-                Text project.stack, class is "row-stack"
+                Text project.shown, class is "row-stack"
             Text (effortOf of project.timeline), class is "row-effort"
 
 component Working with project
@@ -588,7 +234,7 @@ component Working with project
                 Row height is 10
                 Text project.oneLiner, color is "muted", size is "large", lineHeight is 1.6, maxWidth is 665
                 Row height is 10
-                Text project.stack, class is "stack"
+                Text project.shown, class is "stack"
                 Row height is 30
                 Prose project.body, class is "prose"
 
@@ -800,15 +446,23 @@ view title is "Mark Sturman"
                                 Text "project"
                                 Text "effort", class is "head-right"
                             Column gap is 0
-                                each project in ranked
+                                each project in cards
                                     WorkRow project
                             Row height is 56
 
                             SectionHead "range", "13 domains", "range"
-                            Row height is 14
-                            Column gap is 2
+                            Row height is 24
+
+                            # The focus tier, behind an accent rail.
+                            Column class is "range-focus"
+                                each line in focus
+                                    RangeRow line, "range-lead"
+
+                            Row height is 30
+
+                            Column class is "range-rest"
                                 each line in domains
-                                    LineItem line
+                                    RangeRow line, "range-plain"
                             Row height is 40
 
                             Prompt "ls elsewhere:"
