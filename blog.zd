@@ -21,7 +21,7 @@
 
 use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, domains
-use "./layers" for layerNames, reaches, oneIfReaches
+use "./layers" for layerNames, reaches, oneIfReaches, tickClass
 
 record Post
     slug    is Text
@@ -435,14 +435,38 @@ component LineItem with line
         if not (isBlank of line.detail)
             Text line.detail, class is "line-detail"
 
-component WorkCard with project
+# Five ticks, metal-first, lit for the layers this project reaches. The
+# rarest lit tick is the leftmost, which is the point of showing it.
+component DepthGauge with stack
+    Row gap is 2, align is "center"
+        each layer in layerNames
+            Row class is (tickClass with stack is stack, layer is layer), width is 7, height is 14, radius is 1
+
+# A project's state, as a shape rather than a hue. Colour alone cannot
+# distinguish two states under WCAG 1.4.1, and three dots differing only in
+# hue is exactly that — so a disc, a ring and a half-disc, with the word
+# beside them regardless.
+component StatusBadge with status
+    Row gap is 6, align is "center"
+        Row class is ("dot dot-" + status), width is 8, height is 8, radius is 999
+        Text status, class is "status-word"
+
+# The listing, not a card grid. Twelve cards is a lot of chrome to scroll
+# past and rounded bordered cards are the one shape every site already has;
+# a listing is denser, scans at once, and belongs to the same terminal world
+# as the rest of the page.
+component WorkRow with project
     Link (Work with slug is project.slug), decoration is "none", color is "ink"
-        Column class is "card", padding is 20, gap is 8
-            Row gap is 10, align is "baseline"
-                Text project.title, class is "card-title"
-                Text project.status, class is "status-tag"
-            Text project.oneLiner, color is "muted", size is "small", lineHeight is 1.7
-            Text project.stack, class is "stack"
+        Row class is "row", padding is 18, gap is 20, align is "baseline", narrowDisplay is "block"
+            Row width is 52, align is "center"
+                DepthGauge project.stack
+            Row width is 108
+                StatusBadge project.status
+            Column grow is 1, basis is 0, gap is 6, minWidth is 0
+                Text project.title, class is "row-title"
+                Text project.oneLiner, color is "muted", size is "small", lineHeight is 1.65
+                Text project.stack, class is "stack"
+            Text project.timeline, class is "effort"
 
 component Working with project
     Column gap is 0
@@ -515,7 +539,15 @@ view title is "Mark Sturman"
                             # Two-tone, as the original is: the claim is
                             # italic and grey and the verb is upright and
                             # amber, which is the whole joke of the line.
-                            Row gap is 0, align is "baseline", class is "hero-sub"
+                            #
+                            # `display is "block"`, not the default `Row`. A
+                            # `Row` is a flex container and its children are
+                            # flex items, and the trailing space in "makes
+                            # models " is *collapsed away* between two items —
+                            # the words ran together as "modelsrun". In block
+                            # flow the spans are inline and the space is a
+                            # space.
+                            Row display is "block", class is "hero-sub"
                                 Text "makes models "
                                 Text "run faster", class is "hero-verb"
                                 Text "."
@@ -573,7 +605,10 @@ view title is "Mark Sturman"
                             # The lead: Instrument Serif at 36px with one
                             # phrase in italic amber, which is the shape of
                             # the section rather than decoration on it.
-                            Row gap is 0, align is "baseline", class is "about-lead", maxWidth is 665
+                            # Block flow for the same reason the hero's
+                            # subtitle needs it: the spaces live inside the
+                            # text, and a flex container eats them.
+                            Row display is "block", class is "about-lead", maxWidth is 665
                                 Text aboutOpen
                                 Text aboutStress, class is "about-stress"
                                 Text aboutClose
@@ -586,9 +621,17 @@ view title is "Mark Sturman"
 
                             SectionHead "projects", "16 entries", "projects"
                             Row height is 14
-                            Column gap is 10
+                            Row class is "row-head", gap is 20, padding is 12, narrowDisplay is "none"
+                                Row width is 52
+                                    Text "depth"
+                                Row width is 108
+                                    Text "status"
+                                Row grow is 1
+                                    Text "project"
+                                Text "effort"
+                            Column gap is 0
                                 each project in ranked
-                                    WorkCard project
+                                    WorkRow project
                             Row height is 56
 
                             SectionHead "range", "13 domains", "range"

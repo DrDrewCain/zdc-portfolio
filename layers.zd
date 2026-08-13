@@ -126,3 +126,15 @@ function oneIfReaches with stack, layer
     if reaches with stack is stack, layer is layer
         give 1
     give 0
+
+# --- the depth gauge -------------------------------------------------------
+#
+# Five ticks, lit for the layers a project reaches, metal-first. `DepthGauge`
+# in the original returns the list of layers and lets the renderer diff it;
+# here the view walks the five names and asks each one, which is the same
+# question asked five times instead of once — and cheaper to read.
+
+function tickClass with stack, layer
+    if reaches with stack is stack, layer is layer
+        give "tick tick-" + layer
+    give "tick tick-off"

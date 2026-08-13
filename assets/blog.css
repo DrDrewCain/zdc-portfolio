@@ -354,3 +354,50 @@ html {
   html { scroll-behavior: auto; }
   .caret { animation: none; }
 }
+
+/* --- the project listing ---------------------------------------------------
+ * A directory listing rather than a card grid: denser, scans at once, and
+ * the columns carry real metadata instead of decorative 01/02/03 markers. */
+.row-head {
+  font-family: PlexMono, ui-monospace, monospace; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.18em; color: #6f6653;
+  border-top: 1px solid var(--edge);
+}
+.row {
+  border-bottom: 1px solid var(--edge);
+  position: relative;
+  transition: background 200ms ease;
+}
+.row:hover { background: rgba(23, 20, 15, 0.7); }
+/* The selection marker a TUI shows on the focused row. */
+.row::before {
+  content: ""; position: absolute; left: 0; top: 0; height: 100%; width: 2px;
+  background: var(--amber); transform: scaleY(0); transform-origin: top;
+  transition: transform 200ms ease-out;
+}
+.row:hover::before { transform: scaleY(1); }
+.row-title {
+  font-family: InstrumentSerif, Georgia, serif; font-size: 24px;
+  line-height: 1.15; transition: color 200ms ease;
+}
+.row:hover .row-title { color: var(--amber); }
+.effort { font-family: PlexMono, ui-monospace, monospace; font-size: 12px; color: #6f6653; white-space: nowrap; }
+
+/* Five ticks, metal-first. An unlit tick is still drawn: the gap is the
+ * information. */
+.tick { display: block; }
+.tick-off { background: rgba(242, 237, 227, 0.14); }
+.tick-silicon   { background: #f0a06a; }
+.tick-kernel    { background: #e8b262; }
+.tick-runtime   { background: #e2c85f; }
+.tick-service   { background: #9ccf8e; }
+.tick-interface { background: #7fd1ae; }
+
+/* Status as a shape, not only a hue — colour alone cannot distinguish two
+ * states under WCAG 1.4.1. */
+.status-word { font-family: PlexMono, ui-monospace, monospace; font-size: 12px; color: #aaa295; }
+.dot { border: 1px solid #e2c85f; }
+.dot-shipped { background: transparent; }
+.dot-active  { background: #e2c85f; }
+.dot-paused  { background: linear-gradient(90deg, #e2c85f 50%, transparent 50%); }
+.dot-rebuilding { background: linear-gradient(90deg, #e2c85f 50%, transparent 50%); }
