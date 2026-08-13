@@ -16,6 +16,7 @@
 # and nothing here says so.
 
 use "./commands" for Outcome, Completion, runCommand, completionFor, commandNames
+use "./codebreak" for Pegs, Round, newPegs, stepPegs
 
 # The screen: what has been printed, oldest first.
 state screen is client List of Text starting ["mark's portfolio :: type 'help' to get started"]
@@ -32,6 +33,15 @@ state mode is client Text starting "shell"
 # takes the whole panel still leaves the prompt underneath it, and quitting
 # one returns to the shell rather than to the mode it was launched from.
 state overlay is client Text starting ""
+
+# The codebreak in progress. One cell rather than one per mode: only one
+# game holds the prompt at a time, which is what `mode` already says.
+#
+# The seed comes from `clock`, because randomness here is a pure function
+# of a seed the program owns and a literal would deal the same code to
+# every reader on every load. `clock` in an initialiser is the one place a
+# fresh number can honestly come from.
+state pegs is client Pegs starting (newPegs of 1)
 
 # --- history ----------------------------------------------------------------
 #

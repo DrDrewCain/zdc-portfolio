@@ -1,0 +1,168 @@
+# codebreak.zd — `src/lib/terminal/codebreak.ts`, ported.
+#
+# Mastermind against the machine. Four pegCount, six colours, repeats allowed,
+# ten guesses. After each guess you are told how many pegCount are exactly
+# right and how many are the right colour in the wrong place, and you are
+# *not* told which. That withholding is the entire game: the feedback is a
+# pair of counts over the whole row, so every guess has to be chosen for
+# what its answer will eliminate rather than for what it might hit.
+#
+# Colours are digits 1-6, so a guess is four keystrokes and needs no
+# legend.
+#
+# WHY IT FITS THE LANGUAGE. A round is a pure function of the state and the
+# line: `stepCodebreak(state, input) -> {state, output, done}`. That is
+# what a `record` in and a `record` out already is, and there is nowhere
+# for a half-applied move to exist.
+
+record Pegs
+    hidden   is Text
+    guesses  is List of Text
+    hintUsed is Truth
+    over     is Truth
+    # The generator's cursor. Randomness in this language is a pure
+    # function of a seed the *program* owns — there is no entropy source
+    # and deliberately so, because one would let a `static` value differ
+    # between two builds. So the seed is state like any other, and every
+    # draw hands back the next one. `clock` in the initialiser is where a
+    # session gets its first, which is the only place a fresh number can
+    # honestly come from.
+    seed     is Whole
+
+record Round
+    game    is Pegs
+    printed is List of Text
+    done    is Truth
+
+state pegCount is static Whole starting 4
+state colours is static Whole starting 6
+state maxGuesses is static Whole starting 10
+
+# --- the secret -------------------------------------------------------------
+#
+# `randomBelow` is the language's own generator, which is `client` — a
+# secret worked out on the build host would be the same secret for every
+# reader, and would be sitting in the bundle.
+
+function newPegs of seed
+    give Pegs with hidden is (pegsFrom with seed is seed, index is 0), guesses is empty, hintUsed is no, over is no, seed is (seedAfter with seed is seed, draws is pegCount)
+
+function pegsFrom with seed, index
+    if index is pegCount
+        give ""
+    give (text of ((valueOr with maybe is (randomBelow with seed is seed, bound is colours), fallback is 0) + 1)) + (pegsFrom with seed is (nextSeed of seed), index is index + 1)
+
+function seedAfter with seed, draws
+    if draws is 0
+        give seed
+    give seedAfter with seed is (nextSeed of seed), draws is draws - 1
+
+# --- scoring ----------------------------------------------------------------
+#
+# Exact hits first, then colour-only hits from what is left over.
+#
+# THE TWO PASSES ARE NOT OPTIONAL. Scoring colours in the same sweep as
+# positions lets one secret peg be credited twice — once for sitting in the
+# right place and again for matching a duplicate elsewhere in the guess —
+# which reports more information than the row contains and makes the game
+# unsolvable by deduction.
+#
+# The original carries the leftovers in a `Map of Text to Whole`. Here they
+# are two `Text`s, built by the same sweep, because six colours and four
+# pegCount is a string short enough that a scan beats a map and says what it
+# means.
+
+record Score
+    exact     is Whole
+    misplaced is Whole
+
+function scoreOf with guess, hidden
+    with leftovers is (leftoverPair with guess is guess, hidden is hidden, index is 0, fromSecret is "", fromGuess is "")
+    give Score with exact is (exactCount with guess is guess, hidden is hidden, index is 0, running is 0), misplaced is (misplacedCount with pool is leftovers.fromSecret, taken is leftovers.fromGuess, index is 0, running is 0)
+
+record Leftovers
+    fromSecret is Text
+    fromGuess  is Text
+
+function leftoverPair with guess, hidden, index, fromSecret, fromGuess
+    if index is pegCount
+        give Leftovers with fromSecret is fromSecret, fromGuess is fromGuess
+    if (pegAt with value is guess, index is index) is (pegAt with value is hidden, index is index)
+        give leftoverPair with guess is guess, hidden is hidden, index is index + 1, fromSecret is fromSecret, fromGuess is fromGuess
+    give leftoverPair with guess is guess, hidden is hidden, index is index + 1, fromSecret is fromSecret + (pegAt with value is hidden, index is index), fromGuess is fromGuess + (pegAt with value is guess, index is index)
+
+function exactCount with guess, hidden, index, running
+    if index is pegCount
+        give running
+    if (pegAt with value is guess, index is index) is (pegAt with value is hidden, index is index)
+        give exactCount with guess is guess, hidden is hidden, index is index + 1, running is running + 1
+    give exactCount with guess is guess, hidden is hidden, index is index + 1, running is running
+
+# One credit per remaining secret peg, so a guess of `1111` against a
+# secret holding one `1` scores one misplaced and not four. The consumed
+# peg is removed from the pool, which is the whole of the bookkeeping the
+# original's map is doing.
+function misplacedCount with pool, taken, index, running
+    if index is (textLength of taken)
+        give running
+    with peg is (pegAt with value is taken, index is index)
+    if textContains with value is pool, needle is peg
+        give misplacedCount with pool is (withoutOne with value is pool, needle is peg), taken is taken, index is index + 1, running is running + 1
+    give misplacedCount with pool is pool, taken is taken, index is index + 1, running is running
+
+function withoutOne with value, needle
+    give (before with value is value, delimiter is needle) + (after with value is value, delimiter is needle)
+
+function pegAt with value, index
+    give valueOr with maybe is (textAt with value is value, index is index), fallback is ""
+
+# Filled circles for exact, hollow for right-colour-wrong-place.
+# Deliberately not positional: showing which peg was which would give the
+# game away.
+function renderRow with guess, mark
+    give ((("  " + guess) + "   ") + (padEnd with value is ((repeat with value is "●", count is mark.exact) + (repeat with value is "○", count is mark.misplaced)), width is 4, using is "·")) + "   " + (text of mark.exact) + " exact, " + (text of mark.misplaced) + " misplaced"
+
+function isValidGuess of raw
+    if not ((textLength of raw) is pegCount)
+        give no
+    give allDigitsInRange with raw is raw, index is 0
+
+function allDigitsInRange with raw, index
+    if index is (textLength of raw)
+        give yes
+    when parseWhole of (pegAt with value is raw, index is index)
+        None
+            give no
+        Some with digit
+            if (digit < 1) or (digit > colours)
+                give no
+            give allDigitsInRange with raw is raw, index is index + 1
+
+# --- one move ---------------------------------------------------------------
+
+function stepPegs with game, input
+    with raw is (lowercase of (trim of input))
+    if (raw is "quit") or (raw is "exit")
+        give Round with game is game, printed is [("the code was " + game.hidden) + "."], done is yes
+    if (raw is "help") or (raw is "?")
+        give Round with game is game, printed is ["guess 4 digits, each 1-6, repeats allowed. e.g. 1234", "● = right colour in the right place. ○ = right colour, wrong place.", "'hint' reveals one peg, once. 'quit' gives up."], done is no
+    if raw is "hint"
+        give pegHint of game
+    if not (isValidGuess of raw)
+        give Round with game is game, printed is ["4 digits, 1-6. try again, or 'help'."], done is no
+    with mark is (scoreOf with guess is raw, hidden is game.hidden)
+    with played is (Pegs with hidden is game.hidden, guesses is (append raw to game.guesses), hintUsed is game.hintUsed, over is no, seed is game.seed)
+    with row is (renderRow with guess is raw, mark is mark)
+    if mark.exact is pegCount
+        give Round with game is played, printed is [row, ("cracked it in " + (text of (listLength of played.guesses))) + "."], done is yes
+    if (listLength of played.guesses) > (maxGuesses - 1)
+        give Round with game is played, printed is [row, ("out of guesses. the code was " + game.hidden) + "."], done is yes
+    give Round with game is played, printed is [row, (text of (maxGuesses - (listLength of played.guesses))) + " left."], done is no
+
+# Reveal a *position* rather than a colour: a colour with no position is
+# barely worth more than the feedback already gives you.
+function pegHint of game
+    if game.hintUsed
+        give Round with game is game, printed is ["you have had your hint."], done is no
+    with spot is (valueOr with maybe is (randomBelow with seed is game.seed, bound is pegCount), fallback is 0)
+    give Round with game is (Pegs with hidden is game.hidden, guesses is game.guesses, hintUsed is yes, over is game.over, seed is (nextSeed of game.seed)), printed is [(("peg " + (text of (spot + 1))) + " is ") + (pegAt with value is game.hidden, index is spot) + "."], done is no

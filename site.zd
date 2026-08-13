@@ -24,8 +24,9 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen, line, open, mode, overlay, pegs, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
 use "./commands" for runCommand, completionFor
+use "./codebreak" for Pegs, Round, newPegs, stepPegs
 
 route Site
     Home    is "/"
@@ -280,15 +281,39 @@ component Terminal
                             set history to (append line to history)
                             set cursor to 0
                             set draft to ""
-                            with answer is (runCommand of line)
-                            if answer.clears
-                                set screen to (opening)
-                            if not answer.clears
+                            # A game holding the prompt takes the line
+                            # instead of the shell. `mode` is the whole of
+                            # that decision, so there is no second place
+                            # for a line to go and no order to get wrong.
+                            if mode is "codebreak"
+                                with played is (stepPegs with game is pegs, input is line)
+                                set pegs to played.game
+                                set screen to (joined with head is screen, rest is played.printed)
+                                if played.done
+                                    set mode to "shell"
+                            if mode is "games"
+                                set mode to "shell"
+                                with answer is (runCommand of line)
                                 set screen to (joined with head is screen, rest is answer.printed)
-                            if not (isBlank of answer.launches)
-                                set overlay to answer.launches
-                            if not (isBlank of answer.enters)
-                                set mode to answer.enters
+                                if not (isBlank of answer.launches)
+                                    set overlay to answer.launches
+                                if not (isBlank of answer.enters)
+                                    set mode to answer.enters
+                            if mode is "shell"
+                                with answer is (runCommand of line)
+                                if answer.clears
+                                    set screen to (opening)
+                                if not answer.clears
+                                    set screen to (joined with head is screen, rest is answer.printed)
+                                if not (isBlank of answer.launches)
+                                    set overlay to answer.launches
+                                if not (isBlank of answer.enters)
+                                    set mode to answer.enters
+                                # A fresh code per game, seeded from the
+                                # clock: a literal would deal every reader
+                                # the same four pegs on every load.
+                                if answer.enters is "codebreak"
+                                    set pegs to (newPegs of (clock))
                             set line to ""
 
                         # Ctrl+L clears the scrollback. Ctrl+C abandons the
