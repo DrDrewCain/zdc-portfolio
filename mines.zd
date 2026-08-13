@@ -1,0 +1,246 @@
+# mines.zd — `src/lib/game/minesweeper.ts`, ported.
+#
+# Sixteen by twelve, thirty mines. Arrows move the cursor, space reveals,
+# `f` flags, `r` deals a new board.
+#
+# THE FIRST CLICK IS ALWAYS SAFE. Mines are placed on the first reveal
+# rather than at deal, excluding the chosen cell and its eight
+# neighbours — so a game can never be lost on move one, and the opening
+# always opens something. It is the rule every good implementation has
+# and the one most first attempts leave out.
+#
+# THE FLOOD FILL IS A QUEUE AND NOT RECURSION. The original says so and
+# gives the reason: a large board of zeroes would recurse deep enough to
+# overflow. Here the frontier is a `List of Whole` walked to exhaustion,
+# which is the same algorithm and the shape this language would have
+# reached for anyway.
+#
+# WHY THE BOARD IS THREE TEXTS. A cell has three independent facts —
+# whether it is mined, whether it is shown, and how many mines touch it —
+# and a `List of` a three-field record costs a rebuild of the whole list
+# per change. Three strings of one character each, indexed alike, cost a
+# slice and a join of one row. The same argument `life.zd` makes, one
+# step further because a cell here carries more than a bit.
+
+record Field
+    mined    is Text
+    shown    is Text
+    counts   is Text
+    started  is Truth
+    over     is Truth
+    won      is Truth
+    revealed is Whole
+    flags    is Whole
+    cursor   is Whole
+    seed     is Whole
+
+state mineWidth is static Whole starting 16
+state mineHeight is static Whole starting 12
+state mineCount is static Whole starting 30
+state mineCell is static Whole starting 22
+
+state mineTotal is static Whole from mineWidth * mineHeight
+state mineViewBox is static Text from (("0 0 " + (text of (mineWidth * mineCell))) + " ") + (text of (mineHeight * mineCell))
+
+function freshField of seed
+    give Field with mined is (repeat with value is ".", count is mineTotal), shown is (repeat with value is "h", count is mineTotal), counts is (repeat with value is "0", count is mineTotal), started is no, over is no, won is no, revealed is 0, flags is 0, cursor is 0, seed is seed
+
+# --- reading the board ------------------------------------------------------
+
+function markAt with value, index
+    give valueOr with maybe is (textAt with value is value, index is index), fallback is ""
+
+function withMark with value, index, mark
+    give ((slice with value is value, start is 0, stop is index) + mark) + (slice with value is value, start is index + 1, stop is (textLength of value))
+
+function columnOfIndex of index
+    give valueOr with maybe is (mod with value is index, divisor is mineWidth), fallback is 0
+
+function rowOfIndex of index
+    give valueOr with maybe is (quotient with value is index, divisor is mineWidth), fallback is 0
+
+# A neighbour index, or `-1` when the offset leaves the board. Bounded
+# rather than wrapped: minesweeper's edges are real, and a count that
+# wrapped would make a corner claim neighbours on the far side.
+function neighbourAt with index, dx, dy
+    with x is ((columnOfIndex of index) + dx)
+    with y is ((rowOfIndex of index) + dy)
+    if (x < 0) or ((y < 0) or ((x > (mineWidth - 1)) or (y > (mineHeight - 1))))
+        give 0 - 1
+    give (y * mineWidth) + x
+
+function neighbourList of index
+    from [(neighbourAt with index is index, dx is 0 - 1, dy is 0 - 1), (neighbourAt with index is index, dx is 0, dy is 0 - 1), (neighbourAt with index is index, dx is 1, dy is 0 - 1), (neighbourAt with index is index, dx is 0 - 1, dy is 0), (neighbourAt with index is index, dx is 1, dy is 0), (neighbourAt with index is index, dx is 0 - 1, dy is 1), (neighbourAt with index is index, dx is 0, dy is 1), (neighbourAt with index is index, dx is 1, dy is 1)]
+    keep each spot where spot > (0 - 1)
+
+# --- dealing ----------------------------------------------------------------
+#
+# Mines are drawn one at a time from the seed and rejected when they land
+# on an excluded cell or on a mine already placed. The original shuffles
+# every candidate and takes a prefix, which is the better algorithm when
+# the mine count approaches the board size; at thirty in a hundred and
+# ninety-two the rejection loop draws about forty times and needs no
+# shuffle of the whole board.
+
+function safeZone of index
+    give append index to (neighbourList of index)
+
+function dealt with field, around
+    with excluded is (safeZone of around)
+    with mined is (minesFrom with mined is field.mined, excluded is excluded, seed is field.seed, placed is 0, guard is 0)
+    give Field with mined is mined, shown is field.shown, counts is (countsFor with mined is mined, index is 0, taken is ""), started is yes, over is field.over, won is field.won, revealed is field.revealed, flags is field.flags, cursor is field.cursor, seed is (nextSeed of field.seed)
+
+function minesFrom with mined, excluded, seed, placed, guard
+    if placed is mineCount
+        give mined
+    # The guard is the rejection loop's bound. Thirty mines in a hundred
+    # and ninety-two cells needs about forty draws; a thousand is far
+    # beyond any run and stops a bad seed from hanging the page.
+    if guard > 999
+        give mined
+    with spot is (valueOr with maybe is (randomBelow with seed is seed, bound is mineTotal), fallback is 0)
+    if (listContains with items is excluded, value is spot) or ((markAt with value is mined, index is spot) is "*")
+        give minesFrom with mined is mined, excluded is excluded, seed is (nextSeed of seed), placed is placed, guard is guard + 1
+    give minesFrom with mined is (withMark with value is mined, index is spot, mark is "*"), excluded is excluded, seed is (nextSeed of seed), placed is placed + 1, guard is guard + 1
+
+function countsFor with mined, index, taken
+    if index is mineTotal
+        give taken
+    give countsFor with mined is mined, index is index + 1, taken is taken + (text of (touching with mined is mined, index is index))
+
+function touching with mined, index
+    from (neighbourList of index)
+    fold each spot into total starting 0 to total + (oneIfMine with mined is mined, index is spot)
+
+function oneIfMine with mined, index
+    if (markAt with value is mined, index is index) is "*"
+        give 1
+    give 0
+
+# --- revealing --------------------------------------------------------------
+
+function revealAt with field, index
+    if field.over
+        give field
+    if not ((markAt with value is field.shown, index is index) is "h")
+        give field
+    with dealtField is (startedField with field is field, index is index)
+    give floodFrom with field is dealtField, frontier is [index]
+
+function startedField with field, index
+    if field.started
+        give field
+    give dealt with field is field, around is index
+
+function floodFrom with field, frontier
+    when listAt with value is frontier, index is 0
+        None
+            give checkedForWin of field
+        Some with spot
+            with restOfFrontier is (listDrop with items is frontier, count is 1)
+            if not ((markAt with value is field.shown, index is spot) is "h")
+                give floodFrom with field is field, frontier is restOfFrontier
+            if (markAt with value is field.mined, index is spot) is "*"
+                give detonate of field
+            with opened is (Field with mined is field.mined, shown is (withMark with value is field.shown, index is spot, mark is "s"), counts is field.counts, started is field.started, over is field.over, won is field.won, revealed is field.revealed + 1, flags is field.flags, cursor is field.cursor, seed is field.seed)
+            if (markAt with value is field.counts, index is spot) is "0"
+                give floodFrom with field is opened, frontier is (joinedSpots with head is restOfFrontier, rest is (neighbourList of spot))
+            give floodFrom with field is opened, frontier is restOfFrontier
+
+function joinedSpots with head, rest
+    from rest
+    fold each spot into taken starting head to (append spot to taken)
+
+# A mine ends it, and every other mine is shown: a board that hides where
+# they were teaches the player nothing about the guess they got wrong.
+function detonate of field
+    give Field with mined is field.mined, shown is (allMinesShown with mined is field.mined, shown is field.shown, index is 0), counts is field.counts, started is field.started, over is yes, won is no, revealed is field.revealed, flags is field.flags, cursor is field.cursor, seed is field.seed
+
+function allMinesShown with mined, shown, index
+    if index is mineTotal
+        give shown
+    if ((markAt with value is mined, index is index) is "*") and ((markAt with value is shown, index is index) is "h")
+        give allMinesShown with mined is mined, shown is (withMark with value is shown, index is index, mark is "s"), index is index + 1
+    give allMinesShown with mined is mined, shown is shown, index is index + 1
+
+function checkedForWin of field
+    if field.revealed > ((mineTotal - mineCount) - 1)
+        give Field with mined is field.mined, shown is field.shown, counts is field.counts, started is field.started, over is yes, won is yes, revealed is field.revealed, flags is field.flags, cursor is field.cursor, seed is field.seed
+    give field
+
+function flagAt with field, index
+    if field.over
+        give field
+    with mark is (markAt with value is field.shown, index is index)
+    if mark is "s"
+        give field
+    if mark is "f"
+        give Field with mined is field.mined, shown is (withMark with value is field.shown, index is index, mark is "h"), counts is field.counts, started is field.started, over is field.over, won is field.won, revealed is field.revealed, flags is field.flags - 1, cursor is field.cursor, seed is field.seed
+    give Field with mined is field.mined, shown is (withMark with value is field.shown, index is index, mark is "f"), counts is field.counts, started is field.started, over is field.over, won is field.won, revealed is field.revealed, flags is field.flags + 1, cursor is field.cursor, seed is field.seed
+
+function movedBy with field, dx, dy
+    with x is (clamped with value is (decimalOf of ((columnOfIndex of field.cursor) + dx)), low is 0.0, high is (decimalOf of (mineWidth - 1)))
+    with y is (clamped with value is (decimalOf of ((rowOfIndex of field.cursor) + dy)), low is 0.0, high is (decimalOf of (mineHeight - 1)))
+    give Field with mined is field.mined, shown is field.shown, counts is field.counts, started is field.started, over is field.over, won is field.won, revealed is field.revealed, flags is field.flags, cursor is ((wholeOf of y) * mineWidth) + (wholeOf of x), seed is field.seed
+
+function wholeOf of value
+    give valueOr with maybe is (round of value), fallback is 0
+
+function mineStatus of field
+    if field.over
+        if field.won
+            give "cleared. r deals again."
+        give "boom. r deals again."
+    give ((("mines " + (text of mineCount)) + " · flags ") + (text of field.flags)) + " · arrows move · space reveals · f flags · r redeals"
+
+# --- the drawing ------------------------------------------------------------
+#
+# Four paths and one text run per numbered cell: hidden cells, flags,
+# revealed ground, and the cursor. Grouping by *appearance* rather than by
+# cell is what keeps this one draw list instead of a hundred and ninety
+# two — the same argument `life.zd` makes about its single path.
+
+function hiddenPath of field
+    give cellsMatching with shown is field.shown, mark is "h", index is 0, taken is ""
+
+function flaggedPath of field
+    give cellsMatching with shown is field.shown, mark is "f", index is 0, taken is ""
+
+function openPath of field
+    give cellsMatching with shown is field.shown, mark is "s", index is 0, taken is ""
+
+function cellsMatching with shown, mark, index, taken
+    if index is mineTotal
+        give taken
+    if (markAt with value is shown, index is index) is mark
+        give cellsMatching with shown is shown, mark is mark, index is index + 1, taken is taken + (tileAt of index)
+    give cellsMatching with shown is shown, mark is mark, index is index + 1, taken is taken
+
+function tileAt of index
+    with left is ((columnOfIndex of index) * mineCell)
+    with top is ((rowOfIndex of index) * mineCell)
+    give ((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of (mineCell - 2))) + "v" + (text of (mineCell - 2)) + "h-" + (text of (mineCell - 2)) + "Z"
+
+function cursorPath of field
+    give tileAt of field.cursor
+
+# The mines a lost board reveals, as a dot per cell rather than a glyph:
+# the vector vocabulary draws shapes and a `Text` inside an `Svg` is not
+# one of the five.
+function minePath of field
+    give minesShown with field is field, index is 0, taken is ""
+
+function minesShown with field, index, taken
+    if index is mineTotal
+        give taken
+    if ((markAt with value is field.mined, index is index) is "*") and ((markAt with value is field.shown, index is index) is "s")
+        give minesShown with field is field, index is index + 1, taken is taken + (dotAt of index)
+    give minesShown with field is field, index is index + 1, taken is taken
+
+function dotAt of index
+    with cx is (((columnOfIndex of index) * mineCell) + (halfOf of mineCell))
+    with cy is (((rowOfIndex of index) * mineCell) + (halfOf of mineCell))
+    give ((((("M" + (text of (cx - 4))) + " ") + (text of cy)) + "a4 4 0 1 0 8 0") + "a4 4 0 1 0 -8 0") + "Z"
+
+function halfOf of value
+    give valueOr with maybe is (quotient with value is value, divisor is 2), fallback is 0

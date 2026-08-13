@@ -19,6 +19,7 @@ use "./commands" for Outcome, Completion, runCommand, completionFor, commandName
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./mines" for Field, freshField, revealAt, flagAt, movedBy, mineStatus, mineViewBox, hiddenPath, flaggedPath, openPath, cursorPath, minePath
 use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
 
 # The screen: what has been printed, oldest first.
@@ -59,6 +60,7 @@ state ship is client Ship starting (newShip of 1)
 # do not become two timers with two phases and a board that stutters when
 # it starts again.
 state running is client Truth starting yes
+state field is client Field starting (freshField of 1)
 state board is client Life every "90ms" starting (stamped with pattern is gunCells, seed is 1) to (steppedIf with game is board, moving is running)
 
 function steppedIf with game, moving

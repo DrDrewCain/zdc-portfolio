@@ -24,11 +24,12 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, board, running, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, board, running, field, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
 use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./mines" for Field, freshField, revealAt, flagAt, movedBy, mineStatus, mineViewBox, hiddenPath, flaggedPath, openPath, cursorPath, minePath
 use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
 
 route Site
@@ -282,6 +283,18 @@ component Terminal
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
+            if overlay is "minesweeper"
+                Column class is "term-game-wide", gap is 8
+                    Row gap is 16, align is "center"
+                        Text "minesweeper", class is "prompt-path"
+                        Text (mineStatus of field), class is "prompt-mark"
+                    Scene viewBox is mineViewBox, label is "minesweeper"
+                        Path outline is (openPath of field), fill is "#241c16"
+                        Path outline is (hiddenPath of field), fill is "#3a3128"
+                        Path outline is (flaggedPath of field), fill is "#e6c46d"
+                        Path outline is (minePath of field), fill is "#ff6b6b"
+                        Path outline is (cursorPath of field), fill is "none", stroke is "#ffa96b", strokeWidth is 2
+
             Row class is "term-input", gap is 8, align is "center", padding is 12
                 Text "~/portfolio", class is "prompt-path"
                 Text (promptFor of mode), class is "prompt-mark"
@@ -334,6 +347,8 @@ component Terminal
                                     set screen to (joined with head is screen, rest is answer.printed)
                                 if not (isBlank of answer.launches)
                                     set overlay to answer.launches
+                                if answer.launches is "minesweeper"
+                                    set field to (freshField of (clock))
                                 if not (isBlank of answer.enters)
                                     set mode to answer.enters
                                 # A fresh code per game, seeded from the
@@ -390,6 +405,22 @@ component Terminal
                         # the document for the reason `on key` is: a
                         # document listener stands down while a field has
                         # focus, and the field always has it here.
+                        if overlay is "minesweeper"
+                            if stroke.key is "ArrowLeft"
+                                set field to (movedBy with field is field, dx is 0 - 1, dy is 0)
+                            if stroke.key is "ArrowRight"
+                                set field to (movedBy with field is field, dx is 1, dy is 0)
+                            if stroke.key is "ArrowUp"
+                                set field to (movedBy with field is field, dx is 0, dy is 0 - 1)
+                            if stroke.key is "ArrowDown"
+                                set field to (movedBy with field is field, dx is 0, dy is 1)
+                            if (stroke.key is " ") or (stroke.key is "Enter")
+                                set field to (revealAt with field is field, index is field.cursor)
+                            if stroke.key is "f"
+                                set field to (flagAt with field is field, index is field.cursor)
+                            if stroke.key is "r"
+                                set field to (freshField of (clock))
+
                         if overlay is "life"
                             if stroke.key is " "
                                 set running to not running
