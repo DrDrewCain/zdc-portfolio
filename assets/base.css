@@ -1,0 +1,165 @@
+/* base.css — `src/app/globals.css`, ported.
+ *
+ * This should have been the first file written and was the last. The design
+ * was being re-derived a component at a time from screenshots, when the
+ * whole of it — every token, every keyframe, the exact background stack —
+ * was sitting in one 248-line stylesheet. Everything below is that file,
+ * with the Tailwind `@theme` block turned into plain custom properties and
+ * the utility classes it generated written out where this site uses them.
+ *
+ * Loaded before `blog.css`, which now only holds the layout the program
+ * needs and no longer restates any of these values.
+ */
+
+:root {
+  --color-bg: #0f0d0a;
+  --color-surface: #171410;
+  --color-raised: #1f1a14;
+  --color-line: #2b261e;
+  --color-ink: #f2ede3;
+  --color-muted: #aaa295;
+  --color-accent: #ffa96b;
+  --color-mint: #86dcb8;
+  --color-gold: #e6c46d;
+
+  /* The ramp: soil to ember. It starts at Pantone 448 C — the colour
+     identified as the most unappealing there is — kept *because* of that:
+     a saturated warm only reads as luminous beside a low-chroma warm of a
+     related hue, so this is the value that makes the accent look lit
+     rather than flat. Every step means depth in the stack: hot is silicon,
+     cool is the surface a person touches. */
+  --color-soil: #4a412a;
+  --color-umber: #6b5a33;
+  --color-ochre: #a07b3c;
+
+  --color-layer-silicon: #ffa96b;
+  --color-layer-kernel: #f4b878;
+  --color-layer-runtime: #e6c46d;
+  --color-layer-service: #b6d29d;
+  --color-layer-interface: #86dcb8;
+
+  --font-display: InstrumentSerif, Georgia, serif;
+  --font-mono: PlexMono, ui-monospace, 'SF Mono', monospace;
+  --font-sans: PlexSans, system-ui, sans-serif;
+
+  /* The theme tokens the *language* paints from, pointed at the same
+     values. `color is "muted"` in the program and `--color-muted` here are
+     now the one colour rather than two that agree by hand. */
+  --zd-ink: var(--color-ink);
+  --zd-text: var(--color-ink);
+  --zd-muted: var(--color-muted);
+  --zd-line: var(--color-line);
+  --zd-surface: var(--color-bg);
+  --zd-raised: var(--color-surface);
+  --zd-accent: var(--color-accent);
+  --zd-onAccent: var(--color-bg);
+}
+
+/* The brand is one scheme. It is dark in a light browser too. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --zd-ink: var(--color-ink);
+    --zd-text: var(--color-ink);
+    --zd-muted: var(--color-muted);
+    --zd-line: var(--color-line);
+    --zd-surface: var(--color-bg);
+    --zd-raised: var(--color-surface);
+    --zd-accent: var(--color-accent);
+    --zd-onAccent: var(--color-bg);
+  }
+}
+
+@font-face { font-family: "PlexSans"; font-style: normal; font-weight: 400 600; font-display: swap;
+             src: url("./fonts/plex-sans.woff2") format("woff2"); }
+@font-face { font-family: "PlexMono"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url("./fonts/plex-mono-400.woff2") format("woff2"); }
+@font-face { font-family: "PlexMono"; font-style: normal; font-weight: 600; font-display: swap;
+             src: url("./fonts/plex-mono-600.woff2") format("woff2"); }
+@font-face { font-family: "InstrumentSerif"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url("./fonts/instrument-serif.woff2") format("woff2"); }
+
+html {
+  scroll-behavior: smooth;
+  /* The status bar is sticky, so an anchor that scrolls to its own top
+     lands underneath it. */
+  scroll-padding-top: 56px;
+}
+
+/* A dot grid is what every dark site has, and it belongs to no particular
+   subject. This is phosphor instead: a 3px horizontal scanline, far below
+   the threshold of noticing, which is what a terminal actually looks like
+   up close. The bloom moves off centre to sit behind the name rather than
+   glowing at nothing, and warms toward soil at the horizon so the page has
+   a floor. */
+body {
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(ellipse 70% 45% at 22% 0%, rgba(255, 169, 107, 0.1), transparent 70%),
+    linear-gradient(180deg, transparent 55%, rgba(74, 65, 42, 0.14) 100%),
+    repeating-linear-gradient(180deg, rgba(242, 237, 227, 0.011) 0 1px, transparent 1px 4px);
+  background-attachment: fixed, fixed, scroll;
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+/* The browser default is a 1px auto ring, which on a near-black background
+   is easy to lose. This uses the existing accent, offset so it reads
+   against both the page and the raised surfaces, and only on keyboard
+   focus so pointer users never see a ring they did not ask for. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@keyframes blink { 50% { opacity: 0; } }
+.cursor-blink { animation: blink 1.2s step-end infinite; }
+
+/* The hero is a shell answering `whoami`, so its lines print the way
+   terminal output does — a short horizontal settle, fast. */
+@keyframes print-in {
+  from { opacity: 0; transform: translate3d(-6px, 0, 0); }
+  to { opacity: 1; transform: none; }
+}
+.print-in { animation: print-in 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* The name is the answer to the command. It gets weight the lines around
+   it deliberately don't, so the emphasis lands in exactly one place. */
+@keyframes answer-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+.answer-in { animation: answer-in 0.44s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@keyframes dot-pulse { 50% { opacity: 0.35; } }
+.dot-pulse { animation: dot-pulse 2.4s ease-in-out infinite; }
+
+@keyframes term-in {
+  from { opacity: 0; transform: translateX(6px); }
+  to { opacity: 1; transform: none; }
+}
+.term-line { animation: term-in 0.18s ease-out both; }
+
+/* A ring appearing as the year it records is laid down. Scaled from just
+   inside its final radius so the trunk reads as thickening outward rather
+   than as rings fading in on the spot. */
+@keyframes ring-grow {
+  from { opacity: 0; transform: scale(0.93); }
+  to { opacity: 1; transform: none; }
+}
+.ring-grow { transform-origin: center; animation: ring-grow 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ring-grow,
+  .cursor-blink,
+  .print-in,
+  .answer-in,
+  .dot-pulse,
+  .term-line { animation: none; }
+  html { scroll-behavior: auto; }
+}

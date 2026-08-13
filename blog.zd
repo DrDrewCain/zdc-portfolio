@@ -201,6 +201,24 @@ function effortOf of timeline
         give tail
     give ""
 
+# The commit count behind a project, out of its effort phrase: "over 9,000
+# commits" is 9000. The original matches `\d[\d,]*` with a regular
+# expression; this drops the separators and takes the first word that parses
+# as a number, which is the same answer by a different road.
+function commitsOf of timeline
+    give firstNumberIn with words is (split with value is (replace with value is (effortOf of timeline), old is ",", new is ""), using is " "), index is 0
+
+function firstNumberIn with words, index
+    when listAt with value is words, index is index
+        None
+            give 0
+        Some with word
+            when parseWhole of word
+                None
+                    give firstNumberIn with words is words, index is index + 1
+                Some with number
+                    give number
+
 # `stack` is a YAML list — `[TypeScript, Next.js]` — and the brackets are
 # the only part of that syntax this reads. Anything more is a YAML parser,
 # and `frontmatter.zd` says why there is not one.
@@ -214,6 +232,20 @@ function unbracketed of value
     give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["), suffix is "]"
 
 state ranked is static List of Project from byRank with all is projects
+
+# The rings, as one string. A `foreign` takes `Text` and `Decimal` and not a
+# `List of` a record, so the drawing is handed "9000,99,52,…" in running
+# order and works the geometry out itself — which is where the geometry
+# already lived.
+state ringData is static Text from ringDataOf with all is ranked
+
+function ringDataOf with all
+    give join with parts is (commitCounts with all is all), using is ","
+
+function commitCounts with all
+    from all
+    keep each project where (commitsOf of project.timeline) > 0
+    map each project to (text of (commitsOf of project.timeline))
 
 # --- stack coverage --------------------------------------------------------
 #
@@ -431,7 +463,7 @@ component Status with onBlog
             Text "%"
         Text "[~]", class is "clock"
 component Prompt with command
-    Row gap is 8, align is "center", class is "prompt"
+    Row gap is 8, align is "center", class is "prompt print-in"
         Text "~/portfolio", class is "prompt-path"
         Text "$", class is "prompt-mark"
         Text command
@@ -454,6 +486,24 @@ component LineItem with line
 
 # Five ticks, metal-first, lit for the layers this project reaches. The
 # rarest lit tick is the leftmost, which is the point of showing it.
+# --- the growth rings ------------------------------------------------------
+#
+# An SVG, and the element vocabulary has no SVG at all — no `Svg`, no `Path`,
+# no `Circle`. It also cannot be faked with bordered divs, and that is not a
+# limitation of the divs: the original's rings are deliberately *wobbled*,
+# because "drawn as perfect circles, concentric bands read as a dartboard".
+# Perfect circles are exactly what a div can draw.
+#
+# So this is a `foreign`, which is the language's own answer for a drawing it
+# has no vocabulary for. What the declaration grants, plainly: `./rings.js`
+# runs in the browser with the full DOM. The compiler prevents two things —
+# a `secret` crossing in, and any value crossing back out — and these five
+# lines are the audit surface for everything else.
+foreign growthRings is client
+    from "./rings.js" as "mount"
+    takes commits is Text
+    gives view
+
 component DepthGauge with stack
     Row gap is 2, align is "center"
         each layer in layerNames
@@ -607,13 +657,13 @@ view title is "Mark Sturman"
                     Shell no
                         Column gap is 0
                             Row height is 48
-                            Row gap is 8, align is "center", class is "prompt"
+                            Row gap is 8, align is "center", class is "prompt print-in"
                                 Text "~/portfolio", class is "prompt-path"
                                 Text "$", class is "prompt-mark"
                                 Text "whoami"
-                                Row class is "caret", width is 8, height is 16
+                                Row class is "caret cursor-blink", width is 8, height is 16
 
-                            Heading "Mark.", class is "hero"
+                            Heading "Mark.", class is "hero answer-in"
 
                             # Two-tone, as the original is: the claim is
                             # italic and grey and the verb is upright and
@@ -626,7 +676,7 @@ view title is "Mark Sturman"
                             # the words ran together as "modelsrun". In block
                             # flow the spans are inline and the space is a
                             # space.
-                            Row display is "block", class is "hero-sub"
+                            Row display is "block", class is "hero-sub print-in"
                                 Text "makes models "
                                 Text "run faster", class is "hero-verb"
                                 Text "."
@@ -640,7 +690,7 @@ view title is "Mark Sturman"
                             # verification link: the repositories are private
                             # and a dead link reads worse than an unlinked
                             # claim.
-                            Column gap is 8, class is "creds", padding is 12, maxWidth is 620
+                            Column gap is 8, class is "creds print-in", padding is 12, maxWidth is 620
                                 Row gap is 10, align is "baseline"
                                     Text "1st in class", class is "cred-rank"
                                     Text "Cornell ECE 5545, benchmarked TVM kernel optimization", class is "cred-detail"
@@ -649,7 +699,7 @@ view title is "Mark Sturman"
                                     Text "Cornell CS 5740, NLP held out test accuracy", class is "cred-detail"
 
                             Row height is 30
-                            Row gap is 8, align is "center", class is "psst", padding is 12, radius is 8
+                            Row gap is 8, align is "center", class is "psst print-in", padding is 12, radius is 8
                                 Text "psst, this site has an interactive mode. Try pressing"
                                 Text "~", class is "kbd", padding is 4
 
@@ -699,7 +749,19 @@ view title is "Mark Sturman"
                             Row height is 56
 
                             SectionHead "projects", "16 entries", "projects"
-                            Row height is 14
+                            Row height is 20
+
+                            # The catalogue before the catalogue: a list
+                            # answers "what is there", a cross-section answers
+                            # "how much, and for how long".
+                            Row gap is 40, align is "center", narrowDisplay is "block", class is "rings-row"
+                                Column width is 320
+                                    growthRings commits is ringData
+                                Column grow is 1, basis is 0, gap is 12, maxWidth is 420
+                                    Text "growth rings", class is "rings-label"
+                                    Text "One ring a year since 2018, when I started. The thick ones are the years that shipped something.", color is "muted", lineHeight is 1.7
+
+                            Row height is 40
                             Row class is "row-head"
                                 Text "depth"
                                 Text "status"
