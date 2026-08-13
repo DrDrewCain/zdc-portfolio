@@ -19,7 +19,7 @@
 # a post wants an interactive chart, that post needs a `component` in this
 # language and a way to name it from the file, and neither exists.
 
-use "./frontmatter" for fieldOf, bodyOf, slugOf
+use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
 
 record Post
     slug    is Text
@@ -129,7 +129,7 @@ function readingMinutes of body
     give rounded
 
 function postFromRaw with path, raw
-    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), minutes is (readingMinutes of (bodyOf of raw)), body is build markdown (bodyOf of raw)
+    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), minutes is (readingMinutes of (bodyOf of raw)), body is build markdown (linkified of (bodyOf of raw))
 
 # ⚠️ THE ONE THING THE BUILD CAPABILITIES CANNOT DO, AND IT IS WORTH SAYING
 # PLAINLY.

@@ -74,3 +74,63 @@ function fieldOf with raw, key
 
 function slugOf of path
     give beforeLast with value is (afterLast with value is path, delimiter is "/"), delimiter is "."
+
+# --- making a bare URL clickable -------------------------------------------
+#
+# THE PROBLEM, STATED EXACTLY. The posts write their references as inline
+# code — `` `https://arxiv.org/abs/2603.20397` `` — and CommonMark
+# deliberately never linkifies the inside of a code span. GitHub-flavoured
+# autolinking does not either, for the same reason: a code span is a
+# quotation, and rewriting what is inside one would change what the author
+# wrote. Both the real site and the first version of this one therefore
+# render those as unclickable text, which is correct and unhelpful.
+#
+# So the rewrite happens *before* the markdown is parsed, where it is a
+# decision this program is making rather than a rule the renderer is
+# breaking: a code span whose whole content is a URL becomes a link, and
+# every other code span is left exactly as it was.
+#
+# WHY IT SPLITS TWICE. A fenced block is three backticks and a code span is
+# one, so splitting on a single backtick would cut fences in half and put
+# them back wrong. The body is cut on the fence first, and only the pieces
+# *between* fences are cut on the backtick — the same alternation the
+# reading time uses, for the same reason.
+
+function isOddNumber of value
+    give (valueOr with maybe is (mod with value is value, divisor is 2), fallback is 0) is 1
+
+# A code span whose content is a URL becomes a markdown link; anything else
+# gets its backticks back and is unchanged.
+function codeOrLink of piece
+    if startsWith with value is piece, prefix is "http"
+        give "[" + piece + "](" + piece + ")"
+    give "`" + piece + "`"
+
+function spanAt with parts, index
+    with piece is (valueOr with maybe is (listAt with value is parts, index is index), fallback is "")
+    if isOddNumber of index
+        give codeOrLink of piece
+    give piece
+
+function spanParts of parts
+    from (indices of (listLength of parts))
+    map each index to (spanAt with parts is parts, index is index)
+
+# One piece of prose, with its code spans considered.
+function inlineLinked of piece
+    give join with parts is (spanParts of (split with value is piece, using is "`")), using is ""
+
+function partAt with parts, index
+    with piece is (valueOr with maybe is (listAt with value is parts, index is index), fallback is "")
+    # An odd piece is the inside of a fenced block. Nothing in there is
+    # touched: a URL in a code sample is a sample, not a destination.
+    if isOddNumber of index
+        give piece
+    give inlineLinked of piece
+
+function linkedParts of parts
+    from (indices of (listLength of parts))
+    map each index to (partAt with parts is parts, index is index)
+
+function linkified of body
+    give join with parts is (linkedParts of (split with value is body, using is "```")), using is "```"
