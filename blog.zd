@@ -457,7 +457,7 @@ component LineItem with line
 component DepthGauge with stack
     Row gap is 2, align is "center"
         each layer in layerNames
-            Row class is (tickClass with stack is stack, layer is layer), width is 7, height is 14, radius is 1
+            Row class is (tickClass with stack is stack, layer is layer)
 
 # A project's state, as a shape rather than a hue. Colour alone cannot
 # distinguish two states under WCAG 1.4.1, and three dots differing only in
@@ -472,18 +472,23 @@ component StatusBadge with status
 # past and rounded bordered cards are the one shape every site already has;
 # a listing is denser, scans at once, and belongs to the same terminal world
 # as the rest of the page.
+# A four-column grid: 3.25rem for the depth ticks, 7rem for the status,
+# everything left for the project, and the effort sized to itself. The
+# template lives in the stylesheet because `display` in the style vocabulary
+# names `block`, `inline`, `inlineBlock` and `none` — there is no `grid`
+# keyword, and a grid template is a second grammar besides.
 component WorkRow with project
     Link (Work with slug is project.slug), decoration is "none", color is "ink"
-        Row class is "row", padding is 18, gap is 20, align is "baseline", narrowDisplay is "block"
-            Row width is 52, align is "center"
+        Row class is "row"
+            Row class is "row-depth"
                 DepthGauge project.stack
-            Row width is 108
+            Row class is "row-status"
                 StatusBadge project.status
-            Column grow is 1, basis is 0, gap is 6, minWidth is 0
+            Column class is "row-main"
                 Text project.title, class is "row-title"
-                Text project.oneLiner, color is "muted", size is "small", lineHeight is 1.65
-                Text project.stack, class is "stack"
-            Text (effortOf of project.timeline), class is "effort"
+                Text project.oneLiner, class is "row-line"
+                Text project.stack, class is "row-stack"
+            Text (effortOf of project.timeline), class is "row-effort"
 
 component Working with project
     Column gap is 0
@@ -695,14 +700,11 @@ view title is "Mark Sturman"
 
                             SectionHead "projects", "16 entries", "projects"
                             Row height is 14
-                            Row class is "row-head", gap is 20, padding is 12, narrowDisplay is "none"
-                                Row width is 52
-                                    Text "depth"
-                                Row width is 108
-                                    Text "status"
-                                Row grow is 1
-                                    Text "project"
-                                Text "effort"
+                            Row class is "row-head"
+                                Text "depth"
+                                Text "status"
+                                Text "project"
+                                Text "effort", class is "head-right"
                             Column gap is 0
                                 each project in ranked
                                     WorkRow project
