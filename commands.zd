@@ -47,7 +47,7 @@ function entering with printed, mode
 # absent: they stay out of `help` and out of completion while still being
 # real, which is what makes them worth hiding.
 
-state commandNames is static List of Text starting ["help", "ls", "open", "info", "about", "cat", "neofetch", "whoami", "blog", "search", "now", "games", "trader", "codebreak", "lexer", "minesweeper", "2048", "life", "critters", "mode", "clear", "home"]
+state commandNames is static List of Text starting ["help", "ls", "open", "info", "about", "cat", "neofetch", "whoami", "blog", "search", "now", "games", "trader", "codebreak", "lexer", "minesweeper", "2048", "life", "mode", "clear", "home"]
 
 state catFiles is static List of Text starting ["resume", "now", "projects", "stack"]
 
@@ -196,7 +196,7 @@ function postSlugs of all
 # --- what the commands print ------------------------------------------------
 
 function helpLines
-    give ["available commands:", "  ls [projects]     list projects", "  open <project>    open a project page", "  info <project>    what it is, how it was built", "  cat <file>        resume, now, projects or stack", "  neofetch          system info, sort of", "  whoami            who is this guy", "  blog [slug]       list posts, or open one", "  search <term>     find a project or post by name, stack or topic", "  now               what I am up to currently", "  games             play something (yes really)", "  codebreak         crack a four peg code in ten guesses", "  lexer             six guesses, five letters", "  2048              slide tiles together (alias: twenty48)", "  life              conway, with a glider gun and a pulsar", "  minesweeper       clear the board without hitting a mine (alias: mines)", "  critters          catch things in a small ecosystem", "  mode <level>      set interactive mode: off, terminal, full", "  home              back to the top", "  clear             clear the screen", "tip: tab completes commands and project names", "tip: up/down walks history, ctrl+l clears, ctrl+c abandons a line", "psst: dinosaurs once roamed this terminal"]
+    give ["available commands:", "  ls [projects]     list projects", "  open <project>    open a project page", "  info <project>    what it is, how it was built", "  cat <file>        resume, now, projects or stack", "  neofetch          system info, sort of", "  whoami            who is this guy", "  blog [slug]       list posts, or open one", "  search <term>     find a project or post by name, stack or topic", "  now               what I am up to currently", "  games             play something (yes really)", "  codebreak         crack a four peg code in ten guesses", "  lexer             six guesses, five letters", "  2048              slide tiles together (alias: twenty48)", "  life              conway, with a glider gun and a pulsar", "  minesweeper       clear the board without hitting a mine (alias: mines)", "  mode <level>      set interactive mode: off, terminal, full", "  home              back to the top", "  clear             clear the screen", "tip: tab completes commands and project names", "tip: up/down walks history, ctrl+l clears, ctrl+c abandons a line", "psst: dinosaurs once roamed this terminal"]
 
 function listingLines of all
     from all
@@ -428,7 +428,7 @@ function runCommand of input
     if verb is "home"
         give goingTo with printed is ["going home..."], destination is "/"
     if verb is "games"
-        give entering with printed is ["> what game? (2048, life, minesweeper, critters, codebreak, lexer, trader) or 'exit'"], mode is "games"
+        give entering with printed is ["> what game? (2048, life, minesweeper, codebreak, lexer, trader) or 'exit'"], mode is "games"
     if (verb is "codebreak") or (verb is "mastermind")
         give entering with printed is ["codebreak: four pegs, six colours, repeats allowed, ten guesses.", "● right colour right place. ○ right colour wrong place. never which.", "guess four digits 1-6, e.g. 1234. one 'hint' per game."], mode is "codebreak"
     if (verb is "lexer") or (verb is "wordle")
@@ -441,8 +441,11 @@ function runCommand of input
         give launching with printed is ["seeding a glider gun... (click cells, space runs, n steps, esc quits)"], game is "life"
     if (verb is "minesweeper") or (verb is "mines")
         give launching with printed is ["launching minesweeper... (arrows/wasd move, space/enter reveals, f flags, esc to quit)"], game is "minesweeper"
+    # The one game not ported. It says so rather than raising an overlay
+    # with nothing in it, which is what an unimplemented `launch` would
+    # do — a blank panel and no way to tell whether it broke.
     if verb is "critters"
-        give launching with printed is ["opening the critter lab... (fight to weaken, net to catch)"], game is "critters"
+        give saying of ["the critter lab is not ported yet — it is 660 lines and a creature generator.", "everything else in `games` works."]
     if verb is "mode"
         give modeLine of tail
     give saying of [(orDidYouMean with message is ("command not found: " + verb), guess is (closestTo with written is verb, among is commandNames))]
