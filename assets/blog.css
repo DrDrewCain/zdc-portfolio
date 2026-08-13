@@ -254,3 +254,103 @@ body {
   border-radius: 999px; padding: 1px 8px;
 }
 .stack { font-family: PlexMono, ui-monospace, monospace; font-size: 12px; color: #6f6653; line-height: 1.6; }
+
+/* --- the hero, completed ---------------------------------------------------
+ * The pieces the first pass left out: the blinking caret, the two-tone
+ * subtitle, the two rankings, and the interactive-mode hint. */
+.caret { background: var(--amber); animation: caret 1.05s steps(1) infinite; }
+@keyframes caret { 50% { opacity: 0; } }
+
+.hero-sub { font-style: italic; }
+.hero-verb { font-style: normal; color: var(--amber); }
+
+.creds { border-left: 2px solid var(--edge); }
+.cred-rank { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: var(--amber); white-space: nowrap; }
+.cred-detail { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: #aaa295; line-height: 1.6; }
+
+.psst {
+  font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: var(--ink);
+  border: 1px solid var(--edge); background: rgba(15, 13, 10, 0.85);
+  backdrop-filter: blur(4px); width: fit-content;
+}
+.kbd {
+  border: 1px solid var(--edge); border-radius: 6px; background: #17140f;
+  color: var(--amber); box-shadow: 0 2px 0 0 var(--edge); line-height: 1;
+}
+
+/* --- stack coverage --------------------------------------------------------
+ * The ramp runs metal-to-surface: silicon is ember and interface is mint,
+ * which is the direction `layers.zd` orders them in. */
+.coverage { border-top: 1px solid var(--edge); }
+.cov-head {
+  font-family: PlexMono, ui-monospace, monospace; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.18em; color: #aaa295;
+}
+.cov-spanned { color: #7fd1ae; }
+.cov-label { font-family: PlexMono, ui-monospace, monospace; font-size: 11px; color: #aaa295; width: 88px; text-align: right; }
+.cov-track { height: 14px; background: #17140f; }
+.cov-fill { height: 14px; }
+.cov-count { font-family: PlexMono, ui-monospace, monospace; font-size: 10px; color: #aaa295; line-height: 14px; }
+.cov-note { font-family: PlexMono, ui-monospace, monospace; font-size: 11px; color: #6f6653; line-height: 1.6; }
+
+.cov-silicon   { background: #f0a06a; }
+.cov-kernel    { background: #e8b262; }
+.cov-runtime   { background: #e2c85f; }
+.cov-service   { background: #9ccf8e; }
+.cov-interface { background: #7fd1ae; }
+
+.cov-w0 { width: 0%; }
+.cov-w5 { width: 5%; }
+.cov-w10 { width: 10%; }
+.cov-w15 { width: 15%; }
+.cov-w20 { width: 20%; }
+.cov-w25 { width: 25%; }
+.cov-w30 { width: 30%; }
+.cov-w35 { width: 35%; }
+.cov-w40 { width: 40%; }
+.cov-w45 { width: 45%; }
+.cov-w50 { width: 50%; }
+.cov-w55 { width: 55%; }
+.cov-w60 { width: 60%; }
+.cov-w65 { width: 65%; }
+.cov-w70 { width: 70%; }
+.cov-w75 { width: 75%; }
+.cov-w80 { width: 80%; }
+.cov-w85 { width: 85%; }
+.cov-w90 { width: 90%; }
+.cov-w95 { width: 95%; }
+.cov-w100 { width: 100%; }
+
+/* --- the about lead --------------------------------------------------------
+ * 36px Instrument Serif on a snug line, with the stressed phrase italic and
+ * amber. The paragraphs beneath it stay body text. */
+.about-lead {
+  font-family: InstrumentSerif, Georgia, serif;
+  font-size: clamp(26px, 4vw, 36px);
+  line-height: 1.25;
+  color: var(--ink);
+  display: block;
+}
+.about-stress { font-style: italic; color: var(--amber); }
+
+/* --- how an anchor arrives -------------------------------------------------
+ * The tabs jump to `/#now` and friends, and a jump lands instantly — the
+ * section appears with no sense of having travelled to it. `scroll-behavior:
+ * smooth` on the root is what the real site does, and `scroll-margin-top`
+ * is the half that goes with it: the status bar is `sticky`, so an anchor
+ * that scrolls to exactly its own top lands underneath the bar.
+ *
+ * Turned off under `prefers-reduced-motion`, as the original does. Motion
+ * a reader has asked not to see is not a flourish, it is a symptom trigger.
+ */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 56px;
+}
+
+.section-head { scroll-margin-top: 56px; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .caret { animation: none; }
+}

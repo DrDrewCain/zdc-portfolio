@@ -1,0 +1,128 @@
+# layers.zd — where a project sits in the stack, worked out from what it says
+# it is built with.
+#
+# Ported from `src/lib/layers.ts`, whose opening comment is the reason it
+# exists at all:
+#
+#   > The portfolio's claim is range — "one person, the whole stack" — and a
+#   > claim like that should be checkable rather than asserted. Each project
+#   > already lists its stack in frontmatter, so the layers it occupies can
+#   > be computed from that instead of being maintained as a second,
+#   > driftable field.
+#
+# That argument is the same one this language makes about derived state, so
+# the port is direct: the counts are `static`, computed on the build host
+# from the same headers the project pages render, and there is nowhere for
+# them to drift to.
+#
+# A tool appears once, at the layer it is *characteristic* of, not every
+# layer it can reach. TypeScript can build a CLI and CUDA can be called from
+# Python, but nobody reaches for CUDA except to schedule what the hardware
+# executes.
+
+# Ordered from the metal upward, because that is the direction the colour
+# ramp runs: silicon is ember, interface is mint.
+state layerNames is static List of Text starting ["silicon", "kernel", "runtime", "service", "interface"]
+
+# The tool table, as one function rather than a map literal: a `Map` literal
+# would have to fit on one line, and forty entries on one line is not a
+# table anybody can read or amend. An unrecognised tool gives `""`, which is
+# the honest answer — better a project with no depth gauge than one placed
+# at a layer it does not belong to.
+function layerOf of tool
+    if tool is "cuda"
+        give "silicon"
+    if tool is "tensorir"
+        give "silicon"
+    if tool is "fpga"
+        give "silicon"
+    if tool is "numba"
+        give "silicon"
+    if tool is "tvm"
+        give "kernel"
+    if tool is "pytorch"
+        give "kernel"
+    if tool is "highs"
+        give "kernel"
+    if tool is "clarabel"
+        give "kernel"
+    if tool is "python"
+        give "kernel"
+    if tool is "rust"
+        give "runtime"
+    if tool is "rayon"
+        give "runtime"
+    if tool is "arrow"
+        give "runtime"
+    if tool is "webassembly"
+        give "runtime"
+    if tool is "bun"
+        give "runtime"
+    if tool is "node.js"
+        give "runtime"
+    if tool is "swift"
+        give "runtime"
+    if tool is "agents"
+        give "runtime"
+    if tool is "postgresql"
+        give "service"
+    if tool is "flask"
+        give "service"
+    if tool is "google cloud"
+        give "service"
+    if tool is "cloud storage"
+        give "service"
+    if tool is "cloud cdn"
+        give "service"
+    if tool is "gemini"
+        give "service"
+    if tool is "prisma"
+        give "service"
+    if tool is "redis"
+        give "service"
+    if tool is "supabase"
+        give "service"
+    if tool is "firebase"
+        give "service"
+    if tool is "docker"
+        give "service"
+    if tool is "ansible"
+        give "service"
+    if tool is "jinja"
+        give "service"
+    if tool is "matrix"
+        give "service"
+    if tool is "express"
+        give "service"
+    if tool is "turborepo"
+        give "service"
+    if tool is "swiftui"
+        give "interface"
+    if tool is "flutter"
+        give "interface"
+    if tool is "next.js"
+        give "interface"
+    if tool is "electron"
+        give "interface"
+    if tool is "typescript"
+        give "interface"
+    give ""
+
+# The declared stack, as the tools in it. The header holds
+# `TypeScript, Next.js, Flutter`, already unbracketed by the reader.
+function toolsOf of stack
+    from (split with value is stack, using is ",")
+    map each tool to (lowercase of (trim of tool))
+
+# Whether a project reaches a layer. A `Truth`, so the count below is a
+# fold over it — and a project counts *once* per layer however many of its
+# tools speak for that layer, which is what `hit` being a Set does in the
+# original.
+function reaches with stack, layer
+    from (toolsOf of stack)
+    fold each tool into found starting no to found or ((layerOf of tool) is layer)
+
+function oneIfReaches with stack, layer
+    if reaches with stack is stack, layer is layer
+        give 1
+    give 0

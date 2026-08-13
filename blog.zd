@@ -20,7 +20,8 @@
 # language and a way to name it from the file, and neither exists.
 
 use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
-use "./data" for Line, now, about, domains
+use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, domains
+use "./layers" for layerNames, reaches, oneIfReaches
 
 record Post
     slug    is Text
@@ -197,6 +198,66 @@ function unbracketed of value
 
 state ranked is static List of Project from byRank with all is projects
 
+# --- stack coverage --------------------------------------------------------
+#
+# The hero claims one person and the whole stack; this is the measurement of
+# it, and it is `static`, so it is computed once on the build host from the
+# same headers the project pages render. There is nowhere for it to drift to.
+
+record Coverage
+    layer is Text
+    count is Whole
+    width is Whole
+
+# How many projects reach one layer.
+function countFor with all, layer
+    from all
+    fold each project into total starting 0 to total + (oneIfReaches with stack is project.stack, layer is layer)
+
+# The busiest layer, which the bars are scaled against — the question is "is
+# any of this empty", not "what share is this", so the widest bar is the
+# fullest layer rather than the project count.
+function busiest with all, index, most
+    when listAt with value is layerNames, index is index
+        None
+            give most
+        Some with layer
+            give busiest with all is all, index is index + 1, most is (max with first is most, second is (countFor with all is all, layer is layer))
+
+state widest is static Whole from busiest with all is projects, index is 0, most is 1
+
+state coverage is static List of Coverage from coverageOf with all is projects
+
+function coverageOf with all
+    from layerNames
+    map each layer to (Coverage with layer is layer, count is (countFor with all is all, layer is layer), width is (percentOf with part is (countFor with all is all, layer is layer), whole is widest))
+
+# The bar widths are classes, and a class per whole percent would be a
+# hundred and one of them. Rounded to the nearest five, which is twenty-one
+# and is finer than the eye reads on a 14px bar.
+function rounded5 of percent
+    give 5 * (valueOr with maybe is (quotient with value is percent + 2, divisor is 5), fallback is 0)
+
+function percentOf with part, whole
+    if whole is 0
+        give 0
+    give valueOr with maybe is (quotient with value is part * 100, divisor is whole), fallback is 0
+
+# "5 of 5 layers" — how many are occupied at all.
+state spanned is static Whole from spannedOf with all is projects, index is 0, total is 0
+
+function spannedOf with all, index, total
+    when listAt with value is layerNames, index is index
+        None
+            give total
+        Some with layer
+            give spannedOf with all is all, index is index + 1, total is total + (oneIfAny of (countFor with all is all, layer is layer))
+
+function oneIfAny of count
+    if count > 0
+        give 1
+    give 0
+
 function byRank with all
     from all
     sort each project by project.rank
@@ -292,21 +353,66 @@ state percent is client Whole from valueOr with maybe is (round of travelled), f
 # which is what makes the percentage worth showing at all. Both words are in
 # the style vocabulary, so this is the program saying it rather than the
 # stylesheet: `position` takes a keyword and `sticky` is one of them.
-component Status
+# A tmux window is a number, a name, and a `*` when it is the current one.
+# The four sections are anchors on the home page — `/about` and `/projects`
+# are 404 on the real site, because they were never pages — and the fifth is
+# a real document.
+# Which window is current. `when` over the route, so a fifth page added
+# later is a compile error here rather than a tab that never lights.
+function isReading of spot
+    when spot
+        None
+            give no
+        Some with here
+            when here
+                Home
+                    give no
+                Writing
+                    give yes
+                Entry with slug
+                    give yes
+                Work with slug
+                    give no
+
+component Tab with number, name, target, here
+    Link target, decoration is "none", padding is 0
+        Row gap is 0, align is "baseline", class is (tabClass of here)
+            Text number
+            Text ":"
+            Text name
+            if here
+                Text "*"
+
+function tabClass of here
+    if here
+        give "tab tab-on"
+    give "tab"
+
+component Status with onBlog
     Row class is "status", position is "sticky", top is 0, layer is 10, padding is 8, gap is 14, align is "center"
-        Text "mark@portfolio", class is "tag", padding is 4
-        Text "0:now", class is "tab"
-        Text "1:about", class is "tab"
-        Text "2:projects", class is "tab"
-        Text "3:range", class is "tab"
-        Text "4:blog*", class is "tab-on"
+        Link Home, decoration is "none", padding is 0
+            Text "mark@portfolio", class is "tag", padding is 4
+        Tab "0", "now", "/#now", (not onBlog)
+        Tab "1", "about", "/#about", no
+        Tab "2", "projects", "/#projects", no
+        Tab "3", "range", "/#range", no
+        # Written out rather than passed to `Tab`, because its destination is
+        # a *route* and the other four are anchors. The compiler refuses
+        # `"/blog"` here — "a destination has one phrasing, and the route is
+        # the one that stays correct when the URL does not" — and it is right,
+        # so the two cannot share one parameter.
+        Link Writing, decoration is "none", padding is 0
+            Row gap is 0, align is "baseline", class is (tabClass of onBlog)
+                Text "4"
+                Text ":"
+                Text "blog"
+                if onBlog
+                    Text "*"
         Row grow is 1
         Row gap is 3, align is "center", class is "pct"
             Text percent
             Text "%"
         Text "[~]", class is "clock"
-
-# `~/portfolio $ …`, the prompt every section opens with.
 component Prompt with command
     Row gap is 8, align is "center", class is "prompt"
         Text "~/portfolio", class is "prompt-path"
@@ -314,8 +420,10 @@ component Prompt with command
         Text command
 
 # `// name`, with an optional count beside it.
-component SectionHead with name, count
-    Row gap is 10, align is "baseline", class is "section-head"
+# The `id` is what the status bar's tabs jump to: `/#now` is an anchor on
+# this page, because the sections were never separate documents.
+component SectionHead with name, count, anchor
+    Row gap is 10, align is "baseline", class is "section-head", id is anchor
         Text ("// " + name)
         Text count, class is "section-count"
 
@@ -358,35 +466,99 @@ component Working with project
                 Row height is 30
                 Prose project.body, class is "prose"
 
-component Shell with children
+# One bar of the coverage chart. `width` is a percentage the build worked
+# out, and it is written into the class rather than the style because a
+# `Lengths` is pixels and a percentage cannot be one — so the widths are
+# twenty-one classes in the stylesheet and the program names one.
+component CoverageBar with row
+    Row gap is 12, align is "center", class is "cov-row"
+        Text row.layer, class is "cov-label"
+        Row class is "cov-track", grow is 1, position is "relative"
+            Row class is ("cov-fill cov-" + row.layer + " cov-w" + (text of (rounded5 of row.width)))
+            Text row.count, class is "cov-count", position is "absolute", right is 8, top is 0
+
+component Shell with onBlog, children
     Column class is "page", minHeight is 700
-        Status
+        Status onBlog
         Row justify is "center"
             Column maxWidth is 700, grow is 1, padding is 40, narrowPadding is 18, gap is 0
                 children
 
-view title is "Writing — Mark Sturman"
-    Shell
-        when page
-            None
+view title is "Mark Sturman"
+    # `Shell` sits inside each arm rather than around the `when`.
+    # `address` is folded to one value per emitted document, so `page` may
+    # only be dispatched on — reading it as an expression to work out which
+    # tab is current is exactly what the compiler refuses, and the repair is
+    # to let each arm say so with a literal.
+    when page
+        None
+            Shell no
                 Column gap is 10
                     Heading "Not found"
                     Link Writing, decoration is "none"
                         Text "back to writing", color is "accent"
 
-            Some with here
-                when here
-                    Home
+        Some with here
+            when here
+                Home
+                    Shell no
                         Column gap is 0
                             Row height is 48
-                            Prompt "whoami"
+                            Row gap is 8, align is "center", class is "prompt"
+                                Text "~/portfolio", class is "prompt-path"
+                                Text "$", class is "prompt-mark"
+                                Text "whoami"
+                                Row class is "caret", width is 8, height is 16
+
                             Heading "Mark.", class is "hero"
-                            Heading "makes models run faster.", class is "hero-sub"
+
+                            # Two-tone, as the original is: the claim is
+                            # italic and grey and the verb is upright and
+                            # amber, which is the whole joke of the line.
+                            Row gap is 0, align is "baseline", class is "hero-sub"
+                                Text "makes models "
+                                Text "run faster", class is "hero-verb"
+                                Text "."
+
                             Row height is 12
-                            Text "Transformers written from scratch, DNN kernels hand scheduled in TVM across CPU, GPU and FPGA, and the Rust servers and iOS apps underneath.", color is "muted", lineHeight is 1.7, maxWidth is 620
+                            Text "Transformers written from scratch, DNN kernels hand scheduled in TVM across CPU, GPU and FPGA, and the Rust servers and iOS apps underneath. One person, the whole stack.", color is "muted", lineHeight is 1.7, maxWidth is 620, size is "large"
+
+                            Row height is 24
+
+                            # Two rankings, stated plainly and without a
+                            # verification link: the repositories are private
+                            # and a dead link reads worse than an unlinked
+                            # claim.
+                            Column gap is 8, class is "creds", padding is 12, maxWidth is 620
+                                Row gap is 10, align is "baseline"
+                                    Text "1st in class", class is "cred-rank"
+                                    Text "Cornell ECE 5545, benchmarked TVM kernel optimization", class is "cred-detail"
+                                Row gap is 10, align is "baseline"
+                                    Text "1st in class", class is "cred-rank"
+                                    Text "Cornell CS 5740, NLP held out test accuracy", class is "cred-detail"
+
+                            Row height is 30
+                            Row gap is 8, align is "center", class is "psst", padding is 12, radius is 8
+                                Text "psst, this site has an interactive mode. Try pressing"
+                                Text "~", class is "kbd", padding is 4
+
+                            Row height is 46
+
+                            # The measurement of the claim the hero just made.
+                            Column gap is 10, class is "coverage", padding is 18, maxWidth is 620
+                                Row gap is 10, align is "baseline", class is "cov-head"
+                                    Text "stack coverage"
+                                    Row grow is 1
+                                    Text spanned, class is "cov-spanned"
+                                    Text ("of " + (text of (listLength of layerNames)) + " layers")
+                                Column gap is 3
+                                    each row in coverage
+                                        CoverageBar row
+                                Text "Counted from each project's declared stack, metal at the top.", class is "cov-note"
+
                             Row height is 56
 
-                            SectionHead "now", ""
+                            SectionHead "now", "", "now"
                             Row height is 10
                             Prompt "cat now.txt"
                             Row height is 10
@@ -395,21 +567,31 @@ view title is "Writing — Mark Sturman"
                                     LineItem line
                             Row height is 56
 
-                            SectionHead "about", ""
-                            Row height is 14
-                            Column gap is 18, maxWidth is 665
+                            SectionHead "about", "", "about"
+                            Row height is 18
+
+                            # The lead: Instrument Serif at 36px with one
+                            # phrase in italic amber, which is the shape of
+                            # the section rather than decoration on it.
+                            Row gap is 0, align is "baseline", class is "about-lead", maxWidth is 665
+                                Text aboutOpen
+                                Text aboutStress, class is "about-stress"
+                                Text aboutClose
+
+                            Row height is 20
+                            Column gap is 20, maxWidth is 665
                                 each paragraph in about
                                     Text paragraph, color is "muted", lineHeight is 1.75
                             Row height is 56
 
-                            SectionHead "projects", "16 entries"
+                            SectionHead "projects", "16 entries", "projects"
                             Row height is 14
                             Column gap is 10
                                 each project in ranked
                                     WorkCard project
                             Row height is 56
 
-                            SectionHead "range", "13 domains"
+                            SectionHead "range", "13 domains", "range"
                             Row height is 14
                             Column gap is 2
                                 each line in domains
@@ -421,10 +603,12 @@ view title is "Writing — Mark Sturman"
                                 Link Writing, decoration is "none"
                                     Text "blog", class is "rss"
 
-                    Work with slug
+                Work with slug
+                    Shell no
                         Working (projectWith with all is projects, slug is slug, index is 0, fallback is missingProject)
 
-                    Writing
+                Writing
+                    Shell yes
                         Column gap is 0
                             Row height is 40
                             Heading "Blog.", class is "title"
@@ -442,7 +626,8 @@ view title is "Writing — Mark Sturman"
                                 each post in ordered
                                     Card post
 
-                    Entry with slug
+                Entry with slug
+                    Shell yes
                         # The lookup happens once, at the call, rather than
                         # three times in three bindings.
                         Reading (postWith with all is posts, slug is slug, index is 0, fallback is missingPost)
