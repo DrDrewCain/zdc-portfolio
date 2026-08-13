@@ -24,9 +24,10 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, pegs, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen, line, open, mode, overlay, pegs, lex, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
 use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
+use "./lexer" for Lex, Reply, newLex, stepLex
 
 route Site
     Home    is "/"
@@ -291,6 +292,12 @@ component Terminal
                                 set screen to (joined with head is screen, rest is played.printed)
                                 if played.done
                                     set mode to "shell"
+                            if mode is "lexer"
+                                with guessed is (stepLex with game is lex, input is line)
+                                set lex to guessed.game
+                                set screen to (joined with head is screen, rest is guessed.printed)
+                                if guessed.done
+                                    set mode to "shell"
                             if mode is "games"
                                 set mode to "shell"
                                 with answer is (runCommand of line)
@@ -314,6 +321,8 @@ component Terminal
                                 # the same four pegs on every load.
                                 if answer.enters is "codebreak"
                                     set pegs to (newPegs of (clock))
+                                if answer.enters is "lexer"
+                                    set lex to (newLex of (clock))
                             set line to ""
 
                         # Ctrl+L clears the scrollback. Ctrl+C abandons the
