@@ -66,14 +66,43 @@
   }
 }
 
+/* --- the three background layers ------------------------------------------
+ * Copied off the live site rather than approximated, because a background
+ * is exactly the kind of thing an approximation gets visibly wrong:
+ *
+ *   1. an amber glow, at 22% from the left and not centred, at 0.10
+ *   2. a warm lift over the bottom 45%
+ *   3. CRT scanlines — a 1px line every 4px at 0.01 alpha
+ *
+ * The first attempt had one centred glow at 0.05 and no scanlines, which
+ * is why a crop of it read as flat beside a crop of the real thing.
+ *
+ * `background-attachment: fixed, fixed, scroll` matters: the two gradients
+ * stay put while the scanlines travel with the text, which is what stops
+ * the lines from strobing as the page moves. */
 html, body {
   background-color: #0f0d0a;
   color: var(--ink);
 }
 
+body {
+  background-image:
+    radial-gradient(70% 45% at 22% 0px, rgba(255, 169, 107, 0.1), rgba(0, 0, 0, 0) 70%),
+    linear-gradient(rgba(0, 0, 0, 0) 55%, rgba(74, 65, 42, 0.14) 100%),
+    repeating-linear-gradient(
+      rgba(242, 237, 227, 0.01) 0px,
+      rgba(242, 237, 227, 0.01) 1px,
+      rgba(0, 0, 0, 0) 1px,
+      rgba(0, 0, 0, 0) 4px
+    );
+  background-attachment: fixed, fixed, scroll;
+  background-repeat: repeat, repeat, repeat;
+}
+
+/* Transparent, so the body's three layers show through. A background
+ * colour here would cover all of them. */
 .page {
-  background-color: #0f0d0a;
-  background-image: radial-gradient(120% 80% at 50% 0%, rgba(255, 169, 107, 0.05), transparent 60%);
+  background-color: transparent;
   color: var(--ink);
   font-family: PlexSans, ui-sans-serif, system-ui, sans-serif;
   font-size: 16.8px;
@@ -179,3 +208,11 @@ html, body {
 .prose table { border-collapse: collapse; width: 100%; margin: 24px 0; font-size: 15px; }
 .prose th, .prose td { border: 1px solid var(--edge); padding: 8px 12px; text-align: left; }
 .prose th { color: var(--ink); font-weight: 600; }
+
+/* --- the index header ------------------------------------------------------
+ * Measured, like the rest: `Blog.` is 60px Instrument Serif with 40px above,
+ * the tagline is 14px IBM Plex Mono on a 20px line in #aaa295, its `//` is
+ * amber, and `rss` is amber and underlined. */
+.tagline { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; line-height: 20px; color: #aaa295; }
+.slash { color: var(--amber); }
+.rss { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: var(--amber); text-decoration: underline; text-underline-offset: 3px; }

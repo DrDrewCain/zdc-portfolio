@@ -26,6 +26,9 @@ record Post
     title   is Text
     summary is Text
     date    is Text
+    # Minutes, worked out on the build host. The reader is handed a number,
+    # not the arithmetic and not the text it was measured from.
+    minutes is Whole
     # `Markup`, not `Text`. `Text` sets `nodeValue`, so a post's `<h1>`
     # would arrive as four visible characters. `build markdown` is the only
     # expression that makes a `Markup` and `Prose` is the only element that
@@ -55,8 +58,20 @@ function readPosts with directory
 function postFrom of path
     give postFromRaw with path is path, raw is build read path
 
+# 200 words a minute, a word taken as five characters. Calibrated against
+# the live site rather than picked: at six characters a word this read 8
+# minutes where marksturman.com reads 9, and five brings them together.
+# At least a minute, because "0 min read" is a worse answer than a rounded
+# one.
+function readingMinutes of text
+    with words is (valueOr with maybe is (quotient with value is (textLength of text), divisor is 5), fallback is 0)
+    with minutes is (valueOr with maybe is (quotient with value is words, divisor is 200), fallback is 0)
+    if minutes < 1
+        give 1
+    give minutes
+
 function postFromRaw with path, raw
-    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), body is build markdown (bodyOf of raw)
+    give Post with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), summary is (fieldOf with raw is raw, key is "summary"), date is (fieldOf with raw is raw, key is "date"), minutes is (readingMinutes of (bodyOf of raw)), body is build markdown (bodyOf of raw)
 
 # ⚠️ THE ONE THING THE BUILD CAPABILITIES CANNOT DO, AND IT IS WORTH SAYING
 # PLAINLY.
@@ -95,7 +110,7 @@ function newestFirst with all
 state missingPost is static Post from missing with title is "Not found"
 
 function missing with title
-    give Post with slug is "", title is title, summary is "", date is "", body is build markdown ""
+    give Post with slug is "", title is title, summary is "", date is "", minutes is 1, body is build markdown ""
 
 function postWith with all, slug, index, fallback
     when listAt with value is all, index is index
@@ -120,7 +135,11 @@ function matches with post, query
 component Card with post
     Link (Entry with slug is post.slug), decoration is "none", color is "ink"
         Column class is "card", padding is 20, gap is 8
-            Text post.date, class is "meta"
+            Row gap is 6, align is "center", class is "meta"
+                Text post.date
+                Text "·"
+                Text post.minutes
+                Text "min read"
             Heading post.title, class is "card-title"
             Text post.summary, color is "muted", size is "small", lineHeight is 1.7
 
@@ -136,7 +155,11 @@ component Reading with post
         Article
             Column gap is 0, padding is 0
                 Row height is 28
-                Text post.date, class is "meta"
+                Row gap is 6, align is "center", class is "meta"
+                    Text post.date
+                    Text "·"
+                    Text post.minutes
+                    Text "min read"
                 Heading post.title, class is "title"
                 Row height is 34
                 # The body, rendered. `Prose` is the only element whose
@@ -177,11 +200,19 @@ view title is "Writing — Mark Sturman"
             Some with here
                 when here
                     Writing
-                        Column gap is 20
-                            Heading "Writing"
-                            Text "Read off disk at build time. What ships is HTML — there is no markdown renderer in this page.", color is "muted", lineHeight is 1.6
+                        Column gap is 0
+                            Row height is 40
+                            Heading "Blog.", class is "title"
+                            Row height is 16
+                            Row gap is 8, align is "center", class is "tagline"
+                                Text "//", class is "slash"
+                                Text "build logs, engineering stories, occasional opinions"
+                                Link "/rss.xml", class is "rss"
+                                    Text "rss"
+                            Row height is 28
 
                             Input query, hint is "filter", class is "filter", padding is 12
+                            Row height is 20
 
                             Column gap is 14
                                 each post in ordered
