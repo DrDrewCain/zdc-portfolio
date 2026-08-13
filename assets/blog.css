@@ -498,3 +498,16 @@ body:has(.term) {
   .range-row, .range-focus .range-row { grid-template-columns: 1fr; }
   .range-langs { grid-column: 1; }
 }
+
+/* --- 2048, inside the terminal ---------------------------------------------
+ * The standalone program has its own stylesheet; these are the few rules
+ * the overlay needs, at the smaller tile the panel has room for. */
+.t48-grid { background: #2b261e; display: inline-block; }
+.t { font-family: var(--font-mono); font-size: 20px; color: #1a1510; }
+.t-empty { background: #37312a; }
+.t-2 { background: #efe4d4; } .t-4 { background: #ece0c8; }
+.t-8 { background: #f2b179; } .t-16 { background: #f59563; }
+.t-32 { background: #f67c5f; } .t-64 { background: #f65e3b; color: #f9f6f2; }
+.t-128 { background: #edcf72; font-size: 17px; } .t-256 { background: #edcc61; font-size: 17px; }
+.t-512 { background: #edc850; font-size: 17px; } .t-1024 { background: #edc53f; font-size: 14px; color: #f9f6f2; }
+.t-2048 { background: #edc22e; font-size: 14px; color: #f9f6f2; }

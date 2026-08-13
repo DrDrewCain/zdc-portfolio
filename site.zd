@@ -24,11 +24,12 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, board, running, field, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, board, running, field, tiles, bestScore, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
 use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
 use "./mines" for Field, freshField, revealAt, flagAt, movedBy, mineStatus, mineViewBox, hiddenPath, flaggedPath, openPath, cursorPath, minePath
 use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
 
@@ -283,6 +284,18 @@ component Terminal
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
+            if overlay is "2048"
+                Column class is "term-game", gap is 8, align is "center"
+                    Row gap is 16, align is "center"
+                        Text "2048", class is "prompt-path"
+                        Text ((("score " + (text of tiles.score)) + " · best ") + (text of bestScore)) + " · arrows slide · r restarts", class is "prompt-mark"
+                    Column class is "t48-grid", padding is 8, radius is 12
+                        each band in [0, 4, 8, 12]
+                            Row gap is 6
+                                each step in [0, 1, 2, 3]
+                                    Column class is (tileClass of (cellOf with cells is tiles.cells, index is band + step)), width is 62, height is 62, radius is 6, align is "center", justify is "center"
+                                        Text (tileText of (cellOf with cells is tiles.cells, index is band + step)), weight is "800"
+
             if overlay is "minesweeper"
                 Column class is "term-game-wide", gap is 8
                     Row gap is 16, align is "center"
@@ -349,6 +362,8 @@ component Terminal
                                     set overlay to answer.launches
                                 if answer.launches is "minesweeper"
                                     set field to (freshField of (clock))
+                                if answer.launches is "2048"
+                                    set tiles to (freshBoard of (clock))
                                 if not (isBlank of answer.enters)
                                     set mode to answer.enters
                                 # A fresh code per game, seeded from the
@@ -405,6 +420,20 @@ component Terminal
                         # the document for the reason `on key` is: a
                         # document listener stands down while a field has
                         # focus, and the field always has it here.
+                        if overlay is "2048"
+                            if stroke.key is "ArrowLeft"
+                                set tiles to (afterMove with board is tiles, direction is Left)
+                            if stroke.key is "ArrowRight"
+                                set tiles to (afterMove with board is tiles, direction is Right)
+                            if stroke.key is "ArrowUp"
+                                set tiles to (afterMove with board is tiles, direction is Up)
+                            if stroke.key is "ArrowDown"
+                                set tiles to (afterMove with board is tiles, direction is Down)
+                            if stroke.key is "r"
+                                set tiles to (freshBoard of (clock))
+                            if tiles.score > bestScore
+                                set bestScore to tiles.score
+
                         if overlay is "minesweeper"
                             if stroke.key is "ArrowLeft"
                                 set field to (movedBy with field is field, dx is 0 - 1, dy is 0)
