@@ -345,11 +345,51 @@ html {
   backdrop-filter: blur(6px);
   font-family: var(--font-mono);
 }
+
+/* The document must not scroll behind the terminal.
+ *
+ * A `position: fixed` overlay covers the page, and covering it is all it
+ * does: the wheel still moves the document underneath, so closing the
+ * terminal left the reader somewhere they never chose to be. There is no
+ * JavaScript here to add or remove a class on `body`, and there does not
+ * need to be — `.term` is inside an `if`, so its presence in the tree *is*
+ * the open state, and `:has` reads that from the ancestor CSS otherwise
+ * cannot select. The rule appears and disappears with the element.
+ *
+ * `overscroll-behavior` is the second half. Once the terminal's own body
+ * is scrolled to an end, a further wheel tick chains to the nearest
+ * scrollable ancestor unless it is told not to — and `contain` prevents
+ * the chain even while the container has nothing left to scroll, which is
+ * the common case for a short session. */
+html:has(.term),
+body:has(.term) {
+  overflow: hidden;
+}
+.term-body {
+  overscroll-behavior: contain;
+}
 .term-body {
   border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface);
   font-size: 13px; line-height: 1.65; color: #cfc7b8; white-space: pre-wrap;
 }
 .term-line { display: block; }
+
+/* The games run inside the terminal, so the terminal is their viewport and
+ * not the page. A board that sized itself from `vh` overflowed the panel
+ * it lives in and scrolled the scrollback out from under itself; these cap
+ * it at whatever the terminal body actually has, which is the only number
+ * that is true at every window size. */
+.term-game {
+  align-self: center;
+  max-width: min(100%, 520px);
+  max-height: 100%;
+  aspect-ratio: 1;
+}
+.term-game-wide {
+  align-self: center;
+  max-width: min(100%, 720px);
+  max-height: 100%;
+}
 .term-input { border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); margin-top: 10px; }
 .term-field {
   background: transparent; border: none; outline: none; color: var(--color-ink);
