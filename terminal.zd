@@ -19,6 +19,7 @@ use "./commands" for Outcome, Completion, runCommand, completionFor, commandName
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
 
 # The screen: what has been printed, oldest first.
 state screen is client List of Text starting ["mark's portfolio :: type 'help' to get started"]
@@ -46,6 +47,24 @@ state overlay is client Text starting ""
 state pegs is client Pegs starting (newPegs of 1)
 state lex is client Lex starting (newLex of 1)
 state ship is client Ship starting (newShip of 1)
+
+# The board, and whether it is advancing. `running` opens `yes`: the gun
+# is the pattern that makes the rule legible and a still frame of it says
+# nothing. A reader who wants to step it presses space.
+# The board advances itself. `every "90ms" starting … to …` is the fold a
+# clock performs — the step reads the cell it writes, which is the one
+# cycle the language permits and the same one a `fold`'s accumulator is.
+#
+# `running` gates the step rather than the timer, so pausing and resuming
+# do not become two timers with two phases and a board that stutters when
+# it starts again.
+state running is client Truth starting yes
+state board is client Life every "90ms" starting (stamped with pattern is gunCells, seed is 1) to (steppedIf with game is board, moving is running)
+
+function steppedIf with game, moving
+    if moving
+        give stepLife of game
+    give game
 
 # --- history ----------------------------------------------------------------
 #

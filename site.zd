@@ -24,11 +24,12 @@ use "./rings" for trunkOutlines, grain, pithPath, trunkExtent, viewBoxText, FIRS
 use "./projects" for Project, Listing, cards, projects, ranked, missingProject, projectWith, effortOf, Coverage, coverage, spanned, projectSlugs, rounded5
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
-use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
+use "./terminal" for screen, line, open, mode, overlay, pegs, lex, ship, board, running, history, cursor, draft, promptFor, hintFor, joined, opening, recalled, steppedBack
 use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./life" for Life, stepLife, stamped, population, boardPath, lifeViewBox, gunCells, gliderCells, pulsarCells
 
 route Site
     Home    is "/"
@@ -269,6 +270,18 @@ component Terminal
                 each printed in screen
                     Text printed, class is "term-line"
 
+            # A game that takes the panel. It sits above the prompt rather
+            # than replacing it, so the scrollback behind stays readable
+            # and `esc` has somewhere to go back to.
+            if overlay is "life"
+                Column class is "term-game-wide", gap is 8
+                    Row gap is 16, align is "center"
+                        Text "conway", class is "prompt-path"
+                        Text (("generation " + (text of board.generation)) + " · population ") + (text of (population of board)), class is "prompt-mark"
+                        Text "space runs · n steps · g gun · p pulsar · esc quits", class is "prompt-mark"
+                    Scene viewBox is lifeViewBox, label is "Conway's game of life"
+                        Path outline is (boardPath of board), fill is "#ffa96b"
+
             Row class is "term-input", gap is 8, align is "center", padding is 12
                 Text "~/portfolio", class is "prompt-path"
                 Text (promptFor of mode), class is "prompt-mark"
@@ -371,6 +384,23 @@ component Terminal
                             set line to completion.completed
                             if (listLength of completion.suggestions) > 1
                                 set screen to (append (join with parts is completion.suggestions, using is "  ") to screen)
+
+                        # A game holding the panel takes the keys that
+                        # drive it. They are on the input rather than on
+                        # the document for the reason `on key` is: a
+                        # document listener stands down while a field has
+                        # focus, and the field always has it here.
+                        if overlay is "life"
+                            if stroke.key is " "
+                                set running to not running
+                            if stroke.key is "n"
+                                set board to (stepLife of board)
+                            if stroke.key is "g"
+                                set board to (stamped with pattern is gunCells, seed is board.seed)
+                            if stroke.key is "p"
+                                set board to (stamped with pattern is pulsarCells, seed is board.seed)
+                            if stroke.key is "c"
+                                set board to (stamped with pattern is gliderCells, seed is board.seed)
 
                         if stroke.key is "Escape"
                             if isBlank of overlay
