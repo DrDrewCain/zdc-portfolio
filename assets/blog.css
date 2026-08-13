@@ -360,3 +360,46 @@ html {
   font-family: var(--font-mono); font-size: 13px;
 }
 .term-field::placeholder { color: #4f4a40; }
+
+/* --- the growth rings ------------------------------------------------------
+ * Elements, not an SVG and not a foreign. A ring is a bordered box with a
+ * border radius; the wobble that stops concentric bands reading as a
+ * dartboard is four unequal radii, which `radius` cannot express because a
+ * `Lengths` is pixels. Six shapes, and the program picks between them by
+ * ring index.
+ *
+ * The eleven ramp steps are interpolated exactly as `rings.ts` does it:
+ * Pantone 448 C at the pith, ember at the bark, with chroma pulled out of
+ * the middle so the mid bands read as timber rather than leather.
+ */
+.rings { margin: 0 auto; }
+.ring {
+  border-style: solid;
+  box-sizing: border-box;
+  animation: ring-grow 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.pith { background: var(--color-soil); box-shadow: inset 0 0 0 6px #2b261e; }
+
+.wob0 { border-radius: 48% 52% 51% 49% / 50% 49% 51% 50%; }
+.wob1 { border-radius: 52% 48% 49% 51% / 49% 51% 49% 51%; }
+.wob2 { border-radius: 50% 50% 48% 52% / 52% 48% 52% 48%; }
+.wob3 { border-radius: 49% 51% 52% 48% / 48% 52% 48% 52%; }
+.wob4 { border-radius: 51% 49% 50% 50% / 51% 50% 49% 50%; }
+.wob5 { border-radius: 50% 50% 52% 48% / 49% 51% 50% 50%; }
+
+.shade0 { border-color: #4a412a; }
+.shade1 { border-color: #5b4c33; }
+.shade2 { border-color: #6b563d; }
+.shade3 { border-color: #7a6247; }
+.shade4 { border-color: #896d51; }
+.shade5 { border-color: #99785a; }
+.shade6 { border-color: #aa8361; }
+.shade7 { border-color: #bd8d67; }
+.shade8 { border-color: #d1976a; }
+.shade9 { border-color: #e7a06b; }
+.shade10 { border-color: #ffa96b; }
+
+.rings-label {
+  font-family: var(--font-mono); font-size: 0.6875rem;
+  text-transform: uppercase; letter-spacing: 0.18em; color: var(--color-muted);
+}

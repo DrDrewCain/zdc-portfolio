@@ -237,15 +237,12 @@ state ranked is static List of Project from byRank with all is projects
 # `List of` a record, so the drawing is handed "9000,99,52,…" in running
 # order and works the geometry out itself — which is where the geometry
 # already lived.
-state ringData is static Text from ringDataOf with all is ranked
-
-function ringDataOf with all
-    give join with parts is (commitCounts with all is all), using is ","
+state rings is static List of Ring from ringsFrom with counts is (commitCounts with all is ranked), index is 0, cursor is 18, taken is empty
 
 function commitCounts with all
     from all
     keep each project where (commitsOf of project.timeline) > 0
-    map each project to (text of (commitsOf of project.timeline))
+    map each project to (commitsOf of project.timeline)
 
 # --- stack coverage --------------------------------------------------------
 #
@@ -488,21 +485,54 @@ component LineItem with line
 # rarest lit tick is the leftmost, which is the point of showing it.
 # --- the growth rings ------------------------------------------------------
 #
-# An SVG, and the element vocabulary has no SVG at all — no `Svg`, no `Path`,
-# no `Circle`. It also cannot be faked with bordered divs, and that is not a
-# limitation of the divs: the original's rings are deliberately *wobbled*,
-# because "drawn as perfect circles, concentric bands read as a dartboard".
-# Perfect circles are exactly what a div can draw.
+# No JavaScript. The original is an SVG and the element vocabulary has no
+# SVG, so the first attempt was a `foreign` over a bespoke module — and a
+# bespoke module is exactly what a `foreign` should not be for. A `foreign`
+# earns its keep when it reaches something that already exists and the
+# language cannot: three.js, a canvas, a map. Writing new geometry into a
+# `.js` beside the program is writing the program somewhere else.
 #
-# So this is a `foreign`, which is the language's own answer for a drawing it
-# has no vocabulary for. What the declaration grants, plainly: `./rings.js`
-# runs in the browser with the full DOM. The compiler prevents two things —
-# a `secret` crossing in, and any value crossing back out — and these five
-# lines are the audit surface for everything else.
-foreign growthRings is client
-    from "./rings.js" as "mount"
-    takes commits is Text
-    gives view
+# So the rings are elements. A ring is a bordered box with a border radius,
+# which is a circle; the *wobble* — the thing that stops concentric bands
+# reading as a dartboard — is four unequal radii, and `radius` is a
+# `Lengths` in pixels so a percentage cannot be one. Six wobble classes
+# carry the shapes and the program picks between them by index, which is
+# the same trick the stripes use for colour: static shapes, dataflow
+# choosing which applies.
+#
+# The sizes are worked out here, in the language, with the `math.zd` this
+# branch added — `log10` for the ring width is the original's own formula.
+
+record Ring
+    outer  is Whole
+    width  is Whole
+    shade  is Whole
+    wobble is Whole
+
+# MIN_WIDTH + log10(commits) * WIDTH_SCALE, exactly as `rings.ts` has it.
+function ringWidth of commits
+    with grown is (valueOr with maybe is (log10 of (decimalOf of (max with first is commits, second is 1))), fallback is 0.0)
+    give 11 + (valueOr with maybe is (round of (grown * 7.6)), fallback is 0)
+
+# Rings, pith outward: each one sits on the edge the last left.
+function ringsFrom with counts, index, cursor, taken
+    when listAt with value is counts, index is index
+        None
+            give taken
+        Some with commits
+            give ringsFrom with counts is counts, index is index + 1, cursor is cursor + (ringWidth of commits), taken is (append (Ring with outer is cursor + (ringWidth of commits), width is (ringWidth of commits), shade is (shadeFor with index is index, count is (listLength of counts)), wobble is (valueOr with maybe is (mod with value is index, divisor is 6), fallback is 0)) to taken)
+
+# Position on the soil-to-ember ramp, as one of eleven classes. Eased hard
+# toward the end for the reason the original gives: ring *area* grows with
+# radius, so spreading the ramp evenly across ring index spends two thirds
+# of the picture on the bright end and the disc reads as a plain orange
+# circle.
+function shadeFor with index, count
+    if count < 2
+        give 10
+    with t is ((decimalOf of index) / (decimalOf of (count - 1)))
+    with eased is (valueOr with maybe is (power with value is t, exponent is 1.9), fallback is 0.0)
+    give valueOr with maybe is (round of (eased * 10.0)), fallback is 0
 
 component DepthGauge with stack
     Row gap is 2, align is "center"
@@ -755,8 +785,10 @@ view title is "Mark Sturman"
                             # answers "what is there", a cross-section answers
                             # "how much, and for how long".
                             Row gap is 40, align is "center", narrowDisplay is "block", class is "rings-row"
-                                Column width is 320
-                                    growthRings commits is ringData
+                                Column class is "rings", width is 320, height is 320, position is "relative"
+                                    each ring in rings
+                                        Row class is ("ring shade" + (text of ring.shade) + " wob" + (text of ring.wobble)), position is "absolute", top is (160 - ring.outer), left is (160 - ring.outer), width is (ring.outer * 2), height is (ring.outer * 2), border is ring.width
+                                    Row class is "pith", position is "absolute", top is 142, left is 142, width is 36, height is 36, radius is 999
                                 Column grow is 1, basis is 0, gap is 12, maxWidth is 420
                                     Text "growth rings", class is "rings-label"
                                     Text "One ring a year since 2018, when I started. The thick ones are the years that shipped something.", color is "muted", lineHeight is 1.7
