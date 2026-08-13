@@ -220,3 +220,37 @@ body {
 /* The scroll readout. Amber like the real one, and tabular so the digits
  * do not shuffle the bar sideways as the number changes. */
 .pct { color: var(--amber); font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+
+/* --- the home page ---------------------------------------------------------
+ * Measured off the live site: the hero is 128px Instrument Serif, its
+ * subtitle 48px in #aaa295, and a section head is 14px IBM Plex Mono in the
+ * same grey. */
+.prompt { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: #aaa295; }
+.prompt-path { color: var(--amber); }
+.prompt-mark { color: #6f6653; }
+
+.hero {
+  font-family: InstrumentSerif, Georgia, serif; font-weight: 400;
+  font-size: clamp(64px, 12vw, 128px); line-height: 1; margin: 4px 0 0;
+  letter-spacing: -0.01em;
+}
+.hero-sub {
+  font-family: InstrumentSerif, Georgia, serif; font-weight: 400;
+  font-size: clamp(30px, 5.4vw, 48px); line-height: 1.1; margin: 6px 0 0;
+  color: #aaa295;
+}
+
+.section-head { font-family: PlexMono, ui-monospace, monospace; font-size: 14px; color: #aaa295; margin: 0; font-weight: 400; }
+.section-count { color: #6f6653; }
+
+.line { border-bottom: 1px solid var(--edge); }
+.line-label { font-family: PlexMono, ui-monospace, monospace; font-size: 12px; color: var(--amber); }
+.line-title { font-size: 16px; color: var(--ink); }
+.line-detail { font-size: 14px; color: #8b8478; line-height: 1.6; }
+
+.status-tag {
+  font-family: PlexMono, ui-monospace, monospace; font-size: 11px;
+  color: var(--amber); border: 1px solid rgba(255, 169, 107, 0.35);
+  border-radius: 999px; padding: 1px 8px;
+}
+.stack { font-family: PlexMono, ui-monospace, monospace; font-size: 12px; color: #6f6653; line-height: 1.6; }

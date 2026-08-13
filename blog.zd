@@ -20,6 +20,7 @@
 # language and a way to name it from the file, and neither exists.
 
 use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
+use "./data" for Line, now, about, domains
 
 record Post
     slug    is Text
@@ -40,8 +41,10 @@ record Post
 # "`Post` is missing `title`, `summary`, `date`, and `body`" — the record
 # constructor winning the name, which is exactly what happened.
 route Site
-    Writing is "/"
-    Entry   is "/writing" with slug is Text in slugs
+    Home    is "/"
+    Writing is "/blog"
+    Entry   is "/blog" with slug is Text in slugs
+    Work    is "/projects" with slug is Text in projectSlugs
 
 state page is client Option of Site starting address
 
@@ -153,6 +156,65 @@ function postFromRaw with path, raw
 # that is a change to when the document set is decided, not a bug fix.
 state slugs is static List of Text starting ["2026-07-15-hello-world", "2026-07-16-things-that-move", "2026-07-18-critters-grew-up", "2026-07-20-judgment-became-an-act", "2026-07-24-the-shape-of-the-fuel", "2026-07-25-the-classifier-was-never-the-problem", "2026-07-25-the-optimization-that-was-wrong-twice", "2026-07-25-you-only-get-to-watch-one-person-think", "2026-07-31-coastlines-over-open-water", "2026-08-02-commitment-is-the-safety-feature", "2026-08-02-the-ruler-is-made-of-people", "2026-08-02-the-same-question-one-layer-up", "2026-08-02-the-student-beat-the-teacher", "2026-08-02-the-window-is-not-the-memory"]
 
+state projectSlugs is static List of Text starting ["appmeee", "clawfreelance", "gridwright", "imsg-protocol", "judgehuman", "matrix-infras", "minimac-llm", "minineuromodel", "minitorch", "nlp-classifiers", "project-mercury", "spacetrader-wars", "tvm-kernel-opt", "vernos", "voxmatch", "zdeceptron"]
+
+# --- the projects ----------------------------------------------------------
+#
+# The same three capabilities as the posts, over a different directory. A
+# project carries a one-liner, a status, a stack and an order rather than a
+# date and a summary, and `order` is a number written in the file so the
+# author decides the sequence rather than the filesystem.
+
+record Project
+    slug      is Text
+    title     is Text
+    oneLiner  is Text
+    status    is Text
+    stack     is Text
+    timeline  is Text
+    rank      is Whole
+    body      is Markup
+
+state projects is static List of Project from readProjects with directory is "content/projects"
+
+function readProjects with directory
+    from build list directory
+    map each path to (projectFrom of path)
+
+function projectFrom of path
+    give projectFromRaw with path is path, raw is build read path
+
+# `order` comes out of the header as text and has to be a number to sort by.
+# `parseWhole` gives an `Option`, because a header can say anything.
+function projectFromRaw with path, raw
+    give Project with slug is (slugOf of path), title is (fieldOf with raw is raw, key is "title"), oneLiner is (fieldOf with raw is raw, key is "oneLiner"), status is (fieldOf with raw is raw, key is "status"), stack is (unbracketed of (fieldOf with raw is raw, key is "stack")), timeline is (fieldOf with raw is raw, key is "timeline"), rank is (valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")), fallback is 99), body is build markdown (linkified of (bodyOf of raw))
+
+# `stack` is a YAML list — `[TypeScript, Next.js]` — and the brackets are
+# the only part of that syntax this reads. Anything more is a YAML parser,
+# and `frontmatter.zd` says why there is not one.
+function unbracketed of value
+    give withoutSuffix with value is (withoutPrefix with value is value, prefix is "["), suffix is "]"
+
+state ranked is static List of Project from byRank with all is projects
+
+function byRank with all
+    from all
+    sort each project by project.rank
+
+state missingProject is static Project from missingWork with title is "Not found"
+
+function missingWork with title
+    give Project with slug is "", title is title, oneLiner is "", status is "", stack is "", timeline is "", rank is 99, body is build markdown ""
+
+function projectWith with all, slug, index, fallback
+    when listAt with value is all, index is index
+        None
+            give fallback
+        Some with project
+            if project.slug is slug
+                give project
+            give projectWith with all is all, slug is slug, index is index + 1, fallback is fallback
+
 # Newest first. Sorted on the build host, so the order is the same on every
 # machine and costs the reader nothing.
 state ordered is static List of Post from newestFirst with all is posts
@@ -244,6 +306,58 @@ component Status
             Text "%"
         Text "[~]", class is "clock"
 
+# `~/portfolio $ …`, the prompt every section opens with.
+component Prompt with command
+    Row gap is 8, align is "center", class is "prompt"
+        Text "~/portfolio", class is "prompt-path"
+        Text "$", class is "prompt-mark"
+        Text command
+
+# `// name`, with an optional count beside it.
+component SectionHead with name, count
+    Row gap is 10, align is "baseline", class is "section-head"
+        Text ("// " + name)
+        Text count, class is "section-count"
+
+# One line of `now` or of `range`: a label, the thing, and the detail.
+component LineItem with line
+    Column gap is 3, padding is 12, class is "line"
+        Text line.label, class is "line-label"
+        Text line.title, class is "line-title"
+        if not (isBlank of line.detail)
+            Text line.detail, class is "line-detail"
+
+component WorkCard with project
+    Link (Work with slug is project.slug), decoration is "none", color is "ink"
+        Column class is "card", padding is 20, gap is 8
+            Row gap is 10, align is "baseline"
+                Text project.title, class is "card-title"
+                Text project.status, class is "status-tag"
+            Text project.oneLiner, color is "muted", size is "small", lineHeight is 1.7
+            Text project.stack, class is "stack"
+
+component Working with project
+    Column gap is 0
+        Link Home, decoration is "none", padding is 0
+            Row gap is 8, align is "center", class is "cd"
+                Text "←", class is "cd-arrow"
+                Text "cd ../projects"
+        Article
+            Column gap is 0
+                Row height is 28
+                Row gap is 10, align is "baseline", class is "meta"
+                    Text project.status
+                    if not (isBlank of project.timeline)
+                        Text "·"
+                    Text project.timeline
+                Heading project.title, class is "title"
+                Row height is 10
+                Text project.oneLiner, color is "muted", size is "large", lineHeight is 1.6, maxWidth is 665
+                Row height is 10
+                Text project.stack, class is "stack"
+                Row height is 30
+                Prose project.body, class is "prose"
+
 component Shell with children
     Column class is "page", minHeight is 700
         Status
@@ -262,6 +376,54 @@ view title is "Writing — Mark Sturman"
 
             Some with here
                 when here
+                    Home
+                        Column gap is 0
+                            Row height is 48
+                            Prompt "whoami"
+                            Heading "Mark.", class is "hero"
+                            Heading "makes models run faster.", class is "hero-sub"
+                            Row height is 12
+                            Text "Transformers written from scratch, DNN kernels hand scheduled in TVM across CPU, GPU and FPGA, and the Rust servers and iOS apps underneath.", color is "muted", lineHeight is 1.7, maxWidth is 620
+                            Row height is 56
+
+                            SectionHead "now", ""
+                            Row height is 10
+                            Prompt "cat now.txt"
+                            Row height is 10
+                            Column gap is 2
+                                each line in now
+                                    LineItem line
+                            Row height is 56
+
+                            SectionHead "about", ""
+                            Row height is 14
+                            Column gap is 18, maxWidth is 665
+                                each paragraph in about
+                                    Text paragraph, color is "muted", lineHeight is 1.75
+                            Row height is 56
+
+                            SectionHead "projects", "16 entries"
+                            Row height is 14
+                            Column gap is 10
+                                each project in ranked
+                                    WorkCard project
+                            Row height is 56
+
+                            SectionHead "range", "13 domains"
+                            Row height is 14
+                            Column gap is 2
+                                each line in domains
+                                    LineItem line
+                            Row height is 40
+
+                            Prompt "ls elsewhere:"
+                            Row gap is 10, padding is 10
+                                Link Writing, decoration is "none"
+                                    Text "blog", class is "rss"
+
+                    Work with slug
+                        Working (projectWith with all is projects, slug is slug, index is 0, fallback is missingProject)
+
                     Writing
                         Column gap is 0
                             Row height is 40
