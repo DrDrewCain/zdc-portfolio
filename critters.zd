@@ -365,3 +365,443 @@ function critterKnown of name
 
 function critterByName of name
     give critterAt of (max with first is 0, second is (critterIdOf of name))
+
+# --- the silhouette ---------------------------------------------------------
+#
+# `makeSprite` is twelve by twelve, left-right symmetric so it always
+# reads as a face, and it is built by eight passes that each mutate the
+# same array. Here each pass gives back a new grid, and the passes are
+# threaded in the original's order because the order is load-bearing in
+# two separate ways.
+#
+# THE DRAW COUNT IS PART OF THE PICTURE. The body loop draws once per
+# row and the number of rows is itself rolled, so the ears, the band, the
+# eyes and the feet all read from wherever the body left the stream. The
+# accent band goes further: it draws *only for cells the body filled*,
+# because `g[bandY]?.[x] === 1 && rand() < 0.7` short-circuits. A port
+# that draws unconditionally there is a port whose creatures all have the
+# wrong eyes. `CritterCanvas` exists to carry a seed back out of the two
+# passes whose draw count is not known in advance.
+#
+# AND A PASS READS WHAT THE LAST ONE WROTE. The evolution pass finds the
+# topmost occupied row and the widest row of the *body*, then writes
+# shoulder spikes; the stage-3 claws then look for the edge of a row that
+# the spikes may already have widened. Threading the grid through is not
+# ceremony, it is the data dependency the original expresses by mutating
+# in place.
+
+state critterSpriteSpan is static Whole starting 12
+state critterSpriteHalf is static Whole starting 6
+state critterSpriteCells is static Whole from critterSpriteSpan * critterSpriteSpan
+
+# A cell holds one of four marks: `.` empty, `1` body, `2` accent, `3`
+# eye. They are the original's 0/1/2/3 as characters, because a `Text` is
+# what a grid is here.
+function critterBlankSprite
+    give repeat with value is ".", count is critterSpriteCells
+
+function critterCellAt with grid, index
+    give valueOr with maybe is (textAt with value is grid, index is index), fallback is "."
+
+function critterPainted with grid, index, mark
+    give ((slice with value is grid, start is 0, stop is index) + mark) + (
+        slice with value is grid,
+        start is index + 1,
+        stop is critterSpriteCells)
+
+# Every write in the original is a mirrored pair — `g[y][half-1-dx]` and
+# `g[y][half+dx]` — which is what makes a generated blob read as an
+# animal rather than as noise. One function, so the symmetry cannot be
+# broken by forgetting a line.
+function critterMirrored with grid, y, dx, mark
+    give critterPainted with grid is (
+        critterPainted with grid is grid,
+        index is (y * critterSpriteSpan) + ((critterSpriteHalf - 1) - dx),
+        mark is mark),
+        index is (y * critterSpriteSpan) + (critterSpriteHalf + dx),
+        mark is mark
+
+record CritterCanvas
+    grid is Text
+    seed is Whole
+
+function critterSprite with id, stage
+    with start is (critterStream of ((id * 40503) + 7))
+    with widthStart is (1 + (critterRoll with seed is start, bound is 2))
+    with bodyTop is (1 + (critterRoll with seed is (nextSeed of start), bound is 2))
+    with bodyBot is ((critterSpriteSpan - 1) - (
+        critterRoll with seed is (critterSeedAfter with seed is start, draws is 2),
+        bound is 3))
+    with body is (
+        critterBodyRows with grid is (critterBlankSprite),
+        y is bodyTop,
+        stop is bodyBot,
+        width is widthStart,
+        seed is (critterSeedAfter with seed is start, draws is 3))
+    with topKind is (critterRoll with seed is body.seed, bound is 3)
+    with earX is (1 + (
+        critterRoll with seed is (nextSeed of body.seed),
+        bound is critterSpriteHalf - 2))
+    with eared is (
+        critterEars with grid is body.grid,
+        bodyTop is bodyTop,
+        earX is earX,
+        topKind is topKind,
+        k is 0)
+    with bandSeed is (critterSeedAfter with seed is body.seed, draws is 2)
+    with bandY is ((bodyTop + 1) + (
+        critterRoll with seed is bandSeed,
+        bound is (max with first is 1, second is ((bodyBot - bodyTop) - 2))))
+    with banded is (
+        critterBand with grid is eared,
+        bandY is bandY,
+        x is 0,
+        seed is (nextSeed of bandSeed))
+    with eyeY is ((bodyTop + 1) + (critterRoll with seed is banded.seed, bound is 2))
+    with eyeX is (1 + (
+        critterRoll with seed is (nextSeed of banded.seed),
+        bound is critterSpriteHalf - 2))
+    with footX is (1 + (
+        critterRoll with seed is (critterSeedAfter with seed is banded.seed, draws is 2),
+        bound is critterSpriteHalf - 1))
+    give critterEvolved with grid is (
+        critterMirrored with grid is (
+            critterMirrored with grid is banded.grid, y is eyeY, dx is eyeX, mark is "3"),
+        y is bodyBot,
+        dx is footX,
+        mark is "1"),
+        id is id,
+        stage is stage
+
+# The body blob: each row carves a symmetric width that varies smoothly,
+# so the silhouette tapers instead of stepping.
+function critterBodyRows with grid, y, stop, width, seed
+    if y is stop
+        give CritterCanvas with grid is grid, seed is seed
+    with grown is (
+        max with first is 1,
+        second is (
+            min with first is critterSpriteHalf - 1,
+            second is (width + ((critterRoll with seed is seed, bound is 3) - 1))))
+    give critterBodyRows with grid is (
+        critterBodyRow with grid is grid,
+        y is y,
+        dx is 0,
+        width is grown),
+        y is y + 1,
+        stop is stop,
+        width is grown,
+        seed is (nextSeed of seed)
+
+function critterBodyRow with grid, y, dx, width
+    if dx > width
+        give grid
+    give critterBodyRow with grid is (
+        critterMirrored with grid is grid,
+        y is y,
+        dx is dx,
+        mark is "1"),
+        y is y,
+        dx is dx + 1,
+        width is width
+
+# Ears, horns or antennae on top — two rows of them, or none at all when
+# the roll came up flat. The `break` on a negative row is why a creature
+# whose body starts at row 1 gets one row of ears rather than two.
+function critterEars with grid, bodyTop, earX, topKind, k
+    if topKind is 0
+        give grid
+    if k is 2
+        give grid
+    with yy is ((bodyTop - 1) - k)
+    if yy < 0
+        give grid
+    give critterEars with grid is (
+        critterMirrored with grid is grid,
+        y is yy,
+        dx is earX,
+        mark is "1"),
+        bodyTop is bodyTop,
+        earX is earX,
+        topKind is topKind,
+        k is k + 1
+
+# The accent band — a belly or a pair of wings — as a seventy-percent
+# sprinkle over one row of body cells. The draw happens only where the
+# body is, which is the short-circuit in the original's `&&`.
+function critterBand with grid, bandY, x, seed
+    if x is critterSpriteSpan
+        give CritterCanvas with grid is grid, seed is seed
+    with spot is ((bandY * critterSpriteSpan) + x)
+    if not ((critterCellAt with grid is grid, index is spot) is "1")
+        give critterBand with grid is grid, bandY is bandY, x is x + 1, seed is seed
+    if (randomDecimal of seed) < 0.7
+        give critterBand with grid is (
+            critterPainted with grid is grid,
+            index is spot,
+            mark is "2"),
+            bandY is bandY,
+            x is x + 1,
+            seed is (nextSeed of seed)
+    give critterBand with grid is grid, bandY is bandY, x is x + 1, seed is (nextSeed of seed)
+
+# --- evolution embellishments -----------------------------------------------
+#
+# Stage 2 grows horns and shoulder spikes; stage 3 adds a crown, side
+# claws and taller horns. The creature stays recognisably itself, which is
+# the whole design: an evolved form that redrew the silhouette would read
+# as a different species wearing the same name.
+
+function critterEvolved with grid, id, stage
+    if stage is 1
+        give grid
+    with seed is (critterStream of ((id * 1013904223) + (stage * 97)))
+    with top is (critterTopRow with grid is grid, index is 0)
+    with wideY is (critterWidestRow with grid is grid, y is 0, widest is top, fill is 0)
+    with shouldered is (
+        critterShoulders with grid is grid,
+        y is wideY,
+        leftEdge is (critterFirstInRow with grid is grid, y is wideY, x is 0),
+        rightEdge is (critterLastInRow with grid is grid, y is wideY, x is critterSpriteSpan - 1))
+    with horned is (
+        critterHorns with grid is shouldered,
+        top is top,
+        hornX is (1 + (critterRoll with seed is seed, bound is critterSpriteHalf - 2)),
+        stage is stage,
+        k is 1)
+    if stage < 3
+        give horned
+    give critterCrowned with grid is horned, top is top, wideY is wideY
+
+# The topmost occupied row, found in row-major order exactly as the
+# original's labelled `break` does.
+function critterTopRow with grid, index
+    if index is critterSpriteCells
+        give 0
+    if not ((critterCellAt with grid is grid, index is index) is ".")
+        give valueOr with maybe is (
+            quotient with value is index,
+            divisor is critterSpriteSpan),
+            fallback is 0
+    give critterTopRow with grid is grid, index is index + 1
+
+# The widest row hosts the shoulder spikes. Strictly greater, so a tie
+# keeps the higher row — the original's `>` and not a `>=`, and on a
+# tapering body the difference is a spike at the shoulder rather than at
+# the hip.
+function critterWidestRow with grid, y, widest, fill
+    if y is critterSpriteSpan
+        give widest
+    with wide is (critterRowFill with grid is grid, y is y, x is 0, running is 0)
+    if wide > fill
+        give critterWidestRow with grid is grid, y is y + 1, widest is y, fill is wide
+    give critterWidestRow with grid is grid, y is y + 1, widest is widest, fill is fill
+
+function critterRowFill with grid, y, x, running
+    if x is critterSpriteSpan
+        give running
+    if (critterCellAt with grid is grid, index is (y * critterSpriteSpan) + x) is "."
+        give critterRowFill with grid is grid, y is y, x is x + 1, running is running
+    give critterRowFill with grid is grid, y is y, x is x + 1, running is running + 1
+
+# `-1` for a row with nothing in it, which is `findIndex`'s answer and the
+# value the caller's `> 0` test is written against.
+function critterFirstInRow with grid, y, x
+    if x is critterSpriteSpan
+        give 0 - 1
+    if not ((critterCellAt with grid is grid, index is (y * critterSpriteSpan) + x) is ".")
+        give x
+    give critterFirstInRow with grid is grid, y is y, x is x + 1
+
+# The last occupied column, or `12` for an empty row — which is what
+# `N - 1 - [...row].reverse().findIndex(Boolean)` gives when the reverse
+# search fails, and it is out of range on purpose so the caller's
+# `< N - 1` test declines to write.
+function critterLastInRow with grid, y, x
+    if x < 0
+        give critterSpriteSpan
+    if not ((critterCellAt with grid is grid, index is (y * critterSpriteSpan) + x) is ".")
+        give x
+    give critterLastInRow with grid is grid, y is y, x is x - 1
+
+function critterShoulders with grid, y, leftEdge, rightEdge
+    with left is (grid if leftEdge < 1 otherwise (
+        critterPainted with grid is grid,
+        index is (y * critterSpriteSpan) + (leftEdge - 1),
+        mark is "2"))
+    if rightEdge > (critterSpriteSpan - 2)
+        give left
+    give critterPainted with grid is left,
+        index is (y * critterSpriteSpan) + (rightEdge + 1),
+        mark is "2"
+
+# Horns reach up from the crown line: one row at stage 2, two and in the
+# accent colour at stage 3.
+function critterHorns with grid, top, hornX, stage, k
+    if k > (2 if stage is 3 otherwise 1)
+        give grid
+    with yy is (top - k)
+    if yy < 0
+        give grid
+    give critterHorns with grid is (
+        critterMirrored with grid is grid,
+        y is yy,
+        dx is hornX,
+        mark is ("2" if stage is 3 otherwise "1")),
+        top is top,
+        hornX is hornX,
+        stage is stage,
+        k is k + 1
+
+# The centre crown spike is the one write in the whole generator that is
+# not a mirrored pair — except that it is: `half - 1` and `half` are the
+# mirror at an offset of zero.
+function critterCrowned with grid, top, wideY
+    with crowned is (
+        critterMirrored with grid is grid,
+        y is (max with first is 0, second is (top - 2)),
+        dx is 0,
+        mark is "2")
+    with clawY is (min with first is critterSpriteSpan - 2, second is (wideY + 2))
+    with le is (critterFirstInRow with grid is crowned, y is clawY, x is 0)
+    with leftClawed is (crowned if le < 1 otherwise (
+        critterPainted with grid is crowned,
+        index is (clawY * critterSpriteSpan) + (le - 1),
+        mark is "1"))
+    with re is (
+        critterLastInRow with grid is leftClawed,
+        y is clawY,
+        x is critterSpriteSpan - 1)
+    if re > (critterSpriteSpan - 2)
+        give leftClawed
+    give critterPainted with grid is leftClawed,
+        index is (clawY * critterSpriteSpan) + (re + 1),
+        mark is "1"
+
+# A sprite is never computed at `static`. It is cheap in the browser —
+# twelve sprites' worth of cell writes measures at five milliseconds —
+# and expensive in the build evaluator, which walks `slice` one character
+# at a time and takes about half a second per creature. Nine hundred of
+# them at build time is a quarter of an hour for pictures that only three
+# or four of which are on screen at once. So the roster is `static` and
+# the silhouettes are not, which is also the division the original makes
+# without having to say so.
+
+# --- colour -----------------------------------------------------------------
+#
+# Deterministic and cohesive: twenty-four hue buckets, so two creatures
+# either share a hue exactly or are fifteen degrees apart and read as
+# different. Shiny variants shift the hue half a turn and brighten;
+# evolved stages deepen and saturate, so a final form reads as seasoned
+# rather than as a recolour.
+
+record CritterPalette
+    body   is Text
+    accent is Text
+    eye    is Text
+
+function critterWrappedHue of hue
+    give valueOr with maybe is (mod with value is hue, divisor is 360), fallback is 0
+
+function critterHsl with hue, saturation, lightness
+    give ((((("hsl(" + (text of hue)) + " ") + (text of saturation)) + "% ") + (
+        text of lightness)) + "%)"
+
+function critterPalette with id, shiny, stage
+    with baseHue is ((
+        critterRoll with seed is (critterStream of ((id * 2246822519) + 13)),
+        bound is 24) * 15)
+    with hue is (baseHue if not shiny otherwise (critterWrappedHue of (baseHue + 150)))
+    with saturation is ((80 if shiny otherwise 45) + ((stage - 1) * 8))
+    with lightness is ((68 if shiny otherwise 60) - ((stage - 1) * 4))
+    give CritterPalette with body is (
+        critterHsl with hue is hue,
+        saturation is saturation,
+        lightness is lightness),
+        accent is (
+            critterHsl with hue is (
+                critterWrappedHue of ((hue + 30) + ((stage - 1) * 15))),
+            saturation is saturation + 5,
+            lightness is lightness + 10),
+        eye is (
+            critterHsl with hue is hue,
+            saturation is (40 if shiny otherwise 30),
+            lightness is (22 if shiny otherwise 18))
+
+# --- rectangles -------------------------------------------------------------
+#
+# Everything the original draws is `ctx.fillRect`, and everything here is
+# a subpath of one `d`. `critterRect` is the whole translation, and the
+# reason the drawing sections below read as lists of rectangles rather
+# than as anything cleverer: the original is pixel art, and pixel art is a
+# list of rectangles.
+
+function critterRect with left, top, wide, tall
+    give ((((((("M" + (text of left)) + " ") + (text of top)) + "h") + (
+        text of wide)) + "v") + (text of tall)) + "h-" + (text of wide) + "Z"
+
+# `ceil`, which the prelude does not have because `floor` and `round` are
+# the two narrowings that can fail and a third spelling of the same
+# question is what §4.1 refuses. Written the way it is defined.
+function critterCeil of value
+    give 0 - (valueOr with maybe is (floor of (0 - value)), fallback is 0)
+
+function critterRound of value
+    give valueOr with maybe is (round of value), fallback is 0
+
+# --- drawing a creature -----------------------------------------------------
+#
+# `drawCreature` scales the twelve-cell grid to `size` pixels and paints
+# each cell in one of three colours. Three passes over the grid, one per
+# colour, because grouping by appearance is what keeps a creature one
+# draw call instead of a hundred and forty-four — the argument `mines.zd`
+# makes about its four paths.
+#
+# The cell is `ceil(p)` wide at a `round`ed position, exactly as the
+# original: at a size that is not a multiple of twelve the two disagree by
+# a pixel and the cells overlap slightly, which is what stops a seam of
+# background showing through the middle of a creature.
+
+function critterCreaturePath with grid, mark, left, top, size
+    give critterCreatureCells with grid is grid,
+        mark is mark,
+        left is left,
+        top is top,
+        step is (decimalOf of size) / (decimalOf of critterSpriteSpan),
+        index is 0,
+        taken is ""
+
+function critterCreatureCells with grid, mark, left, top, step, index, taken
+    if index is critterSpriteCells
+        give taken
+    if not ((critterCellAt with grid is grid, index is index) is mark)
+        give critterCreatureCells with grid is grid,
+            mark is mark,
+            left is left,
+            top is top,
+            step is step,
+            index is index + 1,
+            taken is taken
+    give critterCreatureCells with grid is grid,
+        mark is mark,
+        left is left,
+        top is top,
+        step is step,
+        index is index + 1,
+        taken is taken + (
+            critterRect with left is (
+                critterRound of ((decimalOf of left) + ((
+                    decimalOf of (
+                        valueOr with maybe is (
+                            mod with value is index,
+                            divisor is critterSpriteSpan),
+                        fallback is 0)) * step))),
+            top is (
+                critterRound of ((decimalOf of top) + ((
+                    decimalOf of (
+                        valueOr with maybe is (
+                            quotient with value is index,
+                            divisor is critterSpriteSpan),
+                        fallback is 0)) * step))),
+            wide is (critterCeil of step),
+            tall is (critterCeil of step))
