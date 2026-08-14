@@ -1,0 +1,1290 @@
+# dungeon.zd — `src/lib/game/dungeon.ts`, `src/lib/game/gear-gen.ts` and
+# `src/components/game/dungeon-game.tsx`, ported.
+#
+# Forty by twenty-four, one floor at a time. Arrows move, bumping a
+# monster attacks it, bumping the merchant asks their price, and `>` is
+# the way down. The run ends when the hero does.
+#
+# WHY THE MAP IS TWO TEXTS. A tile carries two independent facts — what
+# it is, and whether it has ever been seen — and nine hundred and sixty
+# of them. `mines.zd` gives the argument in full: a `List of` a record
+# costs a rebuild of the whole list per change, and a string of one
+# character per cell costs a slice and a join. Here it decides one more
+# thing, because `seen` is written forty-nine times a turn and `ground`
+# is never written after the floor is built.
+#
+# WHY A ROOM IS NEVER CARVED. The original allocates 960 tiles of wall
+# and writes floor into them, room by room and corridor by corridor. In a
+# language with no mutation that is 500 rewrites of a 960-character
+# string per floor. It is also unnecessary: a room is a rectangle and a
+# corridor is an L, and both are membership tests. So generation produces
+# a *plan* — a list of rooms and a list of halls — and the map is read
+# out of the plan once, a row at a time. The tiles are computed rather
+# than accumulated, which is the same move `life.zd` makes about its
+# board and for the same reason.
+#
+# WHY THE SEED IS CLAIMED IN BLOCKS. Randomness here is a pure function
+# of a seed the program owns, so every draw has to say which seed it came
+# from. Threading one seed through eleven draws of a loot roll would be
+# eleven parameters of bookkeeping around three lines of rules. Instead a
+# block that needs `n` draws claims `n` consecutive seeds and reads draw
+# `k` as `crawlRoll with seed is …, nth is k`. Distinct `nth` means a
+# distinct seed means an independent draw, which is the property
+# `trader.zd` had to spell out per field; the caller then advances past
+# the whole block. Where the number of draws is not known in advance —
+# rejection sampling — the seed is threaded properly, in the record the
+# sampler gives back.
+
+# --- the shape of a run -----------------------------------------------------
+
+record CrawlHero
+    x      is Whole
+    y      is Whole
+    hp     is Whole
+    maxHp  is Whole
+    attack is Whole
+    weapon is Text
+    armour is Text
+
+record CrawlFoe
+    x      is Whole
+    y      is Whole
+    hp     is Whole
+    maxHp  is Whole
+    attack is Whole
+    glyph  is Text
+
+# `price` is 0 for free loot rather than an `Option of Whole`. The
+# original writes `price?: number` and asks `price !== undefined`
+# everywhere; the cheapest ware a shop can stock is 8 gold, floored in
+# `crawlPriceOf`, so zero is a value the game cannot otherwise produce
+# and reads as "not for sale" without an unwrap at every site.
+record CrawlThing
+    x     is Whole
+    y     is Whole
+    kind  is Text
+    tier  is Whole
+    name  is Text
+    atk   is Whole
+    hp    is Whole
+    price is Whole
+
+record Crawl
+    ground is Text
+    seen   is Text
+    hero   is CrawlHero
+    foes   is List of CrawlFoe
+    things is List of CrawlThing
+    depth  is Whole
+    gold   is Whole
+    log    is List of Text
+    over   is Truth
+    seed   is Whole
+
+record CrawlRoom
+    x is Whole
+    y is Whole
+    w is Whole
+    h is Whole
+
+# An L-shaped corridor between two room centres. `flat` is the
+# original's `horizFirst`: across first and then down, or down first and
+# then across. Which of the two is a coin flip, and it is the whole of
+# the difference between a map that looks laid out and one that looks
+# grown.
+record CrawlHall
+    startX is Whole
+    startY is Whole
+    stopX  is Whole
+    stopY  is Whole
+    flat   is Truth
+
+record CrawlPlan
+    rooms is List of CrawlRoom
+    halls is List of CrawlHall
+
+# One rejection-sampled tile, plus the two things that outlive it: where
+# the generator's stream got to, and what is now claimed.
+record CrawlSpot
+    index is Whole
+    seed  is Whole
+    taken is List of Whole
+
+# The floor under construction. Enemies, then the shop, then free loot,
+# each phase reading the last one's claims so nothing lands on anything.
+record CrawlBuild
+    foes   is List of CrawlFoe
+    things is List of CrawlThing
+    taken  is List of Whole
+    log    is List of Text
+    seed   is Whole
+
+state crawlWide is static Whole starting 40
+state crawlHigh is static Whole starting 24
+
+# 16 and not the original's 18, so that a sprite pixel is exactly two
+# units and a gear pixel exactly one. The original rounds every sprite
+# rectangle as it draws it; a `Path` is written once and read by four
+# different rasterisers, and a fractional pixel would show as a seam in
+# some of them and not others.
+state crawlCell is static Whole starting 16
+state crawlSpan is static Whole from crawlWide * crawlHigh
+state crawlViewBox is static Text from (("0 0 " + (text of (crawlWide * crawlCell))) + " ") + (text of (crawlHigh * crawlCell))
+
+state crawlBaseAttack is static Whole starting 4
+state crawlBaseHp is static Whole starting 20
+
+# How far the hero can see, and how far a monster will chase. One number
+# in the original too, and the two uses are the same rule: what is close
+# enough to matter.
+state crawlReach is static Whole starting 7
+
+state crawlDaggers is static List of Text starting ["rusty dagger", "chipped shiv", "bent fork"]
+state crawlBlades is static List of Text starting ["iron blade", "obsidian edge", "bronze cleaver"]
+state crawlRelics is static List of Text starting ["Nullblade", "Segfault Saber", "Deadlock Fang", "the Kernel Panic"]
+state crawlRags is static List of Text starting ["cloth wrap", "leather vest", "worn hide"]
+state crawlMails is static List of Text starting ["chainmail", "plated guard", "scale coat"]
+state crawlAegis is static List of Text starting ["Legacy Plate", "Aegis of Uptime", "the Firewall", "Immutable Shell"]
+
+# --- reading a cell ---------------------------------------------------------
+
+function crawlIndexOf with x, y
+    give (y * crawlWide) + x
+
+function crawlColumn of index
+    give valueOr with maybe is (mod with value is index, divisor is crawlWide), fallback is 0
+
+function crawlRow of index
+    give valueOr with maybe is (quotient with value is index, divisor is crawlWide), fallback is 0
+
+function crawlMarkAt with value, index
+    give valueOr with maybe is (textAt with value is value, index is index), fallback is "#"
+
+function crawlWithMark with value, index, mark
+    give ((slice with value is value, start is 0, stop is index) + mark) + (
+        slice with value is value,
+        start is index + 1,
+        stop is (textLength of value))
+
+function crawlInside with x, y
+    give (x > -1) and ((y > -1) and ((x < crawlWide) and (y < crawlHigh)))
+
+function crawlHalf of value
+    give valueOr with maybe is (quotient with value is value, divisor is 2), fallback is 0
+
+function crawlSign of value
+    if value > 0
+        give 1
+    if value < 0
+        give -1
+    give 0
+
+function crawlWholeOf of value
+    give valueOr with maybe is (floor of value), fallback is 0
+
+# --- the draws --------------------------------------------------------------
+#
+# `nextSeed`, `randomBelow` and `randomDecimal` are mulberry32, which is
+# the generator the original's own `gear-gen.ts` implements by hand. The
+# two sequences are therefore the same sequence, and a sprite drawn here
+# is the sprite the browser drew there.
+
+function crawlSeedAhead with seed, steps
+    if steps is 0
+        give seed
+    give crawlSeedAhead with seed is (nextSeed of seed), steps is steps - 1
+
+function crawlRoll with seed, nth
+    give randomDecimal of (crawlSeedAhead with seed is seed, steps is nth)
+
+function crawlPick with seed, nth, bound
+    give valueOr with maybe is (
+        randomBelow with seed is (crawlSeedAhead with seed is seed, steps is nth),
+        bound is (max with first is 1, second is bound)),
+        fallback is 0
+
+# --- laying out a floor -----------------------------------------------------
+#
+# Rooms first, each with the corridor that joins it to the one before.
+# Room `made` claims five draws: width, height, corner x, corner y, and
+# the coin flip for its corridor's elbow.
+
+function crawlPlanned with rooms, halls, seed, made, count
+    if made is count
+        give CrawlPlan with rooms is rooms, halls is halls
+    with room is (crawlRoomAt with seed is seed, nth is 1 + (made * 5))
+    if made is 0
+        give crawlPlanned with rooms is (append room to rooms),
+            halls is halls,
+            seed is seed,
+            made is 1,
+            count is count
+    with previous is (crawlRoomOf with rooms is rooms, index is made - 1)
+    give crawlPlanned with rooms is (append room to rooms),
+        halls is (append (
+            CrawlHall with startX is (crawlMidX of previous),
+            startY is (crawlMidY of previous),
+            stopX is (crawlMidX of room),
+            stopY is (crawlMidY of room),
+            flat is ((crawlRoll with seed is seed, nth is 5 + (made * 5)) < 0.5)) to halls),
+        seed is seed,
+        made is made + 1,
+        count is count
+
+function crawlRoomAt with seed, nth
+    with w is (4 + (crawlPick with seed is seed, nth is nth, bound is 6))
+    with h is (3 + (crawlPick with seed is seed, nth is nth + 1, bound is 4))
+    give CrawlRoom with x is (
+        1 + (crawlPick with seed is seed, nth is nth + 2, bound is (crawlWide - w) - 2)),
+        y is (1 + (crawlPick with seed is seed, nth is nth + 3, bound is (crawlHigh - h) - 2)),
+        w is w,
+        h is h
+
+function crawlRoomOf with rooms, index
+    give valueOr with maybe is (listAt with value is rooms, index is index),
+        fallback is (CrawlRoom with x is 1, y is 1, w is 4, h is 3)
+
+function crawlMidX of room
+    give room.x + (crawlHalf of room.w)
+
+function crawlMidY of room
+    give room.y + (crawlHalf of room.h)
+
+# The map, read out of the plan a row at a time and joined once. A row is
+# forty characters, so building one costs about eight hundred character
+# copies; growing a single 960-character string one cell at a time would
+# cost four hundred and sixty thousand for the same map.
+
+function crawlGroundRows with plan, y, taken
+    if y is crawlHigh
+        give taken
+    give crawlGroundRows with plan is plan,
+        y is y + 1,
+        taken is (append (crawlGroundRow with plan is plan, y is y, x is 0, taken is "") to taken)
+
+function crawlGroundRow with plan, y, x, taken
+    if x is crawlWide
+        give taken
+    give crawlGroundRow with plan is plan,
+        y is y,
+        x is x + 1,
+        taken is taken + ("." if (crawlOpenAt with plan is plan, x is x, y is y) otherwise "#")
+
+function crawlOpenAt with plan, x, y
+    if crawlInRooms with rooms is plan.rooms, index is 0, x is x, y is y
+        give yes
+    give crawlInHalls with halls is plan.halls, index is 0, x is x, y is y
+
+# Walked with an index rather than folded, because both of these stop at
+# the first hit: a tile is floor as soon as one room contains it, and
+# `fold each` visits every element. `listContains` in the prelude is
+# written this way and says the same thing.
+function crawlInRooms with rooms, index, x, y
+    when listAt with value is rooms, index is index
+        None
+            give no
+        Some with room
+            if ((x > (room.x - 1)) and (x < (room.x + room.w))) and ((
+                y > (room.y - 1)) and (y < (room.y + room.h)))
+                give yes
+            give crawlInRooms with rooms is rooms, index is index + 1, x is x, y is y
+
+function crawlInHalls with halls, index, x, y
+    when listAt with value is halls, index is index
+        None
+            give no
+        Some with hall
+            if crawlOnHall with hall is hall, x is x, y is y
+                give yes
+            give crawlInHalls with halls is halls, index is index + 1, x is x, y is y
+
+# The original walks the corridor a cell at a time and writes floor as it
+# goes; the set of cells it writes is the union of two segments, which is
+# what this says instead. The start cell is a room centre and already
+# floor, so including it changes nothing.
+function crawlOnHall with hall, x, y
+    if hall.flat
+        if (y is hall.startY) and (
+            crawlSpans with value is x, one is hall.startX, other is hall.stopX)
+            give yes
+        give (x is hall.stopX) and (
+            crawlSpans with value is y, one is hall.startY, other is hall.stopY)
+    if (x is hall.startX) and (
+        crawlSpans with value is y, one is hall.startY, other is hall.stopY)
+        give yes
+    give (y is hall.stopY) and (
+        crawlSpans with value is x, one is hall.startX, other is hall.stopX)
+
+function crawlSpans with value, one, other
+    give (value > ((min with first is one, second is other) - 1)) and (
+        value < ((max with first is one, second is other) + 1))
+
+# --- placing what is on the floor -------------------------------------------
+#
+# Rejection sampling against the tiles already claimed, exactly as the
+# original: draw a cell, take it if it is floor and free, otherwise draw
+# again. Four hundred tries is the original's bound and is reached only
+# on a map with almost no floor left.
+#
+# ONE DRAW RATHER THAN TWO. The original draws an x and a y; this draws
+# one index over the 960 cells. The distribution over cells is the same
+# and the seed goes half as far.
+#
+# WHAT HAPPENS WHEN IT GIVES UP. The original returns the player's own
+# tile after 400 rejections, which stacks a monster on the hero. That is
+# a bug rather than a rule, so this gives back `-1` and the caller places
+# nothing.
+function crawlSpotFor with ground, taken, seed, tries
+    if tries > 399
+        give CrawlSpot with index is -1, seed is seed, taken is taken
+    with spot is (crawlPick with seed is seed, nth is 0, bound is crawlSpan)
+    if ((crawlMarkAt with value is ground, index is spot) is ".") and (not (
+        listContains with items is taken, value is spot))
+        give CrawlSpot with index is spot,
+            seed is (nextSeed of seed),
+            taken is (append spot to taken)
+    give crawlSpotFor with ground is ground,
+        taken is taken,
+        seed is (nextSeed of seed),
+        tries is tries + 1
+
+function crawlBuildSeed with stage, seed
+    give CrawlBuild with foes is stage.foes,
+        things is stage.things,
+        taken is stage.taken,
+        log is stage.log,
+        seed is seed
+
+# Monsters scale with depth in two ways at once: how many, and how deep
+# into the tier table they are allowed to roll.
+function crawlFoesPlaced with stage, ground, depth, remaining
+    if remaining is 0
+        give stage
+    with spot is (
+        crawlSpotFor with ground is ground,
+        taken is stage.taken,
+        seed is stage.seed,
+        tries is 0)
+    if spot.index < 0
+        give stage
+    with tier is (
+        min with first is 2,
+        second is (crawlWholeOf of ((crawlRoll with seed is spot.seed, nth is 0) * (
+            1.0 + ((decimalOf of depth) / 3.0)))))
+    with life is ((4 + (tier * 4)) + depth)
+    give crawlFoesPlaced with stage is (
+        CrawlBuild with foes is (append (
+            CrawlFoe with x is (crawlColumn of spot.index),
+            y is (crawlRow of spot.index),
+            hp is life,
+            maxHp is life,
+            attack is ((2 + tier) + (crawlHalf of depth)),
+            glyph is (crawlGlyphFor of tier)) to stage.foes),
+        things is stage.things,
+        taken is spot.taken,
+        log is stage.log,
+        seed is (nextSeed of spot.seed)),
+        ground is ground,
+        depth is depth,
+        remaining is remaining - 1
+
+function crawlGlyphFor of tier
+    if tier is 0
+        give "r"
+    if tier is 1
+        give "k"
+    give "D"
+
+# The merchant is placed BEFORE the free loot and reserves a five by five
+# block around themselves, so a free item never spawns in the shop —
+# where it would look like a ware and cost nothing. The original's
+# comment says exactly this and the order is the whole of the fix.
+function crawlShopped with stage, ground, plan, depth
+    if depth < 2
+        give stage
+    if not ((crawlRoll with seed is stage.seed, nth is 0) < 0.7)
+        give stage
+    with shop is (
+        crawlRoomOf with rooms is plan.rooms,
+        index is 1 + (
+            crawlPick with seed is stage.seed,
+            nth is 1,
+            bound is (max with first is 1, second is (listLength of plan.rooms) - 2)))
+    with cx is (crawlMidX of shop)
+    with cy is (crawlMidY of shop)
+    if not ((crawlMarkAt with value is ground, index is (crawlIndexOf with x is cx, y is cy)) is ".")
+        give stage
+    with stalled is (
+        CrawlBuild with foes is (append (
+            CrawlFoe with x is cx,
+            y is cy,
+            hp is 999,
+            maxHp is 999,
+            attack is 0,
+            glyph is "$") to stage.foes),
+        things is stage.things,
+        taken is (crawlReserved with taken is stage.taken, cx is cx, cy is cy, dx is -2, dy is -2),
+        log is (append "a merchant ($) is on this floor. bump them to see wares." to stage.log),
+        seed is (crawlSeedAhead with seed is stage.seed, steps is 3))
+    give crawlWaresPlaced with stage is stalled,
+        ground is ground,
+        depth is depth,
+        cx is cx,
+        cy is cy,
+        index is 0,
+        count is 2 + (crawlPick with seed is stage.seed, nth is 2, bound is 2)
+
+function crawlReserved with taken, cx, cy, dx, dy
+    if dy > 2
+        give taken
+    if dx > 2
+        give crawlReserved with taken is taken, cx is cx, cy is cy, dx is -2, dy is dy + 1
+    if not (crawlInside with x is cx + dx, y is cy + dy)
+        give crawlReserved with taken is taken, cx is cx, cy is cy, dx is dx + 1, dy is dy
+    give crawlReserved with taken is (
+        append (crawlIndexOf with x is cx + dx, y is cy + dy) to taken),
+        cx is cx,
+        cy is cy,
+        dx is dx + 1,
+        dy is dy
+
+# The stall: up to six wares on the tiles around the merchant, in the
+# original's order, skipping any that is not floor. A ware claims twelve
+# seeds — ten for the loot roll and two for the price.
+function crawlWaresPlaced with stage, ground, depth, cx, cy, index, count
+    if index is count
+        give stage
+    with wx is (cx + (crawlWareDx of index))
+    with wy is (cy + (crawlWareDy of index))
+    with walked is (
+        crawlBuildSeed with stage is stage,
+        seed is (crawlSeedAhead with seed is stage.seed, steps is 12))
+    if not ((crawlMarkAt with value is ground, index is (crawlIndexOf with x is wx, y is wy)) is ".")
+        give crawlWaresPlaced with stage is walked,
+            ground is ground,
+            depth is depth,
+            cx is cx,
+            cy is cy,
+            index is index + 1,
+            count is count
+    give crawlWaresPlaced with stage is (
+        CrawlBuild with foes is walked.foes,
+        things is (append (
+            crawlWare with depth is depth,
+            seed is stage.seed,
+            x is wx,
+            y is wy) to walked.things),
+        taken is walked.taken,
+        log is walked.log,
+        seed is walked.seed),
+        ground is ground,
+        depth is depth,
+        cx is cx,
+        cy is cy,
+        index is index + 1,
+        count is count
+
+function crawlWareDx of index
+    if index is 0
+        give -1
+    if index is 1
+        give 1
+    if index is 4
+        give -1
+    if index is 5
+        give 1
+    give 0
+
+function crawlWareDy of index
+    if index is 2
+        give -1
+    if index is 3
+        give 1
+    if index is 4
+        give -1
+    if index is 5
+        give 1
+    give 0
+
+function crawlLooted with stage, ground, depth, remaining
+    if remaining is 0
+        give stage
+    with spot is (
+        crawlSpotFor with ground is ground,
+        taken is stage.taken,
+        seed is stage.seed,
+        tries is 0)
+    if spot.index < 0
+        give stage
+    give crawlLooted with stage is (
+        CrawlBuild with foes is stage.foes,
+        things is (append (
+            crawlLoot with depth is depth,
+            seed is spot.seed,
+            x is (crawlColumn of spot.index),
+            y is (crawlRow of spot.index)) to stage.things),
+        taken is spot.taken,
+        log is stage.log,
+        seed is (crawlSeedAhead with seed is spot.seed, steps is 10)),
+        ground is ground,
+        depth is depth,
+        remaining is remaining - 1
+
+# --- what a floor drops -----------------------------------------------------
+#
+# Ten draws, claimed as a block: the kind, the amount, two for the tier,
+# one for the power, and one for the name. Legendary is rare and deep —
+# five per cent at floor one, capped at thirty-five.
+
+function crawlLoot with depth, seed, x, y
+    with roll is (crawlRoll with seed is seed, nth is 0)
+    if roll < 0.45
+        with amount is (
+            5 + (crawlPick with seed is seed, nth is 1, bound is 10 + (depth * 3)))
+        give CrawlThing with x is x,
+            y is y,
+            kind is "gold",
+            tier is 1,
+            name is ((text of amount) + " gold"),
+            atk is 0,
+            hp is amount,
+            price is 0
+    if roll < 0.7
+        give CrawlThing with x is x,
+            y is y,
+            kind is "potion",
+            tier is 1,
+            name is "health potion",
+            atk is 0,
+            hp is 8 + (crawlHalf of depth),
+            price is 0
+    with tier is (crawlTierFor with depth is depth, seed is seed)
+    if roll < 0.85
+        give CrawlThing with x is x,
+            y is y,
+            kind is "weapon",
+            tier is tier,
+            name is (crawlWeaponName with tier is tier, seed is seed),
+            atk is (crawlWeaponAtk with tier is tier, seed is seed),
+            hp is 0,
+            price is 0
+    give CrawlThing with x is x,
+        y is y,
+        kind is "armour",
+        tier is tier,
+        name is (crawlArmourName with tier is tier, seed is seed),
+        atk is 0,
+        hp is (crawlArmourHp with tier is tier, seed is seed),
+        price is 0
+
+function crawlTierFor with depth, seed
+    with chance is (
+        min with first is 0.35,
+        second is (0.05 + ((decimalOf of depth) * 0.03)))
+    if (crawlRoll with seed is seed, nth is 2) < chance
+        give 3
+    if (crawlRoll with seed is seed, nth is 3) < 0.5
+        give 2
+    give 1
+
+function crawlWeaponAtk with tier, seed
+    if tier is 3
+        give 6 + (crawlPick with seed is seed, nth is 4, bound is 3)
+    if tier is 2
+        give 3
+    give 1
+
+function crawlArmourHp with tier, seed
+    if tier is 3
+        give 18 + (crawlPick with seed is seed, nth is 4, bound is 6)
+    if tier is 2
+        give 10
+    give 5
+
+function crawlWeaponName with tier, seed
+    if tier is 3
+        give crawlNamed with names is crawlRelics, seed is seed
+    if tier is 2
+        give crawlNamed with names is crawlBlades, seed is seed
+    give crawlNamed with names is crawlDaggers, seed is seed
+
+function crawlArmourName with tier, seed
+    if tier is 3
+        give crawlNamed with names is crawlAegis, seed is seed
+    if tier is 2
+        give crawlNamed with names is crawlMails, seed is seed
+    give crawlNamed with names is crawlRags, seed is seed
+
+function crawlNamed with names, seed
+    give valueOr with maybe is (
+        listAt with value is names,
+        index is (crawlPick with seed is seed, nth is 5, bound is (listLength of names))),
+        fallback is "bent fork"
+
+# A ware is loot with a price scaled to its power.
+#
+# THE BENT FORK IS THE ORIGINAL'S. A shop never sells gold, so when the
+# roll comes up gold the original rerolls with `() => 0.8` — a constant
+# rng, not a fresh draw. Every branch of `makeLoot` then takes the same
+# path: tier one, weapon, third name in the table. Every rerolled ware in
+# the game is therefore a bent fork, and this reproduces it rather than
+# quietly improving it, because a shop that sometimes stocks a joke is a
+# thing a player notices and a thing the original does.
+function crawlWare with depth, seed, x, y
+    with loot is (crawlLoot with depth is depth, seed is seed, x is x, y is y)
+    if loot.kind is "gold"
+        give CrawlThing with x is x,
+            y is y,
+            kind is "weapon",
+            tier is 1,
+            name is "bent fork",
+            atk is 1,
+            hp is 0,
+            price is (crawlPriceOf with base is 8, depth is depth, seed is seed)
+    give CrawlThing with x is x,
+        y is y,
+        kind is loot.kind,
+        tier is loot.tier,
+        name is loot.name,
+        atk is loot.atk,
+        hp is loot.hp,
+        price is (
+            crawlPriceOf with base is (crawlBaseFor of loot),
+            depth is depth,
+            seed is seed)
+
+function crawlBaseFor of loot
+    if loot.kind is "potion"
+        give 12
+    if loot.kind is "weapon"
+        give loot.atk * 8
+    give loot.hp * 4
+
+function crawlPriceOf with base, depth, seed
+    give max with first is 8,
+        second is (valueOr with maybe is (round of ((decimalOf of base) * ((
+            1.0 + ((decimalOf of depth) * 0.15)) * (
+            0.85 + ((crawlRoll with seed is seed, nth is 9) * 0.4))))),
+        fallback is base)
+
+# --- building the floor -----------------------------------------------------
+
+function crawlStart of seed
+    give crawlFloorFor with depth is 1,
+        seed is seed,
+        hero is (
+            CrawlHero with x is 0,
+            y is 0,
+            hp is crawlBaseHp,
+            maxHp is crawlBaseHp,
+            attack is crawlBaseAttack,
+            weapon is "bare fists",
+            armour is "street clothes"),
+        gold is 0
+
+# The hero's stats carry forward and their position does not: a floor
+# starts in the first room and ends at the stairs in the last.
+#
+# The plan claims sixty-four seeds — nine rooms at five draws each is
+# forty-six — and the placement phases thread the seed from there, so no
+# draw of the layout is ever a draw of the loot.
+function crawlFloorFor with depth, seed, hero, gold
+    with plan is (
+        crawlPlanned with rooms is empty,
+        halls is empty,
+        seed is seed,
+        made is 0,
+        count is 6 + (crawlPick with seed is seed, nth is 0, bound is 4))
+    with head is (crawlRoomOf with rooms is plan.rooms, index is 0)
+    with tail is (
+        crawlRoomOf with rooms is plan.rooms,
+        index is (listLength of plan.rooms) - 1)
+    with startX is (crawlMidX of head)
+    with startY is (crawlMidY of head)
+    with stairs is (
+        crawlIndexOf with x is (crawlMidX of tail), y is (crawlMidY of tail))
+    with ground is (
+        crawlWithMark with value is (
+            join with parts is (crawlGroundRows with plan is plan, y is 0, taken is empty),
+            using is ""),
+        index is stairs,
+        mark is ">")
+    with sown is (crawlSeedAhead with seed is seed, steps is 64)
+    with settled is (
+        crawlLootStage with stage is (
+            crawlShopped with stage is (
+                crawlFoesPlaced with stage is (
+                    CrawlBuild with foes is empty,
+                    things is empty,
+                    taken is [(crawlIndexOf with x is startX, y is startY), stairs],
+                    log is [crawlArrival of depth],
+                    seed is sown),
+                ground is ground,
+                depth is depth,
+                remaining is 3 + depth),
+            ground is ground,
+            plan is plan,
+            depth is depth),
+        ground is ground,
+        depth is depth)
+    give Crawl with ground is ground,
+        seen is (
+            crawlRevealed with seen is (repeat with value is "0", count is crawlSpan),
+            x is startX,
+            y is startY,
+            dx is -3,
+            dy is -3),
+        hero is (crawlHeroAt with hero is hero, x is startX, y is startY),
+        foes is settled.foes,
+        things is settled.things,
+        depth is depth,
+        gold is gold,
+        log is settled.log,
+        over is no,
+        seed is settled.seed
+
+# The count of free items is itself a draw, so it is taken before the
+# loop and the loop starts one seed later.
+function crawlLootStage with stage, ground, depth
+    give crawlLooted with stage is (
+        crawlBuildSeed with stage is stage, seed is (nextSeed of stage.seed)),
+        ground is ground,
+        depth is depth,
+        remaining is 2 + (crawlPick with seed is stage.seed, nth is 0, bound is 3)
+
+function crawlArrival of depth
+    if depth is 1
+        give "you descend into the stack."
+    give ("floor " + (text of depth)) + ". it gets colder."
+
+function crawlHeroAt with hero, x, y
+    give CrawlHero with x is x,
+        y is y,
+        hp is hero.hp,
+        maxHp is hero.maxHp,
+        attack is hero.attack,
+        weapon is hero.weapon,
+        armour is hero.armour
+
+# Seven by seven around the hero, bounded rather than wrapped: the edge
+# of the map is real and a corner does not see round it.
+function crawlRevealed with seen, x, y, dx, dy
+    if dy > 3
+        give seen
+    if dx > 3
+        give crawlRevealed with seen is seen, x is x, y is y, dx is -3, dy is dy + 1
+    if not (crawlInside with x is x + dx, y is y + dy)
+        give crawlRevealed with seen is seen, x is x, y is y, dx is dx + 1, dy is dy
+    give crawlRevealed with seen is (
+        crawlWithMark with value is seen,
+        index is (crawlIndexOf with x is x + dx, y is y + dy),
+        mark is "1"),
+        x is x,
+        y is y,
+        dx is dx + 1,
+        dy is dy
+
+# --- one field of the record at a time --------------------------------------
+#
+# There is no record-update syntax, so changing one field of a ten-field
+# record names all ten. These say it once each, and everything below
+# reads as the rules rather than as bookkeeping.
+
+function crawlSaying with game, lines
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is game.hero,
+        foes is game.foes,
+        things is game.things,
+        depth is game.depth,
+        gold is game.gold,
+        log is lines,
+        over is game.over,
+        seed is game.seed
+
+function crawlTold with game, line
+    give crawlSaying with game is game, lines is (append line to game.log)
+
+function crawlQuiet of game
+    give crawlSaying with game is game, lines is empty
+
+function crawlWithHero with game, hero
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is hero,
+        foes is game.foes,
+        things is game.things,
+        depth is game.depth,
+        gold is game.gold,
+        log is game.log,
+        over is game.over,
+        seed is game.seed
+
+function crawlWithFoes with game, foes
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is game.hero,
+        foes is foes,
+        things is game.things,
+        depth is game.depth,
+        gold is game.gold,
+        log is game.log,
+        over is game.over,
+        seed is game.seed
+
+function crawlWithThings with game, things
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is game.hero,
+        foes is game.foes,
+        things is things,
+        depth is game.depth,
+        gold is game.gold,
+        log is game.log,
+        over is game.over,
+        seed is game.seed
+
+function crawlWithGold with game, gold
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is game.hero,
+        foes is game.foes,
+        things is game.things,
+        depth is game.depth,
+        gold is gold,
+        log is game.log,
+        over is game.over,
+        seed is game.seed
+
+function crawlWithSeen with game, seen
+    give Crawl with ground is game.ground,
+        seen is seen,
+        hero is game.hero,
+        foes is game.foes,
+        things is game.things,
+        depth is game.depth,
+        gold is game.gold,
+        log is game.log,
+        over is game.over,
+        seed is game.seed
+
+function crawlWithSeed with game, seed
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is game.hero,
+        foes is game.foes,
+        things is game.things,
+        depth is game.depth,
+        gold is game.gold,
+        log is game.log,
+        over is game.over,
+        seed is seed
+
+function crawlEnded of game
+    give Crawl with ground is game.ground,
+        seen is game.seen,
+        hero is (
+            CrawlHero with x is game.hero.x,
+            y is game.hero.y,
+            hp is 0,
+            maxHp is game.hero.maxHp,
+            attack is game.hero.attack,
+            weapon is game.hero.weapon,
+            armour is game.hero.armour),
+        foes is game.foes,
+        things is game.things,
+        depth is game.depth,
+        gold is game.gold,
+        log is (append ((("you died on floor " + (text of game.depth)) + " with ") + (
+            text of game.gold)) + " gold." to game.log),
+        over is yes,
+        seed is game.seed
+
+# --- finding what is where --------------------------------------------------
+#
+# An index rather than the thing itself, because the caller needs to
+# remove it or replace it and `removeAt` and `setAt` take indices. `-1`
+# for absent, which is the shape `mines.zd` reaches for the same reason:
+# an `Option of Whole` here would be unwrapped at every one of four call
+# sites to ask a question that has a number for an answer.
+
+function crawlFoeIndex with foes, index, x, y
+    when listAt with value is foes, index is index
+        None
+            give -1
+        Some with foe
+            if (foe.x is x) and (foe.y is y)
+                give index
+            give crawlFoeIndex with foes is foes, index is index + 1, x is x, y is y
+
+function crawlThingIndex with things, index, x, y
+    when listAt with value is things, index is index
+        None
+            give -1
+        Some with thing
+            if (thing.x is x) and (thing.y is y)
+                give index
+            give crawlThingIndex with things is things, index is index + 1, x is x, y is y
+
+function crawlFoeOf with foes, index
+    give valueOr with maybe is (listAt with value is foes, index is index),
+        fallback is (CrawlFoe with x is 0, y is 0, hp is 1, maxHp is 1, attack is 0, glyph is "r")
+
+function crawlThingOf with things, index
+    give valueOr with maybe is (listAt with value is things, index is index),
+        fallback is (
+            CrawlThing with x is 0,
+            y is 0,
+            kind is "gold",
+            tier is 1,
+            name is "0 gold",
+            atk is 0,
+            hp is 0,
+            price is 0)
+
+function crawlGap with hero, x, y
+    give (abs of (hero.x - x)) + (abs of (hero.y - y))
+
+# --- one turn ---------------------------------------------------------------
+#
+# The hero acts, then every monster acts. Three of the hero's five
+# outcomes end the turn before the monsters get theirs, and each is the
+# original's: a wall is not a move, a merchant is a conversation, and a
+# ware you cannot afford is a price you are being quoted.
+
+function crawlStep with game, dx, dy
+    if game.over
+        give game
+    with nx is (game.hero.x + dx)
+    with ny is (game.hero.y + dy)
+    if not (crawlInside with x is nx, y is ny)
+        give crawlQuiet of game
+    with landing is (crawlIndexOf with x is nx, y is ny)
+    if (crawlMarkAt with value is game.ground, index is landing) is "#"
+        give crawlQuiet of game
+    with hit is (crawlFoeIndex with foes is game.foes, index is 0, x is nx, y is ny)
+    if hit > -1
+        give crawlMet with game is game, hit is hit
+    with ware is (crawlThingIndex with things is game.things, index is 0, x is nx, y is ny)
+    if crawlTooDear with game is game, ware is ware
+        give crawlSaying with game is game,
+            lines is [(crawlQuote with game is game, ware is ware)]
+    with walked is (crawlWalked with game is game, nx is nx, ny is ny, ware is ware)
+    if (crawlMarkAt with value is game.ground, index is landing) is ">"
+        give crawlFloorFor with depth is walked.depth + 1,
+            seed is walked.seed,
+            hero is walked.hero,
+            gold is walked.gold
+    give crawlFoeTurn with game is walked, index is 0, moved is empty
+
+function crawlTooDear with game, ware
+    if ware < 0
+        give no
+    with thing is (crawlThingOf with things is game.things, index is ware)
+    give (thing.price > 0) and (game.gold < thing.price)
+
+function crawlQuote with game, ware
+    with thing is (crawlThingOf with things is game.things, index is ware)
+    give ((((thing.name + " costs ") + (text of thing.price)) + " gold. you have ") + (
+        text of game.gold)) + "."
+
+# The merchant is not a monster: you cannot walk through them and you
+# cannot hit them. Bumping them lists what is on the stall, which is the
+# only way to learn a price without stepping on one.
+function crawlMet with game, hit
+    with foe is (crawlFoeOf with foes is game.foes, index is hit)
+    if foe.glyph is "$"
+        give crawlSaying with game is game,
+            lines is (
+                crawlStall with things is game.things,
+                index is 0,
+                foe is foe,
+                taken is ["for sale (step onto one to buy):"])
+    give crawlFoeTurn with game is (crawlStruck with game is game, hit is hit),
+        index is 0,
+        moved is empty
+
+function crawlStall with things, index, foe, taken
+    when listAt with value is things, index is index
+        None
+            if (listLength of taken) is 1
+                give ["the merchant shrugs. sold out."]
+            give taken
+        Some with thing
+            if (thing.price > 0) and (((abs of (thing.x - foe.x)) < 2) and ((
+                abs of (thing.y - foe.y)) < 2))
+                give crawlStall with things is things,
+                    index is index + 1,
+                    foe is foe,
+                    taken is (append (((("  " + thing.name) + (crawlStar of thing.tier)) + " — ") + (
+                        text of thing.price)) + "g" to taken)
+            give crawlStall with things is things, index is index + 1, foe is foe, taken is taken
+
+function crawlStar of tier
+    give " ✦legendary" if tier is 3 otherwise ""
+
+# Damage is `attack + 0..2 - 1`, floored at one, both ways round. One
+# draw, so the seed advances by one.
+function crawlStruck with game, hit
+    with foe is (crawlFoeOf with foes is game.foes, index is hit)
+    with blow is (
+        max with first is 1,
+        second is ((game.hero.attack + (
+            crawlPick with seed is game.seed, nth is 0, bound is 3)) - 1))
+    with rolled is (crawlWithSeed with game is game, seed is (nextSeed of game.seed))
+    with note is ((("you hit " + foe.glyph) + " for ") + (text of blow)) + "."
+    if foe.hp > blow
+        give crawlSaying with game is (
+            crawlWithFoes with game is rolled,
+            foes is (
+                setAt with items is game.foes,
+                index is hit,
+                item is (
+                    CrawlFoe with x is foe.x,
+                    y is foe.y,
+                    hp is foe.hp - blow,
+                    maxHp is foe.maxHp,
+                    attack is foe.attack,
+                    glyph is foe.glyph))),
+            lines is [note]
+    give crawlSaying with game is (
+        crawlWithFoes with game is rolled,
+        foes is (removeAt with items is game.foes, index is hit)),
+        lines is [note, (("the " + foe.glyph) + " dies.")]
+
+# Moving onto a tile is also picking up what is on it and also, if it is
+# a ware, paying for it. The stairs are handled by the caller, after the
+# item on the tile has been applied — which is the original's order and
+# matters only in the case the generator makes impossible.
+function crawlWalked with game, nx, ny, ware
+    with lit is (
+        crawlWithSeen with game is (
+            crawlWithHero with game is game,
+            hero is (crawlHeroAt with hero is game.hero, x is nx, y is ny)),
+        seen is (crawlRevealed with seen is game.seen, x is nx, y is ny, dx is -3, dy is -3))
+    if ware < 0
+        give crawlQuiet of lit
+    with thing is (crawlThingOf with things is game.things, index is ware)
+    with taken is (
+        crawlWithThings with game is lit,
+        things is (removeAt with items is game.things, index is ware))
+    if thing.price > 0
+        give crawlGained with game is (
+            crawlSaying with game is (
+                crawlWithGold with game is taken,
+                gold is taken.gold - thing.price),
+            lines is [(((("bought " + thing.name) + " for ") + (text of thing.price)) + " gold.")]),
+            thing is thing
+    give crawlGained with game is (crawlQuiet of taken), thing is thing
+
+# Gear only swaps if it upgrades, and the comparison is against the
+# bonus rather than the total: a hero with a legendary blade does not
+# drop it for a rusty dagger, and the log says why rather than silently
+# ignoring the pickup.
+function crawlGained with game, thing
+    if thing.kind is "gold"
+        give crawlTold with game is (
+            crawlWithGold with game is game, gold is game.gold + thing.hp),
+            line is ("+" + (text of thing.hp)) + " gold."
+    if thing.kind is "potion"
+        give crawlHealed with game is game, thing is thing
+    if thing.kind is "weapon"
+        give crawlArmed with game is game, thing is thing
+    give crawlPlated with game is game, thing is thing
+
+function crawlHealed with game, thing
+    with healed is ((
+        min with first is game.hero.maxHp,
+        second is game.hero.hp + thing.hp) - game.hero.hp)
+    give crawlTold with game is (
+        crawlWithHero with game is game,
+        hero is (
+            CrawlHero with x is game.hero.x,
+            y is game.hero.y,
+            hp is game.hero.hp + healed,
+            maxHp is game.hero.maxHp,
+            attack is game.hero.attack,
+            weapon is game.hero.weapon,
+            armour is game.hero.armour)),
+        line is ("potion: +" + (text of healed)) + " hp."
+
+function crawlArmed with game, thing
+    if not (thing.atk > (game.hero.attack - crawlBaseAttack))
+        give crawlTold with game is game,
+            line is ((thing.name + " is no better than your ") + game.hero.weapon) + "."
+    give crawlTold with game is (
+        crawlWithHero with game is game,
+        hero is (
+            CrawlHero with x is game.hero.x,
+            y is game.hero.y,
+            hp is game.hero.hp,
+            maxHp is game.hero.maxHp,
+            attack is crawlBaseAttack + thing.atk,
+            weapon is thing.name,
+            armour is game.hero.armour)),
+        line is ((("equipped " + (crawlLabel of thing)) + ". attack now ") + (
+            text of (crawlBaseAttack + thing.atk))) + "."
+
+# New plating patches you up: the max goes up by the difference and the
+# current goes up with it, so a fresh breastplate is worth wearing in a
+# fight rather than only before one.
+function crawlPlated with game, thing
+    with carried is (game.hero.maxHp - crawlBaseHp)
+    if not (thing.hp > carried)
+        give crawlTold with game is game,
+            line is ((thing.name + " is no better than your ") + game.hero.armour) + "."
+    give crawlTold with game is (
+        crawlWithHero with game is game,
+        hero is (
+            CrawlHero with x is game.hero.x,
+            y is game.hero.y,
+            hp is game.hero.hp + (thing.hp - carried),
+            maxHp is crawlBaseHp + thing.hp,
+            attack is game.hero.attack,
+            weapon is game.hero.weapon,
+            armour is thing.name)),
+        line is ((("equipped " + (crawlLabel of thing)) + ". max hp now ") + (
+            text of (crawlBaseHp + thing.hp))) + "."
+
+function crawlLabel of thing
+    give (thing.name + " ✦ (legendary)") if thing.tier is 3 otherwise thing.name
+
+# --- the monsters' turn -----------------------------------------------------
+#
+# Every monster in order: attack if adjacent, otherwise step greedily
+# along the dominant axis if the hero is within sight.
+#
+# MERCHANTS DO NOT CHASE. The original's comment is the reason and it is
+# a good one: a merchant that follows you can pin you in a corridor and
+# there is no way past a body you are not allowed to hit.
+#
+# `moved` is the monsters that have already acted this turn, at their new
+# positions; `game.foes` is still the list as it was, so a monster that
+# has not moved yet is still where it was. A tile is blocked if either
+# list has somebody on it, which is what the original's in-place walk
+# amounts to.
+
+function crawlFoeTurn with game, index, moved
+    when listAt with value is game.foes, index is index
+        None
+            give crawlSettled of (crawlWithFoes with game is game, foes is moved)
+        Some with foe
+            if foe.glyph is "$"
+                give crawlFoeTurn with game is game,
+                    index is index + 1,
+                    moved is (append foe to moved)
+            with adx is (game.hero.x - foe.x)
+            with ady is (game.hero.y - foe.y)
+            with gap is ((abs of adx) + (abs of ady))
+            if gap is 1
+                give crawlFoeTurn with game is (crawlBitten with game is game, foe is foe),
+                    index is index + 1,
+                    moved is (append foe to moved)
+            if gap > crawlReach
+                give crawlFoeTurn with game is game,
+                    index is index + 1,
+                    moved is (append foe to moved)
+            with sideways is ((not (adx is 0)) and ((
+                (abs of adx) > ((abs of ady) - 1)) or (ady is 0)))
+            with ex is (foe.x + ((crawlSign of adx) if sideways otherwise 0))
+            with ey is (foe.y + (0 if sideways otherwise (crawlSign of ady)))
+            if crawlFree with game is game, moved is moved, index is index, x is ex, y is ey
+                give crawlFoeTurn with game is game,
+                    index is index + 1,
+                    moved is (append (
+                        CrawlFoe with x is ex,
+                        y is ey,
+                        hp is foe.hp,
+                        maxHp is foe.maxHp,
+                        attack is foe.attack,
+                        glyph is foe.glyph) to moved)
+            give crawlFoeTurn with game is game,
+                index is index + 1,
+                moved is (append foe to moved)
+
+function crawlFree with game, moved, index, x, y
+    if (crawlMarkAt with value is game.ground, index is (crawlIndexOf with x is x, y is y)) is "#"
+        give no
+    if (game.hero.x is x) and (game.hero.y is y)
+        give no
+    if (crawlFoeIndex with foes is moved, index is 0, x is x, y is y) > -1
+        give no
+    give (crawlFoeIndex with foes is game.foes, index is index + 1, x is x, y is y) < 0
+
+function crawlBitten with game, foe
+    with blow is (
+        max with first is 1,
+        second is ((foe.attack + (
+            crawlPick with seed is game.seed, nth is 0, bound is 3)) - 1))
+    give crawlTold with game is (
+        crawlWithSeed with game is (
+            crawlWithHero with game is game,
+            hero is (
+                CrawlHero with x is game.hero.x,
+                y is game.hero.y,
+                hp is game.hero.hp - blow,
+                maxHp is game.hero.maxHp,
+                attack is game.hero.attack,
+                weapon is game.hero.weapon,
+                armour is game.hero.armour)),
+            seed is (nextSeed of game.seed)),
+        line is ((foe.glyph + " hits you for ") + (text of blow)) + "."
+
+function crawlSettled of game
+    if game.hero.hp > 0
+        give game
+    give crawlEnded of game
+
+# --- what the panel says ----------------------------------------------------
+#
+# The original draws the HUD into the canvas with `fillText`. A `Text` is
+# not one of the five things a `Scene` may contain — `mines.zd` makes the
+# same point about its mine glyphs — so the HUD is `Text` elements beside
+# the drawing instead. Nothing is lost: it is selectable there, and it
+# reflows.
+
+# One heart is four hit points, and a heart in between is drawn hollow.
+# The original's fourteen-heart cap is kept: past that the row is longer
+# than the map is wide.
+function crawlHearts of game
+    give crawlHeartsFrom with game is game,
+        index is 0,
+        count is (
+            min with first is 14,
+            second is (crawlWholeOf of ((decimalOf of (game.hero.maxHp + 3)) / 4.0))),
+        taken is ""
+
+function crawlHeartsFrom with game, index, count, taken
+    if index is count
+        give taken
+    if game.hero.hp > ((index * 4) + 3)
+        give crawlHeartsFrom with game is game,
+            index is index + 1,
+            count is count,
+            taken is taken + "♥"
+    if game.hero.hp > (index * 4)
+        give crawlHeartsFrom with game is game,
+            index is index + 1,
+            count is count,
+            taken is taken + "♡"
+    give crawlHeartsFrom with game is game,
+        index is index + 1,
+        count is count,
+        taken is taken + "·"
+
+function crawlStatus of game
+    if game.over
+        give ((("you died on floor " + (text of game.depth)) + " with ") + (
+            text of game.gold)) + " gold · space to crawl again"
+    give ((((((crawlHearts of game) + " ") + (text of game.hero.hp)) + "/") + (
+        text of game.hero.maxHp)) + " · floor ") + (text of game.depth) + " · " + (
+        text of game.gold) + "g"
+
+function crawlGearLine of game
+    give (((("⚔ " + game.hero.weapon) + " (") + (text of game.hero.attack)) + ")  🛡 ") + game.hero.armour
+
+# The last four lines, newest last, which is what the original shows
+# stacked above its HUD.
+function crawlRecent of game
+    give listDrop with items is game.log,
+        count is (max with first is 0, second is (listLength of game.log) - 4)
