@@ -70,8 +70,8 @@ record CrawlThing
     price is Whole
 
 record Crawl
-    ground is Text
-    seen   is Text
+    ground is List of Text
+    seen   is List of Text
     hero   is CrawlHero
     foes   is List of CrawlFoe
     things is List of CrawlThing
@@ -147,6 +147,23 @@ state crawlMails is static List of Text starting ["chainmail", "plated guard", "
 state crawlAegis is static List of Text starting ["Legacy Plate", "Aegis of Uptime", "the Firewall", "Immutable Shell"]
 
 # --- reading a cell ---------------------------------------------------------
+#
+# A ROW IS A `Text` AND THE BOARD IS A LIST OF THEM, WHICH IS A COST AND
+# NOT A TASTE. `textAt` indexes by code point, so it costs the length of
+# the string it is given, and `slice` is written a character at a time,
+# so a splice costs the length twice. On one flat 960-character board a
+# single redraw indexes it about eight thousand times — eight million
+# character allocations — and revealing the seven by seven block around
+# the hero rewrites 960 characters forty-nine times a move. On rows of
+# forty the same redraw costs a twenty-fourth of that, and a reveal is
+# seven splices of forty characters instead of forty-nine of nine
+# hundred and sixty. `life.zd` reaches the same shape from the same
+# arithmetic; here it is the difference between a move that lands in a
+# frame and one that does not.
+#
+# The flat index survives in one place — the list of tiles already
+# claimed during generation — because that is a set membership test and
+# a number is the cheapest thing to compare.
 
 function crawlIndexOf with x, y
     give (y * crawlWide) + x
@@ -157,14 +174,37 @@ function crawlColumn of index
 function crawlRow of index
     give valueOr with maybe is (quotient with value is index, divisor is crawlWide), fallback is 0
 
-function crawlMarkAt with value, index
-    give valueOr with maybe is (textAt with value is value, index is index), fallback is "#"
+function crawlRowAt with rows, y
+    give valueOr with maybe is (listAt with value is rows, index is y), fallback is ""
 
-function crawlWithMark with value, index, mark
-    give ((slice with value is value, start is 0, stop is index) + mark) + (
-        slice with value is value,
-        start is index + 1,
-        stop is (textLength of value))
+# A character of a flat `Text`. The gear grid and an item's own name are
+# the two things here that are not a board.
+function crawlSpotIn with value, index
+    give valueOr with maybe is (textAt with value is value, index is index), fallback is "0"
+
+# Out of bounds reads as wall, which is what makes every caller's edge
+# test a courtesy rather than a requirement.
+function crawlCellAt with rows, x, y
+    give valueOr with maybe is (
+        textAt with value is (crawlRowAt with rows is rows, y is y),
+        index is x),
+        fallback is "#"
+
+# One splice, over a run rather than a character: the two places that
+# write to a board both write a run, and a run of one is a character.
+function crawlRunIn with row, start, stop, mark
+    give ((slice with value is row, start is 0, stop is start) + (
+        repeat with value is mark, count is (stop - start) + 1)) + (
+        slice with value is row, start is stop + 1, stop is (textLength of row))
+
+function crawlWithRun with rows, y, start, stop, mark
+    give setAt with items is rows,
+        index is y,
+        item is (
+            crawlRunIn with row is (crawlRowAt with rows is rows, y is y),
+            start is start,
+            stop is stop,
+            mark is mark)
 
 function crawlInside with x, y
     give (x > -1) and ((y > -1) and ((x < crawlWide) and (y < crawlHigh)))
@@ -338,7 +378,10 @@ function crawlSpotFor with ground, taken, seed, tries
     if tries > 399
         give CrawlSpot with index is -1, seed is seed, taken is taken
     with spot is (crawlPick with seed is seed, nth is 0, bound is crawlSpan)
-    if ((crawlMarkAt with value is ground, index is spot) is ".") and (not (
+    if ((
+        crawlCellAt with rows is ground,
+        x is (crawlColumn of spot),
+        y is (crawlRow of spot)) is ".") and (not (
         listContains with items is taken, value is spot))
         give CrawlSpot with index is spot,
             seed is (nextSeed of seed),
@@ -412,7 +455,7 @@ function crawlShopped with stage, ground, plan, depth
             bound is (max with first is 1, second is (listLength of plan.rooms) - 2)))
     with cx is (crawlMidX of shop)
     with cy is (crawlMidY of shop)
-    if not ((crawlMarkAt with value is ground, index is (crawlIndexOf with x is cx, y is cy)) is ".")
+    if not ((crawlCellAt with rows is ground, x is cx, y is cy) is ".")
         give stage
     with stalled is (
         CrawlBuild with foes is (append (
@@ -459,7 +502,7 @@ function crawlWaresPlaced with stage, ground, depth, cx, cy, index, count
     with walked is (
         crawlBuildSeed with stage is stage,
         seed is (crawlSeedAhead with seed is stage.seed, steps is 12))
-    if not ((crawlMarkAt with value is ground, index is (crawlIndexOf with x is wx, y is wy)) is ".")
+    if not ((crawlCellAt with rows is ground, x is wx, y is wy) is ".")
         give crawlWaresPlaced with stage is walked,
             ground is ground,
             depth is depth,
@@ -704,10 +747,10 @@ function crawlFloorFor with depth, seed, hero, gold
     with stairs is (
         crawlIndexOf with x is (crawlMidX of tail), y is (crawlMidY of tail))
     with ground is (
-        crawlWithMark with value is (
-            join with parts is (crawlGroundRows with plan is plan, y is 0, taken is empty),
-            using is ""),
-        index is stairs,
+        crawlWithRun with rows is (crawlGroundRows with plan is plan, y is 0, taken is empty),
+        y is (crawlMidY of tail),
+        start is (crawlMidX of tail),
+        stop is (crawlMidX of tail),
         mark is ">")
     with sown is (crawlSeedAhead with seed is seed, steps is 64)
     with settled is (
@@ -729,10 +772,11 @@ function crawlFloorFor with depth, seed, hero, gold
         depth is depth)
     give Crawl with ground is ground,
         seen is (
-            crawlRevealed with seen is (repeat with value is "0", count is crawlSpan),
+            crawlRevealed with seen is (
+                filled with value is (repeat with value is "0", count is crawlWide),
+                count is crawlHigh),
             x is startX,
             y is startY,
-            dx is -3,
             dy is -3),
         hero is (crawlHeroAt with hero is hero, x is startX, y is startY),
         foes is settled.foes,
@@ -768,21 +812,23 @@ function crawlHeroAt with hero, x, y
 
 # Seven by seven around the hero, bounded rather than wrapped: the edge
 # of the map is real and a corner does not see round it.
-function crawlRevealed with seen, x, y, dx, dy
+#
+# Seven splices and not forty-nine: a row of the block is a run of seven
+# cells, and a run is what `crawlRunIn` writes.
+function crawlRevealed with seen, x, y, dy
     if dy > 3
         give seen
-    if dx > 3
-        give crawlRevealed with seen is seen, x is x, y is y, dx is -3, dy is dy + 1
-    if not (crawlInside with x is x + dx, y is y + dy)
-        give crawlRevealed with seen is seen, x is x, y is y, dx is dx + 1, dy is dy
+    if not (crawlInside with x is x, y is y + dy)
+        give crawlRevealed with seen is seen, x is x, y is y, dy is dy + 1
     give crawlRevealed with seen is (
-        crawlWithMark with value is seen,
-        index is (crawlIndexOf with x is x + dx, y is y + dy),
+        crawlWithRun with rows is seen,
+        y is y + dy,
+        start is (max with first is 0, second is x - 3),
+        stop is (min with first is crawlWide - 1, second is x + 3),
         mark is "1"),
         x is x,
         y is y,
-        dx is dx + 1,
-        dy is dy
+        dy is dy + 1
 
 # --- one field of the record at a time --------------------------------------
 #
@@ -959,8 +1005,8 @@ function crawlStep with game, dx, dy
     with ny is (game.hero.y + dy)
     if not (crawlInside with x is nx, y is ny)
         give crawlQuiet of game
-    with landing is (crawlIndexOf with x is nx, y is ny)
-    if (crawlMarkAt with value is game.ground, index is landing) is "#"
+    with landing is (crawlCellAt with rows is game.ground, x is nx, y is ny)
+    if landing is "#"
         give crawlQuiet of game
     with hit is (crawlFoeIndex with foes is game.foes, index is 0, x is nx, y is ny)
     if hit > -1
@@ -970,7 +1016,7 @@ function crawlStep with game, dx, dy
         give crawlSaying with game is game,
             lines is [(crawlQuote with game is game, ware is ware)]
     with walked is (crawlWalked with game is game, nx is nx, ny is ny, ware is ware)
-    if (crawlMarkAt with value is game.ground, index is landing) is ">"
+    if landing is ">"
         give crawlFloorFor with depth is walked.depth + 1,
             seed is walked.seed,
             hero is walked.hero,
@@ -1061,7 +1107,7 @@ function crawlWalked with game, nx, ny, ware
         crawlWithSeen with game is (
             crawlWithHero with game is game,
             hero is (crawlHeroAt with hero is game.hero, x is nx, y is ny)),
-        seen is (crawlRevealed with seen is game.seen, x is nx, y is ny, dx is -3, dy is -3))
+        seen is (crawlRevealed with seen is game.seen, x is nx, y is ny, dy is -3))
     if ware < 0
         give crawlQuiet of lit
     with thing is (crawlThingOf with things is game.things, index is ware)
@@ -1203,7 +1249,7 @@ function crawlFoeTurn with game, index, moved
                 moved is (append foe to moved)
 
 function crawlFree with game, moved, index, x, y
-    if (crawlMarkAt with value is game.ground, index is (crawlIndexOf with x is x, y is y)) is "#"
+    if (crawlCellAt with rows is game.ground, x is x, y is y) is "#"
         give no
     if (game.hero.x is x) and (game.hero.y is y)
         give no
@@ -1324,77 +1370,85 @@ state crawlGrid is static Whole starting 12
 function crawlBoxAt with left, top, wide, tall
     give ((((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of wide)) + "v") + (text of tall)) + "h-" + (text of wide) + "Z"
 
-function crawlLit with game, index
-    give ((abs of ((crawlColumn of index) - game.hero.x)) + (
-        abs of ((crawlRow of index) - game.hero.y))) < (crawlReach + 1)
+# Within sight, which is the same seven the monsters chase over.
+function crawlLit with game, x, y
+    give ((abs of (x - game.hero.x)) + (abs of (y - game.hero.y))) < (crawlReach + 1)
 
 # The stairs are floor with a mark on them, so they take the floor's
 # colour here and the chevron below.
-function crawlCells with game, mark, lit, index, taken
-    if index > (crawlSpan - 1)
+function crawlCells with game, mark, lit, x, y, taken
+    if y > (crawlHigh - 1)
         give taken
-    if not ((crawlMarkAt with value is game.seen, index is index) is "1")
+    if x > (crawlWide - 1)
         give crawlCells with game is game,
             mark is mark,
             lit is lit,
-            index is index + 1,
-            taken is taken
-    with cell is (crawlMarkAt with value is game.ground, index is index)
-    if not (("#" if cell is "#" otherwise ".") is mark)
-        give crawlCells with game is game,
-            mark is mark,
-            lit is lit,
-            index is index + 1,
-            taken is taken
-    if not ((crawlLit with game is game, index is index) is lit)
-        give crawlCells with game is game,
-            mark is mark,
-            lit is lit,
-            index is index + 1,
+            x is 0,
+            y is y + 1,
             taken is taken
     give crawlCells with game is game,
         mark is mark,
         lit is lit,
-        index is index + 1,
-        taken is taken + (crawlTileBox of index)
+        x is x + 1,
+        y is y,
+        taken is ((taken + (crawlTileBox with x is x, y is y)) if (
+            crawlShows with game is game,
+            mark is mark,
+            lit is lit,
+            x is x,
+            y is y) otherwise taken)
 
-function crawlTileBox of index
-    give crawlBoxAt with left is ((crawlColumn of index) * crawlCell),
-        top is ((crawlRow of index) * crawlCell),
+function crawlShows with game, mark, lit, x, y
+    if not ((crawlCellAt with rows is game.seen, x is x, y is y) is "1")
+        give no
+    with cell is (crawlCellAt with rows is game.ground, x is x, y is y)
+    if not (("#" if cell is "#" otherwise ".") is mark)
+        give no
+    give (crawlLit with game is game, x is x, y is y) is lit
+
+function crawlTileBox with x, y
+    give crawlBoxAt with left is (x * crawlCell),
+        top is (y * crawlCell),
         wide is crawlCell,
         tall is crawlCell
 
 function crawlFloorPath of game
-    give crawlCells with game is game, mark is ".", lit is yes, index is 0, taken is ""
+    give crawlCells with game is game, mark is ".", lit is yes, x is 0, y is 0, taken is ""
 
 function crawlFloorDimPath of game
-    give crawlCells with game is game, mark is ".", lit is no, index is 0, taken is ""
+    give crawlCells with game is game, mark is ".", lit is no, x is 0, y is 0, taken is ""
 
 function crawlWallPath of game
-    give crawlCells with game is game, mark is "#", lit is yes, index is 0, taken is ""
+    give crawlCells with game is game, mark is "#", lit is yes, x is 0, y is 0, taken is ""
 
 function crawlWallDimPath of game
-    give crawlCells with game is game, mark is "#", lit is no, index is 0, taken is ""
+    give crawlCells with game is game, mark is "#", lit is no, x is 0, y is 0, taken is ""
 
 # `>` in the original, drawn with `fillText`. A `Text` is not one of the
 # five things a drawing may contain, so the glyph is the two strokes a
 # `>` is. Stroked rather than filled, which is why it is its own path.
+#
+# The board is walked rather than the staircase remembered: a floor read
+# out of the map cannot disagree with the map.
 function crawlStairsPath of game
-    give crawlStairsFrom with game is game, index is 0, taken is ""
+    give crawlStairsFrom with game is game, x is 0, y is 0, taken is ""
 
-function crawlStairsFrom with game, index, taken
-    if index > (crawlSpan - 1)
+function crawlStairsFrom with game, x, y, taken
+    if y > (crawlHigh - 1)
         give taken
-    if ((crawlMarkAt with value is game.ground, index is index) is ">") and ((
-        crawlMarkAt with value is game.seen, index is index) is "1")
+    if x > (crawlWide - 1)
+        give crawlStairsFrom with game is game, x is 0, y is y + 1, taken is taken
+    if ((crawlCellAt with rows is game.ground, x is x, y is y) is ">") and ((
+        crawlCellAt with rows is game.seen, x is x, y is y) is "1")
         give crawlStairsFrom with game is game,
-            index is index + 1,
-            taken is taken + (crawlChevronAt of index)
-    give crawlStairsFrom with game is game, index is index + 1, taken is taken
+            x is x + 1,
+            y is y,
+            taken is taken + (crawlChevronAt with x is x, y is y)
+    give crawlStairsFrom with game is game, x is x + 1, y is y, taken is taken
 
-function crawlChevronAt of index
-    with left is (((crawlColumn of index) * crawlCell) + 5)
-    with top is (((crawlRow of index) * crawlCell) + 4)
+function crawlChevronAt with x, y
+    with left is ((x * crawlCell) + 5)
+    with top is ((y * crawlCell) + 4)
     give ((("M" + (text of left)) + " ") + (text of top)) + "l4 4l-4 4"
 
 # --- entities ---------------------------------------------------------------
@@ -1561,8 +1615,9 @@ function crawlThingsDrawn with game, kind, mark, index, taken
             give taken
         Some with thing
             if not ((thing.kind is kind) and ((
-                crawlMarkAt with value is game.seen,
-                index is (crawlIndexOf with x is thing.x, y is thing.y)) is "1"))
+                crawlCellAt with rows is game.seen,
+                x is thing.x,
+                y is thing.y) is "1"))
                 give crawlThingsDrawn with game is game,
                     kind is kind,
                     mark is mark,
@@ -1614,8 +1669,9 @@ function crawlGearDrawn with game, mark, index, taken
             give taken
         Some with thing
             if not (((thing.kind is "weapon") or (thing.kind is "armour")) and ((
-                crawlMarkAt with value is game.seen,
-                index is (crawlIndexOf with x is thing.x, y is thing.y)) is "1"))
+                crawlCellAt with rows is game.seen,
+                x is thing.x,
+                y is thing.y) is "1"))
                 give crawlGearDrawn with game is game,
                     mark is mark,
                     index is index + 1,
@@ -1635,7 +1691,7 @@ function crawlGearDrawn with game, mark, index, taken
 function crawlGridDrawn with grid, x, y, mark, index, taken
     if index > ((crawlGrid * crawlGrid) - 1)
         give taken
-    if (crawlMarkAt with value is grid, index is index) is mark
+    if (crawlSpotIn with value is grid, index is index) is mark
         give crawlGridDrawn with grid is grid,
             x is x,
             y is y,
@@ -1699,13 +1755,16 @@ function crawlHashFrom with name, index, hash
         hash is (
             wrappingProduct with left is (
                 bitXor with left is hash,
-                right is (crawlLetterValue of (crawlMarkAt with value is name, index is index))),
+                right is (crawlLetterValue of (crawlSpotIn with value is name, index is index))),
             right is 16777619)
 
 function crawlGridSet with grid, x, y, mark
     if not ((x > -1) and ((y > -1) and ((x < crawlGrid) and (y < crawlGrid))))
         give grid
-    give crawlWithMark with value is grid, index is (y * crawlGrid) + x, mark is mark
+    give crawlRunIn with row is grid,
+        start is (y * crawlGrid) + x,
+        stop is (y * crawlGrid) + x,
+        mark is mark
 
 function crawlBlankGrid
     give repeat with value is "0", count is crawlGrid * crawlGrid
