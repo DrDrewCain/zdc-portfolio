@@ -2074,8 +2074,7 @@ function critterStatus of game
                 printed is (
                     critterOwnStatus with game is game,
                     printed is (
-                        critterOddsLine with game is game,
-                        foe is foe,
+                        critterOddsLine with foe is foe,
                         printed is [
                             ("wild" if foe.trainer is "" otherwise foe.trainer + "'s") + " " + (
                                 critterDisplayName with name is foe.critter.name,
@@ -2083,7 +2082,7 @@ function critterStatus of game
                                 critterHpBar of foe) + "  calm " + (text of foe.calm) + "/3"])),
                 done is no
 
-function critterOddsLine with game, foe, printed
+function critterOddsLine with foe, printed
     if foe.trainer is ""
         give append "catch chance now: " + (
             text of (critterRound of ((critterCatchOdds of foe) * 100.0))) + "%" to printed
@@ -2272,13 +2271,6 @@ function critterTilesWith with tiles, index, mark
         start is index + 1,
         stop is critterWorldCells)
 
-function critterWorldWithTiles with world, tiles
-    give CritterWorld with tiles is tiles,
-        px is world.px,
-        py is world.py,
-        steps is world.steps,
-        danger is world.danger
-
 # EIGHTY-TWO DRAWS, AND THE ORDER MATTERS AS MUCH AS IT DID IN THE
 # GENERATOR: twenty-six tall-grass patches at two draws each, fourteen
 # tree attempts at two more, then the pond's two corners. A tree only
@@ -2320,6 +2312,13 @@ function critterFreshWorld with seed, danger
 
 function critterHalf of value
     give valueOr with maybe is (quotient with value is value, divisor is 2), fallback is 0
+
+# `hp <= maxHp / 4` in the original, where the division is a float. For a
+# whole `hp` the two agree — `hp <= n / 4` exactly when `hp <= floor(n /
+# 4)` — so the floored quarter is the same threshold without a `Decimal`
+# in the middle of a comparison of counts.
+function critterQuarter of value
+    give valueOr with maybe is (quotient with value is value, divisor is 4), fallback is 0
 
 function critterScattered with tiles, mark, onlyGrass, remaining, seed
     if remaining is 0
@@ -2440,8 +2439,8 @@ function critterCrossed with world, dir, seed, danger
 # Re-entering a region you have already been in uses the same rule, which
 # is what makes walking back the way you came arrive where you left.
 function critterEnteredFrom with area, world, dir
-    with px is (critterEntryX with world is world, area is area, dir is dir)
-    with py is (critterEntryY with world is world, area is area, dir is dir)
+    with px is (critterEntryX with world is world, dir is dir)
+    with py is (critterEntryY with world is world, dir is dir)
     give CritterWorld with tiles is (
         critterTilesWith with tiles is area.tiles,
         index is (py * critterWorldWide) + px,
@@ -2451,14 +2450,18 @@ function critterEnteredFrom with area, world, dir
         steps is area.steps,
         danger is area.danger
 
-function critterEntryX with world, area, dir
+# `area.px` and `area.py` are the original's starting point for these
+# two, and every branch overwrites both — so the area a region was
+# generated with never reaches the tile you arrive on, and the parameter
+# it came in through is not taken here.
+function critterEntryX with world, dir
     if dir is "left"
         give critterWorldWide - 1
     if dir is "right"
         give 0
     give world.px
 
-function critterEntryY with world, area, dir
+function critterEntryY with world, dir
     if dir is "up"
         give critterWorldTall - 1
     if dir is "down"
@@ -2519,7 +2522,7 @@ function critterNewGame with caught, growth, badges, seed
         sel is 0,
         party is 0
 
-function critterGameWith with game, hunt, world, regions, wx, wy, phase, printed, sel, party
+function critterGameWith with hunt, world, regions, wx, wy, phase, printed, sel, party
     give CritterGame with hunt is hunt,
         world is world,
         regions is regions,
@@ -2539,8 +2542,7 @@ function critterAct with game, cmd
     with said is (
         game.printed if (listLength of turn.printed) is 0 otherwise turn.printed)
     if isSome of turn.game.foe
-        give critterGameWith with game is game,
-            hunt is turn.game,
+        give critterGameWith with hunt is turn.game,
             world is game.world,
             regions is game.regions,
             wx is game.wx,
@@ -2550,8 +2552,7 @@ function critterAct with game, cmd
             sel is 0,
             party is game.party
     if game.phase is "battle"
-        give critterGameWith with game is game,
-            hunt is turn.game,
+        give critterGameWith with hunt is turn.game,
             world is game.world,
             regions is game.regions,
             wx is game.wx,
@@ -2560,8 +2561,7 @@ function critterAct with game, cmd
             printed is (append "back to the grass." to said),
             sel is game.sel,
             party is game.party
-    give critterGameWith with game is game,
-        hunt is turn.game,
+    give critterGameWith with hunt is turn.game,
         world is game.world,
         regions is game.regions,
         wx is game.wx,
@@ -2580,8 +2580,7 @@ function critterWalk with game, dir
     if moved.edge
         give critterCrossedEdge with game is game, dir is dir
     with walked is (
-        critterGameWith with game is game,
-        hunt is (critterWithSeed with game is game.hunt, seed is moved.seed),
+        critterGameWith with hunt is (critterWithSeed with game is game.hunt, seed is moved.seed),
         world is moved.world,
         regions is game.regions,
         wx is game.wx,
@@ -2646,8 +2645,7 @@ function critterOpenedGround with game, dir, nx, ny, remembered, danger
                 "a new stretch of grass opens up.")]
 
 function critterArrived with game, nx, ny, seed, world, regions, printed
-    give critterGameWith with game is game,
-        hunt is (critterWithSeed with game is game.hunt, seed is seed),
+    give critterGameWith with hunt is (critterWithSeed with game is game.hunt, seed is seed),
         world is world,
         regions is (set (critterRegionKey with x is nx, y is ny) to world in regions),
         wx is nx,
@@ -2668,8 +2666,7 @@ function critterArrived with game, nx, ny, seed, world, regions, printed
 function critterMenu with game, target
     if not ((game.phase is "explore") or (game.phase is target))
         give game
-    give critterGameWith with game is game,
-        hunt is game.hunt,
+    give critterGameWith with hunt is game.hunt,
         world is game.world,
         regions is game.regions,
         wx is game.wx,
@@ -2683,8 +2680,7 @@ function critterQuitsOnEscape of game
     give not (((game.phase is "dex") or (game.phase is "map")) or (game.phase is "party"))
 
 function critterEscaped of game
-    give critterGameWith with game is game,
-        hunt is game.hunt,
+    give critterGameWith with hunt is game.hunt,
         world is game.world,
         regions is game.regions,
         wx is game.wx,
@@ -2697,8 +2693,7 @@ function critterEscaped of game
 # The battle menu wraps in both directions. Four actions, so `+ 3` is
 # `- 1` without a negative index.
 function critterMenuMoved with game, step
-    give critterGameWith with game is game,
-        hunt is game.hunt,
+    give critterGameWith with hunt is game.hunt,
         world is game.world,
         regions is game.regions,
         wx is game.wx,
@@ -2728,8 +2723,7 @@ function critterPartyMoved with game, step
     with total is (critterPartySize of game)
     if total is 0
         give game
-    give critterGameWith with game is game,
-        hunt is game.hunt,
+    give critterGameWith with hunt is game.hunt,
         world is game.world,
         regions is game.regions,
         wx is game.wx,
@@ -2751,8 +2745,7 @@ function critterPromoted of game
         critterTextAt with items is game.hunt.caught, index is game.party, fallback is "")
     if name is ""
         give game
-    give critterGameWith with game is game,
-        hunt is (
+    give critterGameWith with hunt is (
             critterWithCaught with game is game.hunt,
             caught is (
                 critterLeadingWith with name is name, caught is game.hunt.caught)),
@@ -3101,8 +3094,10 @@ function critterAllyHurt of game
         None
             give no
         Some with ally
-            give not (ally.hp > (critterHalf of (
-                critterHalf of (critterStatsOfName with game is game, name is ally.name).maxHp)))
+            give not (ally.hp > (
+                critterQuarter of (
+                    critterStatsOfName with game is game,
+                    name is ally.name).maxHp))
 
 # XP progress in gold beneath the hit-point bar, three pixels tall.
 function critterXpBarTrackPath
