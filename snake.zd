@@ -1,0 +1,392 @@
+# snake.zd — `src/components/game/snake-game.tsx`, ported.
+#
+# Twenty-eight by eighteen, one step every 110 ms. Arrows steer, the two
+# rings are linked portals, eating relocates both of them.
+#
+# WHY THE BODY IS STORED TAIL FIRST. The original is a JavaScript array
+# with the head at index 0, so a step is `unshift` then `pop` — the two
+# operations a persistent list is worst at. `append` puts an item on the
+# end and `listDrop` takes one off the front, so storing the snake with
+# the *tail* at index 0 makes a step one `append` and one `listDrop`, and
+# both of those are the cheap direction. The head is `last of body`.
+# Nothing else in the file depends on the order, and the order is the
+# whole reason a step is not a copy of the snake.
+#
+# WHY A CELL IS ONE `Whole`. `y * width + x`, so the body is a
+# `List of Whole` and "is the head about to hit the snake" is one
+# `listContains` rather than a fold over pairs. The step un-packs the
+# head into a column and a row before it moves, because a move off the
+# left edge would otherwise land on the right edge of the row above —
+# an index is not a coordinate and the arithmetic has to say so.
+#
+# WHY IT DRAWS INTO A `Scene`. Same argument `life.zd` makes: one canvas
+# and one draw list. Each *appearance* is a single `Path` whose `d` is
+# every cell that wears it, so a thirty-segment snake is one shape rather
+# than thirty.
+#
+# WHAT IS NOT PORTED. The original fades each segment toward the tail
+# (`globalAlpha = 1 - i * 0.035`) and rotates an inner arc inside each
+# portal off `performance.now()`. A `Path` carries one `opacity`, so the
+# fade would cost one path per segment — which is exactly the per-cell
+# draw call the `Scene` exists to avoid — and the arc wants a clock that
+# ticks per frame rather than per move. The scale pattern survives as
+# `snakeGlintPath`, which is one path over every other segment.
+
+record Snake
+    body    is List of Whole
+    dirX    is Whole
+    dirY    is Whole
+    turnX   is Whole
+    turnY   is Whole
+    food    is Whole
+    portalA is Whole
+    portalB is Whole
+    dead    is Truth
+    score   is Whole
+    seed    is Whole
+
+# A column and a row, for the one place in the step where the head stops
+# being an index and becomes a position on a bounded board.
+record SnakeSpot
+    x is Whole
+    y is Whole
+
+# A free cell and the seed the search for it stopped at. The seed comes
+# back because three cells are drawn in a row and each must carry on
+# where the last one left off — a rejection loop consumes an unknown
+# number of draws, so the count cannot be written at the call site.
+record SnakePick
+    cell is Whole
+    seed is Whole
+
+state snakeWidth is static Whole starting 28
+state snakeHeight is static Whole starting 18
+state snakeCell is static Whole starting 16
+
+state snakeCells is static Whole from snakeWidth * snakeHeight
+
+# Half a cell, as a `Whole`. `/` always gives a `Decimal`, so the centre
+# of a cell is a `quotient` rather than a division — and the cell is even,
+# so the fallback is unreachable.
+state snakeHalf is static Whole from valueOr with maybe is (
+    quotient with value is snakeCell,
+    divisor is 2),
+    fallback is 0
+state snakeViewBox is static Text from (("0 0 " + (text of (snakeWidth * snakeCell))) + " ") + (text of (snakeHeight * snakeCell))
+
+# --- reading the board ------------------------------------------------------
+
+function snakeColumn of spot
+    give valueOr with maybe is (mod with value is spot, divisor is snakeWidth), fallback is 0
+
+function snakeRow of spot
+    give valueOr with maybe is (quotient with value is spot, divisor is snakeWidth),
+        fallback is 0
+
+function snakeSpotOf with x, y
+    give (y * snakeWidth) + x
+
+function snakeCellAt with body, index
+    give valueOr with maybe is (listAt with value is body, index is index), fallback is 0
+
+function snakeHead of game
+    give valueOr with maybe is (last of game.body), fallback is 0
+
+# --- a new game -------------------------------------------------------------
+#
+# The opening positions are the original's literals: the snake at (8, 9)
+# facing right, the apple ten cells ahead of it, and the two rings on
+# opposite diagonals so the first one a player meets is a choice rather
+# than an accident.
+
+function newSnake of seed
+    give Snake with body is [(snakeSpotOf with x is 8, y is 9)],
+        dirX is 1,
+        dirY is 0,
+        turnX is 1,
+        turnY is 0,
+        food is (snakeSpotOf with x is 18, y is 9),
+        portalA is (snakeSpotOf with x is 4, y is 3),
+        portalB is (snakeSpotOf with x is 23, y is 14),
+        dead is no,
+        score is 0,
+        seed is seed
+
+# --- steering ---------------------------------------------------------------
+#
+# The queued turn is compared against the *committed* direction and not
+# against the previous queued one, which is the original's rule and the
+# one that matters: two turns inside a single 110 ms tick would otherwise
+# let a player queue up-then-left while travelling right and reverse into
+# their own neck.
+#
+# An arrow on a dead board deals a new one, exactly as the original does —
+# there is no separate retry key to find.
+
+function snakeSteer with game, dx, dy
+    if game.dead
+        give newSnake of (nextSeed of game.seed)
+    if (dx is (0 - game.dirX)) and (dy is (0 - game.dirY))
+        give game
+    give Snake with body is game.body,
+        dirX is game.dirX,
+        dirY is game.dirY,
+        turnX is dx,
+        turnY is dy,
+        food is game.food,
+        portalA is game.portalA,
+        portalB is game.portalB,
+        dead is no,
+        score is game.score,
+        seed is game.seed
+
+# --- a step -----------------------------------------------------------------
+#
+# One tick: commit the queued turn, walk the head one cell, take the
+# portal if it landed on one, and then decide whether that killed it, fed
+# it, or merely moved it.
+
+function snakeStep of game
+    if game.dead
+        give game
+    with landed is (
+        snakeLanding with game is game,
+        spot is (
+            SnakeSpot with x is (snakeColumn of (snakeHead of game)) + game.turnX,
+            y is (snakeRow of (snakeHead of game)) + game.turnY))
+    if (landed.x < 0) or ((landed.y < 0) or (( landed.x > (snakeWidth - 1)) or (landed.y > (snakeHeight - 1))))
+        give snakeEnded of game
+    with head is (snakeSpotOf with x is landed.x, y is landed.y)
+    # The whole body, tail included. The tail is about to move out of the
+    # way, so a lenient rule would let a player turn into it — the
+    # original checks the whole array and so does this, because "the cell
+    # my tail is leaving" is a rule players cannot see.
+    if listContains with items is game.body, value is head
+        give snakeEnded of game
+    if head is game.food
+        give snakeFed with game is game, body is (append head to game.body)
+    give snakeMoved with game is game, head is head
+
+# A portal moves the head to *the other ring plus the direction of
+# travel*, so entering one never leaves you standing on the exit — the
+# original's rule, and the reason a portal cannot be used to stand still.
+function snakeLanding with game, spot
+    if (spot.x is (snakeColumn of game.portalA)) and (spot.y is (snakeRow of game.portalA))
+        give SnakeSpot with x is (snakeColumn of game.portalB) + game.turnX,
+            y is (snakeRow of game.portalB) + game.turnY
+    if (spot.x is (snakeColumn of game.portalB)) and (spot.y is (snakeRow of game.portalB))
+        give SnakeSpot with x is (snakeColumn of game.portalA) + game.turnX,
+            y is (snakeRow of game.portalA) + game.turnY
+    give spot
+
+# `listDrop` from the front is the tail leaving, because the body is
+# stored tail first.
+function snakeMoved with game, head
+    give Snake with body is ( append head to (listDrop with items is game.body, count is 1)),
+        dirX is game.turnX,
+        dirY is game.turnY,
+        turnX is game.turnX,
+        turnY is game.turnY,
+        food is game.food,
+        portalA is game.portalA,
+        portalB is game.portalB,
+        dead is no,
+        score is game.score,
+        seed is game.seed
+
+# Eating relocates the apple and both rings. Ten points, as in the
+# original.
+#
+# DELIBERATELY UNLIKE THE ORIGINAL. There, the two new rings are drawn
+# from `randomFree` before either is stored, so neither knows about the
+# other and both can land on the same cell — a ring linked to itself,
+# which teleports the head one cell forward and reads as a dropped frame.
+# Here the second draw excludes the first. The old rings are *not*
+# excluded, because they are the cells being replaced and avoiding them
+# is an accident of assignment order rather than a rule.
+function snakeFed with game, body
+    with meal is (
+        snakeFreeCell with body is body,
+        blocked is empty,
+        seed is game.seed,
+        guard is 0)
+    with ringA is (
+        snakeFreeCell with body is body,
+        blocked is [meal.cell],
+        seed is meal.seed,
+        guard is 0)
+    with ringB is (
+        snakeFreeCell with body is body,
+        blocked is [meal.cell, ringA.cell],
+        seed is ringA.seed,
+        guard is 0)
+    give Snake with body is body,
+        dirX is game.turnX,
+        dirY is game.turnY,
+        turnX is game.turnX,
+        turnY is game.turnY,
+        food is meal.cell,
+        portalA is ringA.cell,
+        portalB is ringB.cell,
+        dead is no,
+        score is game.score + 10,
+        seed is ringB.seed
+
+# The committed direction is kept on the dead board so the head keeps
+# looking the way it was going when it died.
+function snakeEnded of game
+    give Snake with body is game.body,
+        dirX is game.turnX,
+        dirY is game.turnY,
+        turnX is game.turnX,
+        turnY is game.turnY,
+        food is game.food,
+        portalA is game.portalA,
+        portalB is game.portalB,
+        dead is yes,
+        score is game.score,
+        seed is (nextSeed of game.seed)
+
+# A cell holding nothing. Drawn one at a time from the seed and rejected
+# when it is occupied, which is `mines.zd`'s argument at a much easier
+# ratio: a snake long enough to make five hundred and four cells crowded
+# is a snake nobody has grown.
+#
+# The guard is the loop's bound and its fallback of cell 0 is reachable
+# only on a board with almost no free cells left, where every answer is
+# about to be wrong anyway. It is here so a hostile seed cannot hang the
+# page, not because it is expected to fire.
+function snakeFreeCell with body, blocked, seed, guard
+    if guard > 999
+        give SnakePick with cell is 0, seed is (nextSeed of seed)
+    with spot is (
+        valueOr with maybe is (randomBelow with seed is seed, bound is snakeCells),
+        fallback is 0)
+    if (
+        listContains with items is body,
+        value is spot) or ( listContains with items is blocked,
+        value is spot)
+        give snakeFreeCell with body is body,
+            blocked is blocked,
+            seed is (nextSeed of seed),
+            guard is guard + 1
+    give SnakePick with cell is spot, seed is (nextSeed of seed)
+
+# --- what the line above the board says -------------------------------------
+
+function snakeStatus of game
+    if game.dead
+        give "dead. any arrow retries · esc quits"
+    give (("score " + (text of game.score)) + " · ") + "arrows steer · rings are linked portals"
+
+# --- the drawing ------------------------------------------------------------
+#
+# One `Path` per appearance, each holding every cell that wears it. The
+# order the terminal draws them in is back to front: rings, apple, body,
+# scales, head, eyes.
+
+# A square inset by `inset` on every side, so the grid reads as cells
+# rather than as one solid worm.
+function snakeSquare with spot, inset
+    with left is ((snakeColumn of spot) * snakeCell) + inset
+    with top is ((snakeRow of spot) * snakeCell) + inset
+    with side is snakeCell - (inset * 2)
+    give ((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of side)) + "v" + (text of side) + "h-" + (text of side) + "Z"
+
+# Everything but the head, which is drawn a size larger and a shade
+# lighter so a player can tell which end is which at a glance.
+function snakeBodyPath of game
+    give snakeSegments with body is game.body,
+        index is 0,
+        stop is (listLength of game.body) - 1,
+        taken is ""
+
+function snakeSegments with body, index, stop, taken
+    if index >= stop
+        give taken
+    give snakeSegments with body is body,
+        index is index + 1,
+        stop is stop,
+        taken is taken + (
+            snakeSquare with spot is (snakeCellAt with body is body, index is index),
+            inset is 2)
+
+function snakeHeadPath of game
+    give snakeSquare with spot is (snakeHead of game), inset is 1
+
+# The scale pattern: a light bar across every other segment, counted from
+# the head so it travels with the snake instead of with the board.
+function snakeGlintPath of game
+    give snakeGlints with body is game.body,
+        index is 0,
+        stop is (listLength of game.body) - 1,
+        taken is ""
+
+function snakeGlints with body, index, stop, taken
+    if index >= stop
+        give taken
+    if (
+        valueOr with maybe is (mod with value is stop - index, divisor is 2),
+        fallback is 1) is 0
+        give snakeGlints with body is body,
+            index is index + 1,
+            stop is stop,
+            taken is taken + (snakeBar of (snakeCellAt with body is body, index is index))
+    give snakeGlints with body is body, index is index + 1, stop is stop, taken is taken
+
+function snakeBar of spot
+    with left is ((snakeColumn of spot) * snakeCell) + 3
+    with top is ((snakeRow of spot) * snakeCell) + 3
+    with side is snakeCell - 6
+    give ((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of side)) + "v2h-" + (text of side) + "Z"
+
+# Two pupils, pushed toward the direction of travel and apart from each
+# other along the perpendicular — which is `(dirY, dirX)`, and is why the
+# eyes sit side by side going left and one above the other going up.
+function snakeEyesPath of game
+    with midX is ((snakeColumn of (snakeHead of game)) * snakeCell) + snakeHalf
+    with midY is ((snakeRow of (snakeHead of game)) * snakeCell) + snakeHalf
+    with aheadX is midX + (game.dirX * 3)
+    with aheadY is midY + (game.dirY * 3)
+    give (
+        snakeDot with x is (aheadX + (game.dirY * 3)) - 1,
+        y is (aheadY + (game.dirX * 3)) - 1) + ( snakeDot with x is (aheadX - (game.dirY * 3)) - 1,
+        y is (aheadY - (game.dirX * 3)) - 1)
+
+function snakeDot with x, y
+    give ((("M" + (text of x)) + " ") + (text of y)) + "h2v2h-2Z"
+
+# The apple, and its stem. Two paths because they are two colours, which
+# is the only reason anything here is ever two paths.
+function snakeFoodPath of game
+    give snakeRing with spot is game.food, radius is 5, drop is 1
+
+function snakeStemPath of game
+    with left is (((snakeColumn of game.food) * snakeCell) + snakeHalf) - 1
+    with top is (((snakeRow of game.food) * snakeCell) + 2)
+    give ((("M" + (text of left)) + " ") + (text of top)) + "h2v4h-2Z"
+
+# Both rings in one path. Stroked rather than filled by the caller, which
+# is what makes them read as openings rather than as two more apples.
+function snakePortalPath of game
+    give (
+        snakeRing with spot is game.portalA,
+        radius is 5,
+        drop is 0) + ( snakeRing with spot is game.portalB,
+        radius is 5,
+        drop is 0)
+
+# A circle as two half-arcs, because the vector vocabulary's `Circle` is
+# an element and this has to be a substring of somebody's `d`.
+function snakeRing with spot, radius, drop
+    with midX is (((snakeColumn of spot) * snakeCell) + snakeHalf) - radius
+    with midY is (((snakeRow of spot) * snakeCell) + snakeHalf) + drop
+    give ((((((("M" + (text of midX)) + " ") + (text of midY)) + "a") + (text of radius)) + " ") + (text of radius)) + " 0 1 0 " + (text of (radius * 2)) + " 0a" + (text of radius) + " " + (text of radius) + " 0 1 0 -" + (text of (radius * 2)) + " 0Z"
+
+# The hue is a function of the game rather than a literal on the `Path`,
+# because a dead snake goes grey and `fill` is an attribute that may vary.
+function snakeBodyFill of game
+    give "#8b8378" if game.dead otherwise "#ffa96b"
+
+function snakeHeadFill of game
+    give "#a09788" if game.dead otherwise "#ffd7ad"
