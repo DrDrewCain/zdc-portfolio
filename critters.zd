@@ -2776,3 +2776,718 @@ function critterLeadingWith with name, caught
 function critterAppendAll with head, rest
     from rest
     fold each item into taken starting head to (append item to taken)
+
+# --- drawing ----------------------------------------------------------------
+#
+# The original is a 480x320 canvas repainted by `requestAnimationFrame`,
+# and every mark on it is a `ctx.fillRect`. So the port keeps the canvas
+# coordinates exactly — a `Scene` with a `viewBox` of `0 0 480 320` is
+# the same surface — and turns each *colour* into one `Path` whose `d`
+# concatenates every rectangle of that colour. Grouping by appearance
+# rather than by tile is what keeps a frame fifteen shapes instead of
+# five thousand, which is the argument `mines.zd` and `life.zd` both
+# make and the reason the vector vocabulary was worth having.
+#
+# THE ANIMATION IS A PARAMETER. `rAF` hands the original a timestamp and
+# it derives ripples, sway, bobbing and twinkle from it. A function here
+# reads nothing, so `time` is an argument, and the terminal supplies it
+# from `state clock is client Decimal every frame`. The drawing stays a
+# pure function of the state and the clock, which is what it always was —
+# the original just had the clock in scope.
+
+state critterCanvasWide is static Whole starting 480
+state critterCanvasTall is static Whole starting 320
+state critterTileSize is static Whole starting 20
+# `(W - OW_W * TILE) / 2` is zero at these numbers; the map is drawn
+# eight pixels down to leave room for nothing above it and a status line
+# below.
+state critterMapTop is static Whole starting 8
+state critterViewBox is static Text from "0 0 480 320"
+
+function critterModOr with value, divisor
+    give valueOr with maybe is (mod with value is value, divisor is divisor), fallback is 0
+
+function critterFloorOr of value
+    give valueOr with maybe is (floor of value), fallback is 0
+
+function critterSin of angle
+    give valueOr with maybe is (sin of angle), fallback is 0.0
+
+function critterCos of angle
+    give valueOr with maybe is (cos of angle), fallback is 0.0
+
+# The fourteen terrain layers, in the order the original paints them.
+# `critterTerrainFill` is the colour each one is drawn in; a caller that
+# wants to restyle the world overrides it at the `Path` and the geometry
+# does not care.
+state critterTerrainLayers is static List of Text starting [
+    "water", "ripple", "groundEven", "groundOdd", "fleck",
+    "tallBase", "tallMid", "tallLight", "tallTip",
+    "treeShadow", "treeTrunk", "treeCrown", "treeCrownMid", "treeCrownLight"]
+
+function critterTerrainFill of layer
+    if layer is "water"
+        give "#2a4a5c"
+    if layer is "ripple"
+        give "#3d6478"
+    if layer is "groundEven"
+        give "#1c3320"
+    if layer is "groundOdd"
+        give "#1e3722"
+    if layer is "fleck"
+        give "#254028"
+    if layer is "tallBase"
+        give "#27502c"
+    if layer is "tallMid"
+        give "#356237"
+    if layer is "tallLight"
+        give "#4a8a4e"
+    if layer is "tallTip"
+        give "#7fb95a"
+    if layer is "treeShadow"
+        # The original's `rgba(0,0,0,0.25)`, which a `Path` says as a
+        # fill and an opacity rather than as a fourth channel.
+        give "#000000"
+    if layer is "treeTrunk"
+        give "#4a3524"
+    if layer is "treeCrown"
+        give "#2e4d30"
+    if layer is "treeCrownMid"
+        give "#3f6b42"
+    give "#558a58"
+
+function critterTerrainPath with world, layer, time
+    give critterTerrainFrom with world is world,
+        layer is layer,
+        time is time,
+        index is 0,
+        taken is ""
+
+function critterTerrainFrom with world, layer, time, index, taken
+    if index is critterWorldCells
+        give taken
+    give critterTerrainFrom with world is world,
+        layer is layer,
+        time is time,
+        index is index + 1,
+        taken is taken + (
+            critterTilePath with tile is (
+                valueOr with maybe is (textAt with value is world.tiles, index is index),
+                fallback is "."),
+            layer is layer,
+            time is time,
+            x is (critterModOr with value is index, divisor is critterWorldWide),
+            y is (valueOr with maybe is (
+                quotient with value is index,
+                divisor is critterWorldWide),
+                fallback is 0))
+
+# One tile's contribution to one layer. Deterministic per-tile variation
+# (`h`) plus slow time-based motion, exactly as the original: the ripples
+# drift sideways and each patch of tall grass sways on its own beat, so
+# a still field still looks alive without anything being stored.
+function critterTilePath with tile, layer, time, x, y
+    with px is (x * critterTileSize)
+    with py is (critterMapTop + (y * critterTileSize))
+    with h is (critterModOr with value is (x * 7) + (y * 13), divisor is 5)
+    if tile is "~"
+        if layer is "water"
+            give critterRect with left is px,
+                top is py,
+                wide is critterTileSize,
+                tall is critterTileSize
+        if layer is "ripple"
+            with drift is (
+                critterModOr with value is (
+                    critterFloorOr of ((time / 300.0) + (decimalOf of x))),
+                divisor is 10)
+            give (
+                critterRect with left is px + (
+                    critterModOr with value is 2 + drift,
+                    divisor is 12),
+                top is py + 5,
+                wide is 6,
+                tall is 1) + (
+                critterRect with left is px + (
+                    critterModOr with value is 9 + (drift * 2),
+                    divisor is 12),
+                top is py + 12,
+                wide is 5,
+                tall is 1)
+        give ""
+    # Everything that is not water gets the checkered ground and its two
+    # flecks underneath, tall grass and trees included.
+    if layer is "groundEven"
+        if (critterModOr with value is x + y, divisor is 2) is 0
+            give critterRect with left is px,
+                top is py,
+                wide is critterTileSize,
+                tall is critterTileSize
+        give ""
+    if layer is "groundOdd"
+        if (critterModOr with value is x + y, divisor is 2) is 0
+            give ""
+        give critterRect with left is px,
+            top is py,
+            wide is critterTileSize,
+            tall is critterTileSize
+    if layer is "fleck"
+        give (critterRect with left is (px + 3) + (h * 2), top is (py + 4) + h, wide is 2, tall is 2) + (
+            critterRect with left is (px + 12) - h,
+            top is (py + 13) - h,
+            wide is 2,
+            tall is 2)
+    if tile is "t"
+        give critterTallPath with layer is layer,
+            time is time,
+            px is px,
+            py is py,
+            x is x,
+            y is y
+    if tile is "T"
+        give critterTreePath with layer is layer, px is px, py is py
+    give ""
+
+# Tall grass sways gently, each patch on its own beat. Four dark blades,
+# three light ones and two seed heads, all riding the same offset — the
+# blades move together so a patch reads as one plant rather than nine.
+function critterTallPath with layer, time, px, py, x, y
+    with sway is (
+        critterRound of ((
+            critterSin of (((time / 500.0) + ((decimalOf of x) * 1.7)) + (decimalOf of y))) * 1.5))
+    if layer is "tallBase"
+        give critterRect with left is px + 1,
+            top is py + 1,
+            wide is critterTileSize - 2,
+            tall is critterTileSize - 2
+    if layer is "tallMid"
+        give (((
+            critterRect with left is (px + 2) + sway, top is py + 9, wide is 2, tall is 8) + (
+            critterRect with left is (px + 7) + sway, top is py + 6, wide is 2, tall is 11)) + (
+            critterRect with left is (px + 12) + sway, top is py + 9, wide is 2, tall is 8)) + (
+            critterRect with left is (px + 16) + sway, top is py + 7, wide is 2, tall is 10)
+    if layer is "tallLight"
+        give ((
+            critterRect with left is (px + 4) + sway, top is py + 7, wide is 2, tall is 10) + (
+            critterRect with left is (px + 9) + sway, top is py + 4, wide is 2, tall is 13)) + (
+            critterRect with left is (px + 14) + sway, top is py + 6, wide is 2, tall is 11)
+    if layer is "tallTip"
+        give (
+            critterRect with left is (px + 9) + sway, top is py + 3, wide is 2, tall is 2) + (
+            critterRect with left is (px + 4) + sway, top is py + 6, wide is 2, tall is 2)
+    give ""
+
+# A tree does not move: a shadow, a trunk and three tiers of crown.
+function critterTreePath with layer, px, py
+    if layer is "treeShadow"
+        give critterRect with left is px + 4, top is py + 16, wide is 12, tall is 3
+    if layer is "treeTrunk"
+        give critterRect with left is px + 8, top is py + 11, wide is 4, tall is 7
+    if layer is "treeCrown"
+        give (critterRect with left is px + 4, top is py + 4, wide is 12, tall is 9) + (
+            critterRect with left is px + 6, top is py + 2, wide is 8, tall is 4)
+    if layer is "treeCrownMid"
+        give critterRect with left is px + 5, top is py + 3, wide is 7, tall is 5
+    if layer is "treeCrownLight"
+        give critterRect with left is px + 6, top is py + 3, wide is 4, tall is 3
+    give ""
+
+# The hero, with a soft idle bob. Two rectangles for the body and two for
+# the eyes, which is the whole sprite — the original draws it in the
+# accent and ink colours the page already has, so the fills are the
+# caller's rather than fixed here.
+function critterHeroPath with world, time
+    with hx is (world.px * critterTileSize)
+    with hy is ((critterMapTop + (world.py * critterTileSize)) + (
+        critterRound of ((critterSin of (time / 350.0)) * 1.0)))
+    give (critterRect with left is hx + 5, top is hy + 3, wide is 9, tall is 7) + (
+        critterRect with left is hx + 4, top is hy + 10, wide is 11, tall is 6)
+
+function critterHeroEyePath with world, time
+    with hx is (world.px * critterTileSize)
+    with hy is ((critterMapTop + (world.py * critterTileSize)) + (
+        critterRound of ((critterSin of (time / 350.0)) * 1.0)))
+    give (critterRect with left is hx + 7, top is hy + 5, wide is 2, tall is 2) + (
+        critterRect with left is hx + 11, top is hy + 5, wide is 2, tall is 2)
+
+# The two lines under the map. The original truncates them to what fits
+# the canvas at 11px monospace; a `Text` element wraps or ellipsises by
+# the page's rules instead, so the slice is kept for the left line, where
+# it is the difference between a status line and a paragraph.
+function critterExploreLine of game
+    give slice with value is (
+        valueOr with maybe is (
+            listAt with value is game.printed,
+            index is (listLength of game.printed) - 1),
+        fallback is ""),
+        start is 0,
+        stop is 52
+
+function critterExploreTally of game
+    give "caught " + (text of (listLength of game.hunt.caught)) + " · badges " + (
+        text of game.hunt.badges) + "/" + (text of critterGymCount) + (
+        "" if game.world.danger is 0 otherwise " · region +" + (text of game.world.danger))
+
+# --- bars -------------------------------------------------------------------
+#
+# The original's `bar(x, y, w, frac, color, h)`: a track in the line
+# colour and a fill over it. Two paths, because two colours.
+#
+# `w * frac` is a float in the original and reaches `fillRect` as one.
+# Here it is rounded, and the reason is not tidiness: a `d` string
+# carrying `168.39999999999998` is the shortest round-trip printing of a
+# number nobody can see the last twelve digits of.
+
+function critterBarTrackPath with left, top, wide, tall
+    give critterRect with left is left, top is top, wide is wide, tall is tall
+
+function critterBarFillPath with left, top, wide, tall, fraction
+    give critterRect with left is left,
+        top is top,
+        wide is (
+            max with first is 0,
+            second is (critterRound of ((decimalOf of wide) * fraction))),
+        tall is tall
+
+function critterFraction with value, whole
+    if whole is 0
+        give 0.0
+    give (decimalOf of value) / (decimalOf of whole)
+
+# --- the battle screen ------------------------------------------------------
+#
+# Two cards, four bars, two creatures and a four-button menu, all at the
+# original's coordinates.
+
+function critterFoeCardPath
+    give critterRect with left is 16, top is 20, wide is 226, tall is 58
+
+function critterAllyCardPath
+    give critterRect with left is 16, top is 138, wide is 244, tall is 56
+
+function critterFoeBarTrackPath
+    give critterBarTrackPath with left is 24, top is 66, wide is 200, tall is 5
+
+function critterFoeBarFillPath of foe
+    give critterBarFillPath with left is 24,
+        top is 66,
+        wide is 200,
+        tall is 5,
+        fraction is (critterFraction with value is foe.hp, whole is foe.maxHp)
+
+function critterAllyBarTrackPath
+    give critterBarTrackPath with left is 74, top is 160, wide is 168, tall is 5
+
+function critterAllyBarFillPath of game
+    give critterBarFillPath with left is 74,
+        top is 160,
+        wide is 168,
+        tall is 5,
+        fraction is (critterAllyHpFraction of game)
+
+# The hit-point bar turns red at a quarter, which is the original's
+# threshold and the one moment the colour is telling you something you
+# could not read off the length.
+function critterAllyHpFraction of game
+    when game.ally
+        None
+            give 0.0
+        Some with ally
+            give critterFraction with value is ally.hp,
+                whole is (critterStatsOfName with game is game, name is ally.name).maxHp
+
+function critterAllyHurt of game
+    when game.ally
+        None
+            give no
+        Some with ally
+            give not (ally.hp > (critterHalf of (
+                critterHalf of (critterStatsOfName with game is game, name is ally.name).maxHp)))
+
+# XP progress in gold beneath the hit-point bar, three pixels tall.
+function critterXpBarTrackPath
+    give critterBarTrackPath with left is 74, top is 168, wide is 168, tall is 3
+
+function critterXpBarFillPath of game
+    give critterBarFillPath with left is 74,
+        top is 168,
+        wide is 168,
+        tall is 3,
+        fraction is (critterXpFraction of game)
+
+function critterXpFraction of game
+    when game.ally
+        None
+            give 0.0
+        Some with ally
+            with growth is (critterGrowthOf with game is game, name is ally.name)
+            give critterFraction with value is growth.xp,
+                whole is (critterXpToNext of growth.level)
+
+function critterStaminaBarTrackPath
+    give critterBarTrackPath with left is 24, top is 170, wide is 170, tall is 5
+
+function critterStaminaBarFillPath of game
+    give critterBarFillPath with left is 24,
+        top is 170,
+        wide is 170,
+        tall is 5,
+        fraction is (
+            critterFraction with value is game.stamina, whole is critterMaxStamina)
+
+function critterStaminaLow of game
+    give not (game.stamina > 5)
+
+# The wild critter bobs, and evolved stages stand visibly larger — the
+# same fourteen percent a stage that the palette deepens by, so size and
+# colour say the same thing about a final form.
+function critterFoeSpriteSize of foe
+    give critterRound of (96.0 * (1.0 + ((decimalOf of (foe.stage - 1)) * 0.14)))
+
+function critterFoeSpriteLeft of foe
+    give (critterCanvasWide - 54) - (critterFoeSpriteSize of foe)
+
+function critterFoeSpriteTop with foe, time
+    give (40 + (critterRound of ((critterSin of (time / 380.0)) * 3.0))) + (
+        96 - (critterFoeSpriteSize of foe))
+
+function critterAllySpriteSize with game, name
+    give critterRound of (44.0 * (1.0 + ((decimalOf of ((
+        critterStageOfName with game is game,
+        name is name) - 1)) * 0.14)))
+
+function critterAllySpriteTop with game, name, time
+    give (142 + (
+        critterRound of ((critterSin of ((time / 380.0) + (pi)) ) * 2.0))) + (
+        44 - (critterAllySpriteSize with game is game, name is name))
+
+# Three sparkles orbiting a shiny, each twinkling on its own phase and
+# only drawn when its phase is past four tenths — so the ring flickers
+# rather than spinning, which is what reads as a sparkle.
+function critterSparklePath with foe, time
+    give critterSparkleFrom with foe is foe, time is time, index is 0, taken is ""
+
+function critterSparkleFrom with foe, time, index, taken
+    if index is 3
+        give taken
+    if not (((critterSin of ((time / 120.0) + ((decimalOf of index) * 2.0))) + 1.0) / 2.0 > 0.4)
+        give critterSparkleFrom with foe is foe,
+            time is time,
+            index is index + 1,
+            taken is taken
+    with size is (decimalOf of (critterFoeSpriteSize of foe))
+    with angle is ((time / 250.0) + (((decimalOf of index) * (tau)) / 3.0))
+    give critterSparkleFrom with foe is foe,
+        time is time,
+        index is index + 1,
+        taken is taken + (
+            critterRect with left is (
+                critterRound of (((decimalOf of (critterCanvasWide - 54)) - (size / 2.0)) + (
+                    (critterCos of angle) * ((size / 2.0) + 8.0)))),
+            top is (
+                critterRound of ((40.0 + (size / 2.0)) + (
+                    (critterSin of angle) * ((size / 2.0) - 4.0)))),
+            wide is 2,
+            tall is 2)
+
+# The four-button menu. Netting is off the table in a gym match, so that
+# button is greyed rather than hidden: a missing button would move the
+# other three and teach the wrong muscle memory.
+function critterMenuPath of index
+    give critterRect with left is 16 + ((critterModOr with value is index, divisor is 2) * 232),
+        top is 242 + ((
+            valueOr with maybe is (quotient with value is index, divisor is 2),
+            fallback is 0) * 30),
+        wide is 216,
+        tall is 24
+
+function critterMenuText of index
+    give (text of (index + 1)) + " " + (critterActionLabelAt of index)
+
+function critterMenuActive with game, index
+    give (index is game.sel) and (isSome of game.hunt.foe)
+
+function critterMenuDisabled with game, index
+    when game.hunt.foe
+        None
+            give no
+        Some with foe
+            give ((critterActionAt of index) is "throw") and (not (foe.trainer is ""))
+
+# --- the lines the battle screen prints -------------------------------------
+
+function critterFoeHeadline of foe
+    give (
+        critterDisplayName with name is foe.critter.name,
+        stage is foe.stage) + " lv" + (text of foe.level)
+
+# A gym critter is labelled by its trainer; a wild one by what makes it
+# worth stopping for.
+function critterFoeTag of foe
+    if not (foe.trainer is "")
+        give foe.trainer + "'s critter"
+    give trim of (("LEGENDARY " if foe.critter.rarity is 3 otherwise "") + (
+        "✦SHINY" if foe.shiny otherwise ""))
+
+function critterFoeStars of foe
+    give repeat with value is "*", count is foe.critter.rarity
+
+function critterFoeSpeedLine of foe
+    give "spd " + (text of foe.speed)
+
+function critterAllyHeadline of game
+    when game.ally
+        None
+            give "you (bare knuckles)"
+        Some with ally
+            give (
+                slice with value is (
+                    critterShownName with game is game,
+                    name is ally.name),
+                start is 0,
+                stop is 15) + " lv" + (
+                text of (critterLevelOf with game is game, name is ally.name))
+
+function critterAllyStatsLine of game
+    when game.ally
+        None
+            give ""
+        Some with ally
+            with stats is (critterStatsOfName with game is game, name is ally.name)
+            give (text of (max with first is 0, second is ally.hp)) + "/" + (
+                text of stats.maxHp) + " hp · atk " + (text of stats.attack) + " · spd " + (
+                text of stats.speed)
+
+# Battles are exchanges, so the panel shows the last few beats rather
+# than only the last one.
+function critterBattleLog of game
+    give critterBattleLogFrom with game is game,
+        index is (max with first is 0, second is (listLength of game.printed) - 3),
+        taken is empty
+
+function critterBattleLogFrom with game, index, taken
+    if index is (listLength of game.printed)
+        give taken
+    give critterBattleLogFrom with game is game,
+        index is index + 1,
+        taken is (append (
+            slice with value is (
+                critterTextAt with items is game.printed, index is index, fallback is ""),
+            start is 0,
+            stop is 60) to taken)
+
+# --- the dex screen ---------------------------------------------------------
+#
+# Twelve cards, four to a row. The original takes the *last* twelve of
+# the roster order rather than the first, so a screen that fills up keeps
+# showing what you most recently found rather than freezing on your first
+# dozen.
+
+state critterDexColumns is static Whole starting 4
+
+function critterDexIds of game
+    give listDrop with items is (critterDexAll with game is game, index is 0, taken is empty),
+        count is (
+            max with first is 0,
+            second is (listLength of game.hunt.caught) - 12)
+
+function critterDexAll with game, index, taken
+    if index is critterRosterSize
+        give taken
+    if listContains with items is game.hunt.caught, value is (critterAt of index).name
+        give critterDexAll with game is game, index is index + 1, taken is (append index to taken)
+    give critterDexAll with game is game, index is index + 1, taken is taken
+
+function critterDexCardLeft of slot
+    give 20 + ((critterModOr with value is slot, divisor is critterDexColumns) * 116)
+
+function critterDexCardTop of slot
+    give 44 + ((
+        valueOr with maybe is (quotient with value is slot, divisor is critterDexColumns),
+        fallback is 0) * 82)
+
+function critterDexCardPath of slot
+    give critterRect with left is (critterDexCardLeft of slot),
+        top is (critterDexCardTop of slot),
+        wide is 104,
+        tall is 72
+
+function critterDexSpriteLeft of slot
+    give (critterDexCardLeft of slot) + 34
+
+function critterDexSpriteTop of slot
+    give (critterDexCardTop of slot) + 4
+
+state critterDexSpriteSize is static Whole starting 36
+
+# --- the world map screen ---------------------------------------------------
+#
+# Explored regions on a grid, coloured by heat: cool grass green up to
+# ember red. The extent is computed from the keys rather than stored,
+# because the keys are the only record of where you have been and a
+# second one could disagree with them.
+
+record CritterExtent
+    minX is Whole
+    maxX is Whole
+    minY is Whole
+    maxY is Whole
+
+state critterMapCell is static Whole starting 28
+
+state critterDangerFills is static List of Text starting [
+    "#1c3320", "#2a4a2a", "#3f5e2c", "#5c5e2c", "#6b4a26", "#7c3a22", "#8c2a1e"]
+
+function critterDangerFill of heat
+    give critterTextAt with items is critterDangerFills,
+        index is (clamp with value is heat, low is 0, high is 6),
+        fallback is "#1c3320"
+
+function critterRegionKeys of game
+    give keys of game.regions
+
+function critterRegionAt with game, key
+    give valueOr with maybe is (mapAt with value is game.regions, key is key),
+        fallback is (CritterWorld with tiles is "", px is 0, py is 0, steps is 0, danger is 0)
+
+function critterRegionX of key
+    give valueOr with maybe is (parseWhole of (before with value is key, delimiter is ",")),
+        fallback is 0
+
+function critterRegionY of key
+    give valueOr with maybe is (parseWhole of (after with value is key, delimiter is ",")),
+        fallback is 0
+
+function critterMapExtent of game
+    give critterExtentFrom with names is (keys of game.regions),
+        index is 0,
+        so is (CritterExtent with minX is 0, maxX is 0, minY is 0, maxY is 0)
+
+function critterExtentFrom with names, index, so
+    if index is (listLength of names)
+        give so
+    with key is (critterTextAt with items is names, index is index, fallback is "0,0")
+    with x is (critterRegionX of key)
+    with y is (critterRegionY of key)
+    give critterExtentFrom with names is names,
+        index is index + 1,
+        so is (
+            CritterExtent with minX is (min with first is so.minX, second is x),
+            maxX is (max with first is so.maxX, second is x),
+            minY is (min with first is so.minY, second is y),
+            maxY is (max with first is so.maxY, second is y))
+
+# `(W - gw) / 2` and `(H - 90 - gh) / 2` are always whole at a cell of
+# twenty-eight, so the halving is exact and needs no rounding decision.
+function critterMapOriginLeft of game
+    with span is (critterMapExtent of game)
+    give critterHalf of (critterCanvasWide - (((span.maxX - span.minX) + 1) * critterMapCell))
+
+function critterMapOriginTop of game
+    with span is (critterMapExtent of game)
+    give 40 + (
+        max with first is 0,
+        second is (
+            critterHalf of (
+                (critterCanvasTall - 90) - (((span.maxY - span.minY) + 1) * critterMapCell))))
+
+function critterRegionLeft with game, key
+    give (critterMapOriginLeft of game) + (((
+        critterRegionX of key) - (critterMapExtent of game).minX) * critterMapCell)
+
+function critterRegionTop with game, key
+    give (critterMapOriginTop of game) + (((
+        critterRegionY of key) - (critterMapExtent of game).minY) * critterMapCell)
+
+# One path per heat, so seven shapes draw however many regions have been
+# walked — the same grouping the terrain uses.
+function critterMapHeatPath with game, heat
+    give critterHeatFrom with game is game,
+        heat is heat,
+        names is (keys of game.regions),
+        index is 0,
+        taken is ""
+
+function critterHeatFrom with game, heat, names, index, taken
+    if index is (listLength of names)
+        give taken
+    with key is (critterTextAt with items is names, index is index, fallback is "0,0")
+    if not ((
+        clamp with value is (critterRegionAt with game is game, key is key).danger,
+        low is 0,
+        high is 6) is heat)
+        give critterHeatFrom with game is game,
+            heat is heat,
+            names is names,
+            index is index + 1,
+            taken is taken
+    give critterHeatFrom with game is game,
+        heat is heat,
+        names is names,
+        index is index + 1,
+        taken is taken + (
+            critterRect with left is (critterRegionLeft with game is game, key is key),
+            top is (critterRegionTop with game is game, key is key),
+            wide is critterMapCell - 2,
+            tall is critterMapCell - 2)
+
+# Where you are: a two-pixel outline and a dot in the middle.
+function critterMapCursorPath of game
+    with key is (critterRegionKey with x is game.wx, y is game.wy)
+    give critterRect with left is (critterRegionLeft with game is game, key is key) + 1,
+        top is (critterRegionTop with game is game, key is key) + 1,
+        wide is critterMapCell - 4,
+        tall is critterMapCell - 4
+
+function critterMapDotPath of game
+    with key is (critterRegionKey with x is game.wx, y is game.wy)
+    give critterRect with left is ((
+        critterRegionLeft with game is game,
+        key is key) + (critterHalf of critterMapCell)) - 3,
+        top is ((
+            critterRegionTop with game is game,
+            key is key) + (critterHalf of critterMapCell)) - 3,
+        wide is 4,
+        tall is 4
+
+# --- the party screen -------------------------------------------------------
+#
+# Eight rows, the first of which is the lead. Ordering the party *is*
+# reordering `caught`, so what this screen shows is the order `swap`
+# cycles and the order a fainted critter is replaced from.
+
+function critterPartyNames of game
+    give listTake with items is game.hunt.caught, count is 8
+
+function critterPartyRowTop of slot
+    give 40 + (slot * 32)
+
+function critterPartyRowPath of slot
+    give critterRect with left is 16,
+        top is (critterPartyRowTop of slot),
+        wide is critterCanvasWide - 32,
+        tall is 28
+
+function critterPartySpriteTop of slot
+    give (critterPartyRowTop of slot) + 2
+
+state critterPartySpriteSize is static Whole starting 24
+
+function critterPartyLine with game, name
+    give (
+        slice with value is (critterShownName with game is game, name is name),
+        start is 0,
+        stop is 16) + "  lv" + (text of (critterLevelOf with game is game, name is name))
+
+function critterPartyStats with game, slot, name
+    if slot is 0
+        give "LEAD"
+    with stats is (critterStatsOfName with game is game, name is name)
+    give "hp " + (text of stats.maxHp) + " · atk " + (text of stats.attack) + " · spd " + (
+        text of stats.speed)
+
+# --- the dex and league headings --------------------------------------------
+
+function critterDexHeading of game
+    give "CRITTERDEX  " + (text of (listLength of game.hunt.caught)) + " caught · " + (
+        text of game.hunt.badges) + "/" + (text of critterGymCount) + " badges"
