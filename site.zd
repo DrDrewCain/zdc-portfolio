@@ -13,11 +13,23 @@
 # text, a bundle with no parser in it, and a broken post that is a failed
 # build rather than a blank page.
 #
-# THE ONE THING THAT IS NOT PORTABLE. MDX lets a post embed a React
-# component, and nothing here can. Every file in `content/` is plain
-# markdown today — checked, not assumed — so nothing is lost yet. The day
-# a post wants an interactive chart, that post needs a `component` in this
-# language and a way to name it from the file, and neither exists.
+# THE ONE THING THAT IS NOT PORTABLE, AND WHAT IS BEING DONE ABOUT IT.
+# MDX lets a post embed a React component, and nothing here can yet. Every
+# file in `content/` is plain markdown today — checked, not assumed — so
+# nothing is lost.
+#
+# The design is settled and written down in zdeceptron#305: a post stops
+# being one `Markup` and becomes a *list of parts*, each either a run of
+# prose or a named widget, so the document is an ordinary `each` and no
+# parsed subtree ever shares a parent with a templated one. That last
+# clause is the whole difficulty — it is why `Prose` has no children and
+# cannot grow them, and it is why the answer is a list rather than an
+# escape hatch inside the markup.
+#
+# The widget set is closed and the *program* declares it, so a post naming
+# something the program does not offer is a failed build rather than a
+# blank space. That is a stronger bargain than MDX makes, where an import
+# inside a content file can reach anything on disk.
 
 use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
 use "./rings" for trunkOutlines,
