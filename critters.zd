@@ -805,3 +805,813 @@ function critterCreatureCells with grid, mark, left, top, step, index, taken
                         fallback is 0)) * step))),
             wide is (critterCeil of step),
             tall is (critterCeil of step))
+
+# --- levelling and evolution ------------------------------------------------
+#
+# `src/lib/terminal/critters.ts`. Levels never cap but power effectively
+# tops out at 99: growth compounds smoothly from one times base to a
+# hundred times across the climb — three-digit stats at the top — and then
+# flattens to a crawl. Wilds ride the same curve at your own ceiling, so a
+# maxed team still gets real fights instead of one-shot deletions.
+#
+# THE EVOLUTION THRESHOLDS ARE TWO FIELDS AND NOT A PAIR. The original
+# carries `EvolveAt = [number, number]` and reads it as `evolveAt[0]` and
+# `evolveAt[1]`, which is a record with the field names left out. There is
+# a `Pair` here and it would fit, but `first` and `second` say less at the
+# call site than `evolveEarly` and `evolveLate` do, and the whole reason
+# this game rolls them per individual is that the two numbers mean
+# different things.
+
+record CritterGrowth
+    level       is Whole
+    xp          is Whole
+    evolveEarly is Whole
+    evolveLate  is Whole
+
+record CritterStats
+    maxHp  is Whole
+    attack is Whole
+    speed  is Whole
+
+# The fallback schedule, for a critter that predates the roll.
+function critterDefaultGrowth
+    give CritterGrowth with level is 1, xp is 0, evolveEarly is 20, evolveLate is 45
+
+# Every individual rolls its own evolution levels the day it is caught:
+# infancy ends somewhere in 15-24, the final form lands somewhere in
+# 40-60. Your rambit and someone else's will not grow up on the same
+# schedule, which is the point of rolling it at all.
+function critterRolledGrowth of seed
+    give CritterGrowth with level is 1,
+        xp is 0,
+        evolveEarly is (15 + (critterRoll with seed is seed, bound is 10)),
+        evolveLate is (40 + (critterRoll with seed is (nextSeed of seed), bound is 21))
+
+function critterStageOf with growth, level
+    if level > (growth.evolveLate - 1)
+        give 3
+    if level > (growth.evolveEarly - 1)
+        give 2
+    give 1
+
+# Evolved names, terminal style: rambit → rambit+ → rambit++
+function critterDisplayName with name, stage
+    if stage is 3
+        give name + "++"
+    if stage is 2
+        give name + "+"
+    give name
+
+# XP to climb from `level`: 52, 64, 76 … roughly four to eight wins a
+# level.
+function critterXpToNext of level
+    give 40 + (level * 12)
+
+# Compounding growth: about 4.8% a level, tuned so level 99 lands at
+# exactly a hundred times base. Past 99 it collapses to a crawl — levels
+# never cap, power effectively does.
+function critterGrowthMult of level
+    with climbing is (max with first is level, second is 1)
+    if climbing > 99
+        give 100.0 * (1.0 + (0.001 * (decimalOf of (climbing - 99))))
+    give valueOr with maybe is (
+        power with value is 100.0,
+        exponent is (decimalOf of (climbing - 1)) / 98.0),
+        fallback is 1.0
+
+# Each evolution stage adds a modest multiplier on top of level growth.
+function critterStageMult of stage
+    if stage is 3
+        give 1.3
+    if stage is 2
+        give 1.15
+    give 1.0
+
+function critterStatsFor with critter, level, stage
+    with climbing is (max with first is level, second is 1)
+    with mult is ((critterGrowthMult of climbing) * (critterStageMult of stage))
+    give CritterStats with maxHp is (
+        critterRound of ((decimalOf of critter.maxHp) * mult)),
+        attack is (critterRound of ((decimalOf of critter.attack) * mult)),
+        # Speed creeps gently and tops out: turn order should never be a
+        # foregone conclusion at high level.
+        speed is ((critter.speed + (
+            min with first is 8,
+            second is (
+                valueOr with maybe is (quotient with value is climbing, divisor is 15),
+                fallback is 0))) + (stage - 1))
+
+# --- the league -------------------------------------------------------------
+#
+# Eight fixed leaders with escalating teams of three. Beat one for its
+# badge; each badge unlocks the next. The teams are drawn from the roster
+# by an arithmetic stride rather than a roll, so the league is the same
+# league for every reader — which is what makes "the third gym is hard"
+# a thing two people can agree about.
+
+record CritterGymMon
+    critter is Critter
+    level   is Whole
+
+record CritterGymLeader
+    name  is Text
+    badge is Text
+    team  is List of CritterGymMon
+
+state critterLeaderNames is static List of Text starting [
+    "the linter", "the compiler", "merge queen", "kernel monk",
+    "gc reaper", "the profiler", "oncall prime", "the architect"]
+
+state critterBadgeNames is static List of Text starting [
+    "lint badge", "build badge", "merge badge", "kernel badge",
+    "heap badge", "perf badge", "uptime badge", "design badge"]
+
+state critterGymCount is static Whole from listLength of critterLeaderNames
+
+state critterGyms is static List of CritterGymLeader from critterGymsFrom with index is 0,
+    taken is empty
+
+function critterGymsFrom with index, taken
+    if index is critterGymCount
+        give taken
+    give critterGymsFrom with index is index + 1,
+        taken is (append (
+            CritterGymLeader with name is (
+                critterTextAt with items is critterLeaderNames, index is index, fallback is ""),
+            badge is (
+                critterTextAt with items is critterBadgeNames, index is index, fallback is ""),
+            team is (critterTeamFrom with leader is index, slot is 0, taken is empty)) to taken)
+
+# gym 1 runs 10-14, gym 8 runs 66-70.
+function critterTeamFrom with leader, slot, taken
+    if slot is 3
+        give taken
+    give critterTeamFrom with leader is leader,
+        slot is slot + 1,
+        taken is (append (
+            CritterGymMon with critter is (
+                critterAt of (
+                    valueOr with maybe is (
+                        mod with value is ((leader * 41) + (slot * 97)) + 23,
+                        divisor is critterRosterSize),
+                    fallback is 0)),
+            level is (10 + (leader * 8)) + (slot * 2)) to taken)
+
+function critterLeaderAt of index
+    give valueOr with maybe is (listAt with value is critterGyms, index is index),
+        fallback is (CritterGymLeader with name is "", badge is "", team is empty)
+
+function critterGymMonAt with leader, slot
+    give valueOr with maybe is (listAt with value is leader.team, index is slot),
+        fallback is (CritterGymMon with critter is (critterAt of 0), level is 1)
+
+# --- what a hunt is ---------------------------------------------------------
+#
+# `CritterState` in the original, with `Encounter | null` and
+# `Ally | null` and `GymProgress | null` written as `Option of`, which is
+# what those three unions are. A `null` you have to remember to test is
+# the whole of what `Option` removes.
+#
+# THE SEED IS A FIELD. The original takes an `rng: Rng` parameter and
+# hands it `Math.random`. There is no such thing here — a draw is a pure
+# function of a seed the program owns — so the seed rides in the state
+# with everything else and every helper that draws hands back a state
+# whose seed has moved. `codebreak.zd` makes the same move for the same
+# reason; the difference is only that a hunt draws in nine places rather
+# than one, which is why the internal helpers below all give back a
+# record rather than a number.
+
+record CritterFoe
+    critter is Critter
+    level   is Whole
+    # This individual's evolution stage, from its own rolled thresholds.
+    stage   is Whole
+    # Stats at that level and stage, worked out once when the encounter
+    # starts rather than on every read.
+    maxHp   is Whole
+    attack  is Whole
+    speed   is Whole
+    hp      is Whole
+    # Patience: waiting raises calm, which improves catch odds and raises
+    # the chance it bolts.
+    calm    is Whole
+    # Rare alternate palette. A lucky find.
+    shiny   is Truth
+    # The gym leader this critter belongs to, or "" for a wild one. The
+    # original's `trainer?: string`, as the empty text — `terminal.zd`
+    # already spells "no game is up" as `overlay is ""` and an `Option of
+    # Text` here would only add a `when` to every read of a name that is
+    # a name or is nothing.
+    trainer is Text
+
+# The critter you sent out to fight for you. Stats come from the species
+# and the growth, so only the name and the hit points live here.
+record CritterAlly
+    name is Text
+    hp   is Whole
+
+record CritterMatch
+    leader is Whole
+    slot   is Whole
+
+record CritterHunt
+    foe     is Option of CritterFoe
+    caught  is List of Text
+    stamina is Whole
+    ally    is Option of CritterAlly
+    # Per-encounter hit points of benched or fainted teammates.
+    benchHp is Map of Text to Whole
+    # Persistent level, xp and evolution schedule per caught critter.
+    growth  is Map of Text to CritterGrowth
+    # Badges earned. Leader i is beaten exactly when `badges > i`.
+    badges  is Whole
+    gym     is Option of CritterMatch
+    seed    is Whole
+
+# What a move gives back: the state after it, what it printed, and
+# whether the game is over. `Round` in `codebreak.zd`, `Reply` in
+# `lexer.zd`, `Move` in `trader.zd` — the shape every game in this
+# terminal already has.
+record CritterTurn
+    game    is CritterHunt
+    printed is List of Text
+    done    is Truth
+
+# The same three fields, for the helpers *inside* a move. `ended` is the
+# original's `'ok' | 'ended'`: an exchange that collapsed the encounter,
+# after which the caller returns rather than taking its own swing.
+record CritterBeat
+    game    is CritterHunt
+    printed is List of Text
+    ended   is Truth
+
+state critterMaxStamina is static Whole starting 20
+state critterPlayerSpeed is static Whole starting 11
+state critterPlayerPunch is static Whole starting 3
+state critterShinyChance is static Decimal starting 0.025
+state critterCalmBonus is static Decimal starting 0.08
+state critterFleeOnWait is static Decimal starting 0.3
+
+# Rarity multiplier on catch difficulty: legendaries resist the net.
+function critterRarityResist of rarity
+    if rarity is 3
+        give 0.5
+    if rarity is 2
+        give 0.75
+    give 1.0
+
+function critterNewHunt with caught, growth, badges, seed
+    give CritterHunt with foe is None,
+        caught is (withoutDuplicates of caught),
+        stamina is critterMaxStamina,
+        ally is None,
+        benchHp is empty,
+        growth is growth,
+        badges is badges,
+        gym is None,
+        seed is seed
+
+# --- one field at a time ----------------------------------------------------
+#
+# Nine fields, and a move touches two or three of them. `mines.zd` writes
+# its ten out at every change and that reads fine at eight sites; a hunt
+# changes state in about thirty places, and thirty nine-line
+# reconstructions would bury the rules under the bookkeeping. So each
+# field gets a setter and a move composes them. They are all the same
+# four lines and none of them is interesting, which is the argument for
+# writing them once.
+
+function critterWithFoe with game, foe
+    give CritterHunt with foe is foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithAlly with game, ally
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithCaught with game, caught
+    give CritterHunt with foe is game.foe,
+        caught is caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithStamina with game, stamina
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithBench with game, benchHp
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithGrowth with game, growth
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithBadges with game, badges
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is badges,
+        gym is game.gym,
+        seed is game.seed
+
+function critterWithGym with game, gym
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is gym,
+        seed is game.seed
+
+function critterWithSeed with game, seed
+    give CritterHunt with foe is game.foe,
+        caught is game.caught,
+        stamina is game.stamina,
+        ally is game.ally,
+        benchHp is game.benchHp,
+        growth is game.growth,
+        badges is game.badges,
+        gym is game.gym,
+        seed is seed
+
+# One draw spent. Every helper that reads `randomDecimal of game.seed`
+# calls this on the way out, so a draw that is used and not advanced is
+# not a mistake this file can make in more than one place.
+function critterDrew of game
+    give critterWithSeed with game is game, seed is (nextSeed of game.seed)
+
+# The encounter is over and the field is clear: no foe, no critter out,
+# stamina back. Three of the original's endings write exactly this.
+function critterCleared of game
+    give critterWithAlly with game is (
+        critterWithStamina with game is (critterWithFoe with game is game, foe is None),
+        stamina is critterMaxStamina),
+        ally is None
+
+# --- reading a team ---------------------------------------------------------
+
+function critterGrowthOf with game, name
+    give valueOr with maybe is (mapAt with value is game.growth, key is name),
+        fallback is (critterDefaultGrowth)
+
+function critterLevelOf with game, name
+    give (critterGrowthOf with game is game, name is name).level
+
+function critterStageOfName with game, name
+    with growth is (critterGrowthOf with game is game, name is name)
+    give critterStageOf with growth is growth, level is growth.level
+
+function critterStatsOfName with game, name
+    give critterStatsFor with critter is (critterByName of name),
+        level is (critterLevelOf with game is game, name is name),
+        stage is (critterStageOfName with game is game, name is name)
+
+function critterShownName with game, name
+    give critterDisplayName with name is name,
+        stage is (critterStageOfName with game is game, name is name)
+
+# A benched critter keeps the hit points it walked off the field with;
+# one that has not been out yet is at full.
+function critterBenchHpOf with game, name
+    give valueOr with maybe is (mapAt with value is game.benchHp, key is name),
+        fallback is (critterStatsOfName with game is game, name is name).maxHp
+
+# The first caught teammate still standing this encounter, or "" for
+# nobody. `exclude` is the one that just fainted, which is still in
+# `caught` and must not be sent straight back out.
+function critterNextHealthy with game, exclude
+    give critterHealthyFrom with game is game, exclude is exclude, index is 0
+
+function critterHealthyFrom with game, exclude, index
+    if index is (listLength of game.caught)
+        give ""
+    with name is (critterTextAt with items is game.caught, index is index, fallback is "")
+    if (name is exclude) or (not (critterKnown of name))
+        give critterHealthyFrom with game is game, exclude is exclude, index is index + 1
+    if (critterBenchHpOf with game is game, name is name) > 0
+        give name
+    give critterHealthyFrom with game is game, exclude is exclude, index is index + 1
+
+function critterSendOut with game, name, printed
+    if not (critterKnown of name)
+        give CritterBeat with game is game, printed is printed, ended is no
+    with stats is (critterStatsOfName with game is game, name is name)
+    with hp is (critterBenchHpOf with game is game, name is name)
+    give CritterBeat with game is (
+        critterWithAlly with game is game,
+        ally is (Some with value is (CritterAlly with name is name, hp is hp))),
+        printed is (append "go, " + (critterShownName with game is game, name is name) + "! (lv " + (
+            text of (critterLevelOf with game is game, name is name)) + " · " + (
+            text of hp) + "/" + (text of stats.maxHp) + " hp · spd " + (
+            text of stats.speed) + ")" to printed),
+        ended is no
+
+# Speed and attack of whoever is fighting on your side right now — the
+# critter that is out, or your own fists.
+function critterMySpeed of game
+    when game.ally
+        None
+            give critterPlayerSpeed
+        Some with ally
+            if not (critterKnown of ally.name)
+                give critterPlayerSpeed
+            give (critterStatsOfName with game is game, name is ally.name).speed
+
+function critterMyAttack of game
+    when game.ally
+        None
+            give critterPlayerPunch
+        Some with ally
+            if not (critterKnown of ally.name)
+                give critterPlayerPunch
+            give (critterStatsOfName with game is game, name is ally.name).attack
+
+# Ten segments. The count is clamped at both ends rather than only at
+# zero: `repeat` gives "" for a count below one, so a bar that overran
+# would silently lose its right-hand end instead of drawing eleven cells,
+# and clamping says which it is.
+function critterHpBar of foe
+    with lit is (
+        clamp with value is (
+            critterRound of (((decimalOf of foe.hp) / (decimalOf of foe.maxHp)) * 10.0)),
+        low is 0,
+        high is 10)
+    give "[" + (repeat with value is "#", count is lit) + (
+        repeat with value is "-",
+        count is 10 - lit) + "] " + (
+        text of (max with first is 0, second is foe.hp)) + "/" + (text of foe.maxHp)
+
+function critterStatusLine of game
+    when game.foe
+        None
+            give ""
+        Some with foe
+            when game.ally
+                None
+                    give "  " + (critterHpBar of foe) + "   your stamina: " + (
+                        text of game.stamina) + "/" + (text of critterMaxStamina)
+                Some with ally
+                    give "  " + (critterHpBar of foe) + "   " + ally.name + ": " + (
+                        text of ally.hp) + "/" + (
+                        text of (critterStatsOfName with game is game, name is ally.name).maxHp)
+
+# What a beaten or netted critter is worth. Wilds pay modestly; gym
+# critters pay by the same formula but run at much higher levels, which
+# is the whole of why a badge run is also a training run.
+function critterXpFrom of foe
+    give (6 + (foe.critter.rarity * 4)) + (foe.level * 3)
+
+# Catch odds: worn down, calm and common is easy; a full-health legendary
+# is near hopeless.
+function critterCatchOdds of foe
+    with wounded is (1.0 - ((decimalOf of foe.hp) / (decimalOf of foe.maxHp)))
+    give min with first is 0.95,
+        second is (((0.08 + (wounded * 0.72)) + ((decimalOf of foe.calm) * critterCalmBonus)) * (
+            critterRarityResist of foe.critter.rarity))
+
+# --- experience -------------------------------------------------------------
+#
+# Awarded to whoever is out. Bare-knuckle victories build character, not
+# levels, which is the original's joke and also the rule: a trainer with
+# no critters cannot grind.
+
+function critterGainXp with game, amount, printed
+    when game.ally
+        None
+            give CritterBeat with game is game, printed is printed, ended is no
+        Some with ally
+            if not (critterKnown of ally.name)
+                give CritterBeat with game is game, printed is printed, ended is no
+            with growth is (critterGrowthOf with game is game, name is ally.name)
+            give critterLevelUps with game is game,
+                name is ally.name,
+                growth is (
+                    CritterGrowth with level is growth.level,
+                    xp is growth.xp + amount,
+                    evolveEarly is growth.evolveEarly,
+                    evolveLate is growth.evolveLate),
+                printed is (append ally.name + " gains " + (text of amount) + " xp." to printed)
+
+# The original's `while (xp >= xpToNext(level))`, as the recursion it is.
+# No cap: the curve just keeps flattening.
+function critterLevelUps with game, name, growth, printed
+    if growth.xp < (critterXpToNext of growth.level)
+        give CritterBeat with game is (
+            critterWithGrowth with game is game,
+            growth is (set name to growth in game.growth)),
+            printed is printed,
+            ended is no
+    with grown is (
+        CritterGrowth with level is growth.level + 1,
+        xp is growth.xp - (critterXpToNext of growth.level),
+        evolveEarly is growth.evolveEarly,
+        evolveLate is growth.evolveLate)
+    with wasStage is (critterStageOf with growth is growth, level is growth.level)
+    with nowStage is (critterStageOf with growth is growth, level is grown.level)
+    with wasStats is (
+        critterStatsFor with critter is (critterByName of name),
+        level is growth.level,
+        stage is wasStage)
+    with nowStats is (
+        critterStatsFor with critter is (critterByName of name),
+        level is grown.level,
+        stage is nowStage)
+    give critterLevelUps with game is (
+        critterHealedBy with game is game, name is name, gain is nowStats.maxHp - wasStats.maxHp),
+        name is name,
+        growth is grown,
+        printed is (append name + " grew to lv " + (text of grown.level) + "! (+" + (
+            text of (nowStats.maxHp - wasStats.maxHp)) + " hp, +" + (
+            text of (nowStats.attack - wasStats.attack)) + " atk" + (
+            ", +1 spd" if nowStats.speed > wasStats.speed otherwise "") + ")" to (
+            critterEvolutionNote with printed is printed,
+            name is name,
+            wasStage is wasStage,
+            nowStage is nowStage))
+
+function critterEvolutionNote with printed, name, wasStage, nowStage
+    if nowStage > wasStage
+        give append "✦ " + name + " evolved into " + (
+            critterDisplayName with name is name, stage is nowStage) + "! ✦" to printed
+    give printed
+
+# Growing heals: current hit points rise along with the new maximum, so a
+# level-up mid-battle is a reprieve rather than only a bigger number.
+function critterHealedBy with game, name, gain
+    when game.ally
+        None
+            give game
+        Some with ally
+            if not (ally.name is name)
+                give game
+            give critterWithAlly with game is game,
+                ally is (Some with value is (
+                    CritterAlly with name is ally.name,
+                    hp is ally.hp + gain))
+
+# --- an exchange ------------------------------------------------------------
+#
+# Two functions, and between them the whole of a fight. Each spends
+# exactly one draw, which is why each takes the state in and gives it
+# back rather than reading a seed from somewhere: the damage roll and the
+# seed that produced it cannot come apart.
+
+# The opposing critter attacks your side. It hits the critter you have
+# out if you have one — a fainted one is replaced on the spot — and
+# otherwise drains your stamina. `ended` when the encounter collapses,
+# which for this half means the trainer went down bare-handed.
+function critterWildStrikes with game, printed
+    when game.foe
+        None
+            give CritterBeat with game is game, printed is printed, ended is no
+        Some with foe
+            with dmg is (
+                max with first is 1,
+                second is (
+                    critterRound of ((decimalOf of foe.attack) * (
+                        0.6 + ((randomDecimal of game.seed) * 0.8)))))
+            with spent is (critterDrew of game)
+            when spent.ally
+                None
+                    give critterWildStrikesTrainer with game is spent,
+                        foe is foe,
+                        dmg is dmg,
+                        printed is printed
+                Some with ally
+                    give critterWildStrikesAlly with game is spent,
+                        foe is foe,
+                        ally is ally,
+                        dmg is dmg,
+                        printed is printed
+
+function critterWildStrikesAlly with game, foe, ally, dmg, printed
+    with wounded is (
+        critterWithAlly with game is game,
+        ally is (Some with value is (CritterAlly with name is ally.name, hp is ally.hp - dmg)))
+    with said is (append "the " + ("" if not (foe.trainer is "") otherwise "wild ") + (
+        foe.critter.name) + " hits " + ally.name + " for " + (text of dmg) + "." to printed)
+    if (ally.hp - dmg) > 0
+        give CritterBeat with game is wounded, printed is said, ended is no
+    # A fainted teammate is benched at zero so `nextHealthy` will skip it
+    # for the rest of the encounter, and the next one steps up without
+    # costing you a turn.
+    with fainted is (
+        critterWithAlly with game is (
+            critterWithBench with game is wounded,
+            benchHp is (set ally.name to 0 in wounded.benchHp)),
+        ally is None)
+    with cried is (append ally.name + " faints!" to said)
+    with standing is (critterNextHealthy with game is fainted, exclude is ally.name)
+    if standing is ""
+        give CritterBeat with game is fainted,
+            printed is (append "no critters left standing. bare knuckles, then." to cried),
+            ended is no
+    give critterSendOut with game is fainted, name is standing, printed is cried
+
+function critterWildStrikesTrainer with game, foe, dmg, printed
+    with drained is (
+        critterWithStamina with game is game,
+        stamina is game.stamina - dmg)
+    with said is (append "the " + foe.critter.name + " hits you for " + (
+        text of dmg) + "." to printed)
+    if drained.stamina > 0
+        give CritterBeat with game is drained, printed is said, ended is no
+    with reset is (
+        critterWithFoe with game is (
+            critterWithStamina with game is drained,
+            stamina is critterMaxStamina),
+        foe is None)
+    when reset.gym
+        None
+            give CritterBeat with game is reset,
+                printed is (append "you faint. the " + foe.critter.name + (
+                    " slips away. (stamina restored)") to said),
+                ended is yes
+        Some with match
+            give CritterBeat with game is (critterWithGym with game is reset, gym is None),
+                printed is (append "you black out. no badge this time." to said),
+                ended is yes
+
+# Your side attacks. `ended` when the opposing critter goes down, which
+# either advances a gym match or clears the field.
+function critterAllyStrikes with game, printed
+    when game.foe
+        None
+            give CritterBeat with game is game, printed is printed, ended is no
+        Some with foe
+            with dmg is (
+                max with first is 1,
+                second is (
+                    critterRound of ((decimalOf of (critterMyAttack of game)) * (
+                        0.7 + ((randomDecimal of game.seed) * 0.9)))))
+            give critterAllyStruck with game is (critterDrew of game),
+                foe is foe,
+                dmg is dmg,
+                printed is (append (
+                    critterStrikerLine with game is game,
+                    foe is foe,
+                    dmg is dmg) to printed)
+
+function critterStrikerLine with game, foe, dmg
+    when game.ally
+        None
+            give "you punch the " + foe.critter.name + " for " + (text of dmg) + "."
+        Some with ally
+            give ally.name + " strikes the " + foe.critter.name + " for " + (text of dmg) + "."
+
+function critterAllyStruck with game, foe, dmg, printed
+    with hit is (
+        CritterFoe with critter is foe.critter,
+        level is foe.level,
+        stage is foe.stage,
+        maxHp is foe.maxHp,
+        attack is foe.attack,
+        speed is foe.speed,
+        hp is foe.hp - dmg,
+        calm is foe.calm,
+        shiny is foe.shiny,
+        trainer is foe.trainer)
+    with struck is (critterWithFoe with game is game, foe is (Some with value is hit))
+    if hit.hp > 0
+        if (hit.hp < 3) and (hit.trainer is "")
+            give CritterBeat with game is struck,
+                printed is (append "the " + foe.critter.name + (
+                    " is barely conscious. net it now!") to printed),
+                ended is no
+        give CritterBeat with game is struck, printed is printed, ended is no
+    with inGym is ((isSome of game.gym) and (not (foe.trainer is "")))
+    with told is (append "the " + foe.critter.name + " faints" + (
+        "." if inGym otherwise " and slips away.") to printed)
+    with rewarded is (
+        critterGainXp with game is struck,
+        amount is (critterXpFrom of hit),
+        printed is (told if inGym otherwise (
+            append "(net it BEFORE it faints next time.)" to told)))
+    if inGym
+        give critterAdvanceGym with game is rewarded.game, printed is rewarded.printed
+    give CritterBeat with game is (critterCleared of rewarded.game),
+        printed is rewarded.printed,
+        ended is yes
+
+# --- the league, in progress ------------------------------------------------
+
+function critterSpawnGymMon with game, printed
+    when game.gym
+        None
+            give CritterBeat with game is game, printed is printed, ended is no
+        Some with match
+            with leader is (critterLeaderAt of match.leader)
+            with mon is (critterGymMonAt with leader is leader, slot is match.slot)
+            # A gym critter's stage comes off the default schedule rather
+            # than a rolled one: the league is meant to be the same league
+            # for everybody, and a leader whose ace was sometimes evolved
+            # and sometimes not is a different fight on two machines.
+            with stage is (
+                critterStageOf with growth is (critterDefaultGrowth),
+                level is mon.level)
+            with stats is (
+                critterStatsFor with critter is mon.critter,
+                level is mon.level,
+                stage is stage)
+            give CritterBeat with game is (
+                critterWithFoe with game is game,
+                foe is (Some with value is (
+                    CritterFoe with critter is mon.critter,
+                    level is mon.level,
+                    stage is stage,
+                    maxHp is stats.maxHp,
+                    attack is stats.attack,
+                    speed is stats.speed,
+                    hp is stats.maxHp,
+                    calm is 0,
+                    shiny is no,
+                    trainer is leader.name))),
+                printed is (append leader.name + " sends out " + (
+                    critterDisplayName with name is mon.critter.name,
+                    stage is stage) + " (lv " + (text of mon.level) + ")." to printed),
+                ended is no
+
+# A gym critter went down: send in the next one, or award the badge and
+# clear the field.
+function critterAdvanceGym with game, printed
+    when game.gym
+        None
+            give CritterBeat with game is game, printed is printed, ended is yes
+        Some with match
+            with leader is (critterLeaderAt of match.leader)
+            if (match.slot + 1) < (listLength of leader.team)
+                with sent is (
+                    critterSpawnGymMon with game is (
+                        critterWithGym with game is game,
+                        gym is (Some with value is (
+                            CritterMatch with leader is match.leader,
+                            slot is match.slot + 1))),
+                    printed is printed)
+                give CritterBeat with game is sent.game, printed is sent.printed, ended is yes
+            with badges is (max with first is game.badges, second is match.leader + 1)
+            give CritterBeat with game is (
+                critterWithGym with game is (
+                    critterWithBench with game is (
+                        critterCleared of (
+                            critterWithBadges with game is game,
+                            badges is badges)),
+                    benchHp is empty),
+                gym is None),
+                printed is (
+                    critterLeagueNote with printed is (
+                        append "★ " + leader.name + " concedes. the " + leader.badge + (
+                            " is yours! (") + (text of badges) + "/" + (
+                            text of critterGymCount) + ")" to printed),
+                    badges is badges),
+                ended is yes
+
+function critterLeagueNote with printed, badges
+    if badges < critterGymCount
+        give append "next when you are ready: " + (critterLeaderAt of badges).name + "." to printed
+    give append "all eight badges. the terminal league is yours." to printed
