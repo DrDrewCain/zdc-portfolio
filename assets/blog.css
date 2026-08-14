@@ -378,7 +378,7 @@ body:has(.term) {
  * not the page. A board that sized itself from `vh` overflowed the panel
  * it lives in and scrolled the scrollback out from under itself; these cap
  * it at whatever the terminal body actually has, which is the only number
- * that is true at every window size. */
+ * that is true at every window size.
  *
  * `width`, not `max-width`. A maximum is not a size: an `align-self:
  * center` item in a column shrinks to fit its contents, and the drawing
