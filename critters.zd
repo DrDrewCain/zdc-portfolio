@@ -1615,3 +1615,615 @@ function critterLeagueNote with printed, badges
     if badges < critterGymCount
         give append "next when you are ready: " + (critterLeaderAt of badges).name + "." to printed
     give append "all eight badges. the terminal league is yours." to printed
+
+# --- choosing a wild critter ------------------------------------------------
+#
+# The original filters the roster down to what you have not caught and
+# indexes the filtered array. That allocates three hundred entries on
+# every rustle of a bush; counting the uncaught and then walking to the
+# nth is the same draw and the same answer without the list. Falling back
+# to the whole roster once you have caught everything is the original's
+# rule and the reason a completed dex still has something in the grass.
+
+function critterUncaughtCount with game, index, running
+    if index is critterRosterSize
+        give running
+    if listContains with items is game.caught, value is (critterAt of index).name
+        give critterUncaughtCount with game is game, index is index + 1, running is running
+    give critterUncaughtCount with game is game, index is index + 1, running is running + 1
+
+function critterUncaughtAt with game, wanted, index
+    if index is critterRosterSize
+        give 0
+    if listContains with items is game.caught, value is (critterAt of index).name
+        give critterUncaughtAt with game is game, wanted is wanted, index is index + 1
+    if wanted is 0
+        give index
+    give critterUncaughtAt with game is game, wanted is wanted - 1, index is index + 1
+
+function critterPickWild of game
+    with pool is (critterUncaughtCount with game is game, index is 0, running is 0)
+    if pool is 0
+        give critterRoll with seed is game.seed, bound is critterRosterSize
+    give critterUncaughtAt with game is game,
+        wanted is (critterRoll with seed is game.seed, bound is pool),
+        index is 0
+
+# Your strongest critter's level, which is the ceiling the grass produces
+# at. One, when you have nothing.
+function critterStrongest of game
+    give critterStrongestFrom with game is game, index is 0, best is 1
+
+function critterStrongestFrom with game, index, best
+    if index is (listLength of game.caught)
+        give best
+    give critterStrongestFrom with game is game,
+        index is index + 1,
+        best is (
+            max with first is best,
+            second is (
+                critterLevelOf with game is game,
+                name is (critterTextAt with items is game.caught, index is index, fallback is "")))
+
+# --- hunt -------------------------------------------------------------------
+
+function critterHuntFor with game, arg
+    when game.gym
+        None
+            when game.foe
+                None
+                    give critterHuntFresh with game is game, arg is arg
+                Some with foe
+                    give CritterTurn with game is game,
+                        printed is ["you are already facing a " + foe.critter.name],
+                        done is no
+        Some with match
+            give CritterTurn with game is game,
+                printed is ["mid-challenge. fight, swap, or run."],
+                done is no
+
+# FIVE DRAWS, IN THIS ORDER: which critter, whether it is shiny, how far
+# below the ceiling its level falls, and the two that roll its personal
+# evolution schedule. The order is the original's and the count is why
+# `critterSeedAfter … draws is 5` is what the encounter's state carries
+# forward.
+function critterHuntFresh with game, arg
+    with critter is (critterAt of (critterPickWild of game))
+    with shiny is ((randomDecimal of (nextSeed of game.seed)) < critterShinyChance)
+    # Hot regions push the ceiling a few levels above your strongest, and
+    # the draw comes from a window just under it so encounters stay
+    # relevant instead of arriving as fodder.
+    with ceiling is ((critterStrongest of game) + (
+        clamp with value is (valueOr with maybe is (parseWhole of arg), fallback is 0),
+        low is 0,
+        high is 6))
+    with wildLevel is (
+        max with first is 1,
+        second is (ceiling - (
+            critterRoll with seed is (critterSeedAfter with seed is game.seed, draws is 2),
+            bound is (min with first is ceiling, second is 8))))
+    with rolled is (
+        critterRolledGrowth of (critterSeedAfter with seed is game.seed, draws is 3))
+    with stage is (critterStageOf with growth is rolled, level is wildLevel)
+    with stats is (
+        critterStatsFor with critter is critter,
+        level is wildLevel,
+        stage is stage)
+    with sighted is (
+        critterWithFoe with game is (
+            critterWithSeed with game is game,
+            seed is (critterSeedAfter with seed is game.seed, draws is 5)),
+        foe is (Some with value is (
+            CritterFoe with critter is critter,
+            level is wildLevel,
+            stage is stage,
+            maxHp is stats.maxHp,
+            attack is stats.attack,
+            speed is stats.speed,
+            hp is stats.maxHp,
+            calm is 0,
+            shiny is shiny,
+            trainer is "")))
+    with ready is (
+        critterWithAlly with game is (
+            critterWithBench with game is (
+                critterWithStamina with game is sighted,
+                stamina is critterMaxStamina),
+            benchHp is empty),
+        ally is None)
+    # `critterSendOut` declines for a name no species answers to, and ""
+    # is such a name, so an empty team needs no branch here.
+    with sent is (
+        critterSendOut with game is ready,
+        name is (critterNextHealthy with game is ready, exclude is ""),
+        printed is (
+            append "  (" + critter.blurb + ")" to (
+                append "a wild " + (
+                    critterDisplayName with name is critter.name,
+                    stage is stage) + " appears! [lv " + (text of wildLevel) + " " + (
+                    repeat with value is "*", count is critter.rarity) + "]" + (
+                    " LEGENDARY" if critter.rarity is 3 otherwise "") + (
+                    " ✦SHINY✦" if shiny otherwise "") to empty)))
+    with squared is (append "  spd " + (text of stats.speed) + " vs your " + (
+        text of (critterMySpeed of sent.game)) to sent.printed)
+    # A faster wild critter ambushes before your side can react.
+    if stats.speed > (critterMySpeed of sent.game)
+        give critterTurnOf with beat is (
+            critterWildStrikes with game is sent.game,
+            printed is (append "the quick " + critter.name + " ambushes!" to squared))
+    give CritterTurn with game is sent.game,
+        printed is (append (critterStatusLine of sent.game) to squared),
+        done is no
+
+# A beat that ended prints nothing further; one that did not gets the
+# status line under it. Six of the moves below finish exactly this way.
+function critterTurnOf with beat
+    if beat.ended
+        give CritterTurn with game is beat.game, printed is beat.printed, done is no
+    give CritterTurn with game is beat.game,
+        printed is (append (critterStatusLine of beat.game) to beat.printed),
+        done is no
+
+# --- fight ------------------------------------------------------------------
+#
+# Turn order is decided by speed and nothing else. Losing the roll means
+# taking a hit before landing one, which is what makes a fast common
+# worth keeping.
+
+function critterFight of game
+    when game.foe
+        None
+            give CritterTurn with game is game,
+                printed is ["nothing to fight. try: hunt"],
+                done is no
+        Some with foe
+            if foe.speed > (critterMySpeed of game)
+                give critterExchange with game is game,
+                    printed is empty,
+                    theirs is yes
+            give critterExchange with game is game, printed is empty, theirs is no
+
+function critterExchange with game, printed, theirs
+    with opened is (
+        (critterWildStrikes with game is game, printed is printed) if theirs otherwise (
+            critterAllyStrikes with game is game,
+            printed is printed))
+    if opened.ended
+        give CritterTurn with game is opened.game, printed is opened.printed, done is no
+    give critterTurnOf with beat is (
+        (critterAllyStrikes with game is opened.game, printed is opened.printed) if theirs otherwise (
+            critterWildStrikes with game is opened.game,
+            printed is opened.printed))
+
+# --- swap -------------------------------------------------------------------
+#
+# Cycle to the first healthy teammate after the current one, wrapping
+# around. Switching costs the turn, so the opponent gets a free hit —
+# which is what stops swapping being a free heal between attacks.
+
+function critterSwap of game
+    when game.foe
+        None
+            give CritterTurn with game is game,
+                printed is ["nothing to swap against. try: hunt"],
+                done is no
+        Some with foe
+            give critterSwapFrom with game is (critterBenchedCurrent of game),
+                current is (critterCurrentName of game)
+
+function critterCurrentName of game
+    when game.ally
+        None
+            give ""
+        Some with ally
+            give ally.name
+
+function critterBenchedCurrent of game
+    when game.ally
+        None
+            give game
+        Some with ally
+            give critterWithBench with game is game,
+                benchHp is (set ally.name to ally.hp in game.benchHp)
+
+function critterSwapFrom with game, current
+    with start is (0 if current is "" otherwise (
+        (critterIndexOfName with game is game, name is current, index is 0) + 1))
+    with standing is (
+        critterCycled with game is game,
+        current is current,
+        start is start,
+        step is 0)
+    if standing is ""
+        give CritterTurn with game is game, printed is ["no one else can fight."], done is no
+    with sent is (
+        critterSendOut with game is (critterWithAlly with game is game, ally is None),
+        name is standing,
+        printed is empty)
+    give critterTurnOf with beat is (
+        critterWildStrikes with game is sent.game,
+        printed is sent.printed)
+
+function critterIndexOfName with game, name, index
+    if index is (listLength of game.caught)
+        give 0 - 1
+    if (critterTextAt with items is game.caught, index is index, fallback is "") is name
+        give index
+    give critterIndexOfName with game is game, name is name, index is index + 1
+
+function critterCycled with game, current, start, step
+    with total is (listLength of game.caught)
+    if step is total
+        give ""
+    with name is (
+        critterTextAt with items is game.caught,
+        index is (valueOr with maybe is (mod with value is start + step, divisor is total), fallback is 0),
+        fallback is "")
+    if (name is current) or (not (critterKnown of name))
+        give critterCycled with game is game, current is current, start is start, step is step + 1
+    if (critterBenchHpOf with game is game, name is name) > 0
+        give name
+    give critterCycled with game is game, current is current, start is start, step is step + 1
+
+# --- wait -------------------------------------------------------------------
+#
+# Patience is a real bet: a calmer critter is easier to net, and every
+# turn spent waiting is a chance it wanders off. A gym critter does
+# neither — it is being commanded.
+
+function critterWait of game
+    when game.foe
+        None
+            give CritterTurn with game is game, printed is ["nothing here. try: hunt"], done is no
+        Some with foe
+            if not (foe.trainer is "")
+                give CritterTurn with game is game,
+                    printed is [foe.trainer + "'s critter holds formation."],
+                    done is no
+            if (randomDecimal of game.seed) < critterFleeOnWait
+                # Stamina is deliberately *not* restored here. The
+                # original resets it on every other ending and not on
+                # this one, and the difference is the point: a critter
+                # you let wander off leaves you as tired as it found you.
+                give CritterTurn with game is (
+                    critterWithAlly with game is (
+                        critterWithFoe with game is (critterDrew of game),
+                        foe is None),
+                    ally is None),
+                    printed is ["the " + foe.critter.name + " got bored and fled."],
+                    done is no
+            with settled is (
+                CritterFoe with critter is foe.critter,
+                level is foe.level,
+                stage is foe.stage,
+                maxHp is foe.maxHp,
+                attack is foe.attack,
+                speed is foe.speed,
+                hp is foe.hp,
+                calm is (min with first is 3, second is foe.calm + 1),
+                shiny is foe.shiny,
+                trainer is foe.trainer)
+            give CritterTurn with game is (
+                critterWithFoe with game is (critterDrew of game),
+                foe is (Some with value is settled)),
+                printed is ["the " + foe.critter.name + " settles down... (calm " + (
+                    text of settled.calm) + "/3)"],
+                done is no
+
+# --- throw ------------------------------------------------------------------
+
+function critterThrow of game
+    when game.foe
+        None
+            give CritterTurn with game is game,
+                printed is ["nothing to throw at. try: hunt"],
+                done is no
+        Some with foe
+            if not (foe.trainer is "")
+                give CritterTurn with game is game,
+                    printed is ["you can't net another trainer's critter. " + (
+                        foe.trainer) + " glares."],
+                    done is no
+            if (randomDecimal of game.seed) < (critterCatchOdds of foe)
+                give critterCaught with game is (critterDrew of game), foe is foe
+            give critterTurnOf with beat is (
+                critterWildStrikes with game is (critterDrew of game),
+                printed is ["the " + foe.critter.name + " broke free! (catch chance was " + (
+                    text of (critterRound of ((critterCatchOdds of foe) * 100.0))) + "%)"])
+
+# The catch. XP is awarded to whoever is out *before* the field clears,
+# because the critter that wore it down is the one that earned it.
+#
+# THE EVOLUTION ROLL IS CONDITIONAL, AND SO ARE ITS TWO DRAWS. The
+# original writes `s.growth[name] ??= { … rollEvolveLevels(rng) }`, and
+# `??=` does not evaluate its right-hand side when the key is already
+# there. Catching a second rambit therefore spends no draws and leaves
+# the first one's schedule alone, which is what makes the schedule
+# *yours* rather than the most recent catch's.
+function critterCaught with game, foe
+    with rewarded is (
+        critterGainXp with game is game,
+        amount is (critterXpFrom of foe),
+        printed is ["caught the " + foe.critter.name + "! it joins your side at lv 1."])
+    with cleared is (critterCleared of rewarded.game)
+    with listed is (
+        critterWithCaught with game is cleared,
+        caught is (
+            cleared.caught if (
+                listContains with items is cleared.caught,
+                value is foe.critter.name) otherwise (
+                append foe.critter.name to cleared.caught)))
+    with recruited is (critterRecruited with game is listed, name is foe.critter.name)
+    if (listLength of recruited.caught) is critterRosterSize
+        give CritterTurn with game is recruited,
+            printed is (append "all " + (text of critterRosterSize) + (
+                "! the whole terminal is yours now.") to rewarded.printed),
+            done is no
+    give CritterTurn with game is recruited, printed is rewarded.printed, done is no
+
+function critterRecruited with game, name
+    if mapContains with table is game.growth, key is name
+        give game
+    give critterWithSeed with game is (
+        critterWithGrowth with game is game,
+        growth is (set name to (critterRolledGrowth of game.seed) in game.growth)),
+        seed is (critterSeedAfter with seed is game.seed, draws is 2)
+
+# --- the league listing -----------------------------------------------------
+
+function critterLeague of game
+    when game.gym
+        None
+            give CritterTurn with game is game,
+                printed is (
+                    critterLeagueTail with game is game,
+                    printed is (
+                        critterLeagueRows with game is game,
+                        index is 0,
+                        printed is ["the terminal league · badges: " + (
+                            text of game.badges) + "/" + (text of critterGymCount)])),
+                done is no
+        Some with match
+            give CritterTurn with game is game,
+                printed is [
+                    "mid-match vs " + (critterLeaderAt of match.leader).name + ": critter " + (
+                        text of (match.slot + 1)) + " of " + (
+                        text of (listLength of (critterLeaderAt of match.leader).team)) + ".",
+                    critterStatusLine of game],
+                done is no
+
+function critterLeagueRows with game, index, printed
+    if index is critterGymCount
+        give printed
+    with leader is (critterLeaderAt of index)
+    give critterLeagueRows with game is game,
+        index is index + 1,
+        printed is (append "  " + (critterBadgeMark with game is game, index is index) + " " + (
+            padEnd with value is leader.name, width is 14, using is " ") + " lv " + (
+            text of (critterGymMonAt with leader is leader, slot is 0).level) + "-" + (
+            text of (
+                critterGymMonAt with leader is leader,
+                slot is (listLength of leader.team) - 1).level) + "  (" + (
+            leader.badge) + ")" to printed)
+
+function critterBadgeMark with game, index
+    if index < game.badges
+        give "[✓]"
+    if index is game.badges
+        give "[→]"
+    give "[ ]"
+
+function critterLeagueTail with game, printed
+    if game.badges < critterGymCount
+        give append "type \"challenge\" to face " + (
+            critterLeaderAt of game.badges).name + "." to printed
+    give printed
+
+# --- challenge --------------------------------------------------------------
+
+function critterChallenge of game
+    if isSome of game.gym
+        give CritterTurn with game is game,
+            printed is ["you are already mid-challenge. fight!"],
+            done is no
+    if isSome of game.foe
+        give CritterTurn with game is game, printed is ["finish this encounter first."], done is no
+    if not (game.badges < critterGymCount)
+        give CritterTurn with game is game,
+            printed is ["all eight badges already. nothing left to prove."],
+            done is no
+    if (listLength of game.caught) is 0
+        give CritterTurn with game is game,
+            printed is ["gym leaders fight critters, not fists. catch one first."],
+            done is no
+    with leader is (critterLeaderAt of game.badges)
+    with started is (
+        critterWithAlly with game is (
+            critterWithBench with game is (
+                critterWithStamina with game is (
+                    critterWithGym with game is game,
+                    gym is (Some with value is (
+                        CritterMatch with leader is game.badges,
+                        slot is 0))),
+                stamina is critterMaxStamina),
+            benchHp is empty),
+        ally is None)
+    with sent is (
+        critterSendOut with game is started,
+        name is (critterNextHealthy with game is started, exclude is ""),
+        printed is [leader.name + " accepts your challenge. (" + leader.badge + " on the line)"])
+    with spawned is (critterSpawnGymMon with game is sent.game, printed is sent.printed)
+    give CritterTurn with game is spawned.game,
+        printed is (append (critterStatusLine of spawned.game) to spawned.printed),
+        done is no
+
+# --- status, dex, run -------------------------------------------------------
+
+function critterStatus of game
+    when game.foe
+        None
+            give CritterTurn with game is game,
+                printed is [
+                    "stamina: " + (text of game.stamina) + "/" + (
+                        text of critterMaxStamina) + ". no critter in sight.",
+                    "team: " + (critterTeamLine of game),
+                    "badges: " + (text of game.badges) + "/" + (text of critterGymCount)],
+                done is no
+        Some with foe
+            give CritterTurn with game is game,
+                printed is (
+                    critterOwnStatus with game is game,
+                    printed is (
+                        critterOddsLine with game is game,
+                        foe is foe,
+                        printed is [
+                            ("wild" if foe.trainer is "" otherwise foe.trainer + "'s") + " " + (
+                                critterDisplayName with name is foe.critter.name,
+                                stage is foe.stage) + " lv" + (text of foe.level) + "  " + (
+                                critterHpBar of foe) + "  calm " + (text of foe.calm) + "/3"])),
+                done is no
+
+function critterOddsLine with game, foe, printed
+    if foe.trainer is ""
+        give append "catch chance now: " + (
+            text of (critterRound of ((critterCatchOdds of foe) * 100.0))) + "%" to printed
+    give printed
+
+function critterOwnStatus with game, printed
+    when game.ally
+        None
+            give append "your stamina: " + (text of game.stamina) + "/" + (
+                text of critterMaxStamina) + " (bare knuckles)" to printed
+        Some with ally
+            with growth is (critterGrowthOf with game is game, name is ally.name)
+            give append "your " + (
+                critterShownName with game is game,
+                name is ally.name) + " lv" + (text of growth.level) + ": " + (
+                text of ally.hp) + "/" + (
+                text of (critterStatsOfName with game is game, name is ally.name).maxHp) + (
+                " hp · ") + (text of growth.xp) + "/" + (
+                text of (critterXpToNext of growth.level)) + " xp" to printed
+
+# The first six of the roster, which is the order the party screen shows
+# and the order `swap` cycles.
+function critterTeamLine of game
+    if (listLength of game.caught) is 0
+        give "nobody yet"
+    give join with parts is (
+        critterTeamNames with game is game, index is 0, taken is empty),
+        using is ", "
+
+function critterTeamNames with game, index, taken
+    if (index is 6) or (index is (listLength of game.caught))
+        give taken
+    with name is (critterTextAt with items is game.caught, index is index, fallback is "")
+    give critterTeamNames with game is game,
+        index is index + 1,
+        taken is (append (critterShownName with game is game, name is name) + " lv" + (
+            text of (critterLevelOf with game is game, name is name)) to taken)
+
+function critterDex of game
+    give CritterTurn with game is game,
+        printed is (
+            critterDexRows with game is game,
+            index is 0,
+            printed is ["critterdex (" + (text of (listLength of game.caught)) + " caught):"],
+            found is no),
+        done is no
+
+# Walked in roster order rather than catch order, which is what makes a
+# dex a dex: the gaps are where the missing ones go.
+function critterDexRows with game, index, printed, found
+    if index is critterRosterSize
+        if found
+            give printed
+        give append "  nothing caught yet. the grass is full of them." to printed
+    with critter is (critterAt of index)
+    if not (listContains with items is game.caught, value is critter.name)
+        give critterDexRows with game is game,
+            index is index + 1,
+            printed is printed,
+            found is found
+    give critterDexRows with game is game,
+        index is index + 1,
+        printed is (append "  [x] " + (
+            padEnd with value is (
+                critterShownName with game is game,
+                name is critter.name),
+            width is 14,
+            using is " ") + " lv" + (
+            padEnd with value is (
+                text of (critterLevelOf with game is game, name is critter.name)),
+            width is 3,
+            using is " ") + " " + (
+            padEnd with value is (repeat with value is "*", count is critter.rarity),
+            width is 3,
+            using is " ") + " " + critter.blurb to printed),
+        found is yes
+
+function critterRunAway of game
+    if isNone of game.foe
+        give CritterTurn with game is game, printed is ["nothing to run from."], done is no
+    give CritterTurn with game is (
+        critterWithGym with game is (critterCleared of game), gym is None),
+        printed is [
+            "you forfeit the challenge. the badge stays put." if isSome of game.gym otherwise (
+                "you back away slowly.")],
+        done is no
+
+state critterHelpLines is static List of Text starting [
+    "critter commands:",
+    "  hunt       rustle the bushes for a wild critter",
+    "  fight      your critter attacks and earns xp (bare knuckles if you have none)",
+    "  swap       send out your next critter",
+    "  wait       stay still. calmer critters are easier to catch, but may bolt",
+    "  throw      throw the net (works best on a weakened, calm critter)",
+    "  gym        the league: badges earned, who is next",
+    "  challenge  face the next gym leader",
+    "  status     hp, levels, xp",
+    "  dex        your collection",
+    "  run        leave the encounter (forfeits a gym match)",
+    "  quit       back to shell",
+    "goal: catch, train, evolve, take all eight badges."]
+
+# --- one move ---------------------------------------------------------------
+#
+# `stepCritters(state, input, rng) -> {state, output, done}`, which is a
+# record in and a record out and needs no argument for why it fits.
+#
+# A command may carry one argument — `hunt 3` hunts in a danger-3 region —
+# so the line splits on its first space. The original splits on `/\s+/`;
+# `before` and `after` on a single space is the same thing for a line a
+# person typed, and a stray double space gives an argument of "" which
+# `parseWhole` reads as no argument at all.
+
+function critterStep with game, input
+    with raw is (lowercase of (trim of input))
+    if raw is ""
+        give CritterTurn with game is game, printed is empty, done is no
+    with cmd is (before with value is raw, delimiter is " ")
+    if cmd is "hunt"
+        give critterHuntFor with game is game, arg is (after with value is raw, delimiter is " ")
+    if cmd is "fight"
+        give critterFight of game
+    if cmd is "swap"
+        give critterSwap of game
+    if cmd is "wait"
+        give critterWait of game
+    if cmd is "throw"
+        give critterThrow of game
+    if cmd is "gym"
+        give critterLeague of game
+    if cmd is "challenge"
+        give critterChallenge of game
+    if cmd is "status"
+        give critterStatus of game
+    if cmd is "dex"
+        give critterDex of game
+    if cmd is "run"
+        give critterRunAway of game
+    if (cmd is "quit") or (cmd is "exit")
+        give CritterTurn with game is game,
+            printed is ["the bushes go quiet. see you."],
+            done is yes
+    give CritterTurn with game is game, printed is critterHelpLines, done is no
