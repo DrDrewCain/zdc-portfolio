@@ -38,6 +38,15 @@
 # "extinct" banner into the canvas with `fillText`. A `Text` is not one
 # of the five things a `Scene` may contain, so those are `Text` elements
 # beside the drawing. Everything that is a shape is a shape.
+#
+# WHAT ELSE IS DIFFERENT. A cactus is a whole number of pixels wide and
+# tall, and the clouds drift two fifths of a pixel a frame as `frame * 2
+# / 5` — the original carries fractions there because `fillRect` takes
+# them, and a path is text, so a fraction would be four more characters
+# per rectangle for a difference no eye resolves. The high score is the
+# panel's: the original keeps it in `localStorage`, which is what a
+# `remembered` signal is, and a `remembered` signal belongs to the
+# program that owns the panel rather than to the rules of the game.
 
 record DinoRock
     x is Whole

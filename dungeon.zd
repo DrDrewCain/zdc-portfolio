@@ -34,6 +34,35 @@
 # the whole block. Where the number of draws is not known in advance —
 # rejection sampling — the seed is threaded properly, in the record the
 # sampler gives back.
+#
+# WHAT IS NOT HERE, AND WHY. Four things the canvas version draws are not
+# drawn, and each is the same rule reaching a different conclusion.
+#
+#   * **The HUD is text beside the picture rather than inside it.** A
+#     `Text` is not one of the five things a `Scene` may contain, which is
+#     the point `mines.zd` makes about its mine glyphs. `crawlStatus`,
+#     `crawlHearts`, `crawlGearLine` and `crawlRecent` are what the panel
+#     shows; the hearts are ♥ ♡ · rather than a sprite, and they select
+#     and reflow, which the canvas ones did not.
+#   * **A price tag over a ware.** Same reason, and the original already
+#     has the better answer: bump the merchant and the stall is listed by
+#     name and price.
+#   * **A legendary's own hue.** `legendaryColor` gives every legendary a
+#     hue from its name, so a Nullblade never looks like a Segfault Saber.
+#     A hue per item is a fill per item is a *path* per item, which is
+#     the one thing the single-path rule exists to prevent. The
+#     ornament survives — a legendary's gem pixels are their own path —
+#     and the ✦ in the log carries the rest.
+#   * **The cell is sixteen units, not eighteen.** A sprite pixel is then
+#     exactly two units and a gear pixel exactly one. The original rounds
+#     every rectangle as it fills it; a path is written once and read by
+#     four rasterisers, and a fractional pixel seams in some and not
+#     others.
+#
+# One rule is deliberately *not* reproduced: `emptyFloorTile` returns the
+# player's own tile after four hundred rejections, which stacks a monster
+# on the hero. That is a bug rather than a rule, and `crawlSpotFor` gives
+# back `-1` and places nothing.
 
 # --- the shape of a run -----------------------------------------------------
 
