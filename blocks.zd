@@ -1,0 +1,689 @@
+# blocks.zd — `src/components/game/blocks-game.tsx`, ported.
+#
+# Ten by eighteen, seven pieces, gravity on a counter rather than on a
+# clock of its own. Arrows move, up rotates with wall kicks, space hard
+# drops, and `r` is the original's twist: wipe the bottom row and pay
+# half your score for it.
+#
+# WHY A ROW IS A `Text`. The original's grid is `number[][]`, and the
+# same argument `life.zd` makes applies with more force here, because
+# clearing a line is a *filter over rows*: `keep each row where not
+# full` is one pass that keeps the rows that survive, and the four blank
+# rows that replace them go on the front. With a `List of List of Whole`
+# every one of those steps rebuilds a hundred and eighty cells; with
+# eighteen strings of ten characters it rebuilds eighteen strings. A cell
+# is `.` when it is empty and otherwise the digit of the piece that
+# settled there, which is the original's `0`/`id + 1` written in one
+# character so that the colour survives the landing.
+#
+# WHY THE PIECE IS A SHAPE AND NOT A ROTATION INDEX. Rotation here is
+# the original's transpose-and-reverse, applied to the shape itself and
+# kept. A rotation *index* would need a table of four states per piece —
+# twenty-eight literals, each of which can disagree with the transpose —
+# and the transpose is four lines. What that costs is that the I piece
+# rocks between two columns rather than spinning about a fixed centre,
+# which is what the original does too.
+#
+# WHY THE HUD IS NOT IN THE PICTURE. The original reserves a 28-pixel
+# strip at the top of the canvas for the score and the next piece,
+# because a canvas is all it has. Here the score is a `Text` beside the
+# board and the preview is its own small `Scene`, so the board's own
+# coordinate space starts at zero and every tile is `y * cell` with
+# nothing added to it.
+#
+# WHAT IS NOT PORTED. The canvas is sized to the viewport on every
+# resize; a `Scene` has a `viewBox` and scales itself, so the arithmetic
+# has nowhere to live and nothing to do. The bevel on each tile — a light
+# top-left edge and a dark bottom-right one, drawn as four more rects per
+# tile — is gone: it is four paths per *colour* for a highlight nobody
+# reads at twenty-two pixels, against the one path per colour this draws
+# now. The glint square is gone with it.
+
+record Blocks
+    rows  is List of Text
+    shape is List of Text
+    piece is Whole
+    next  is Whole
+    px    is Whole
+    py    is Whole
+    score is Whole
+    tally is Whole
+    dead  is Truth
+    ticks is Whole
+    seed  is Whole
+
+# One wall kick: how far to nudge a rotation that did not fit.
+record BlocksNudge
+    dx is Whole
+    dy is Whole
+
+state blocksWidth is static Whole starting 10
+state blocksHeight is static Whole starting 18
+state blocksCell is static Whole starting 22
+
+state blocksViewBox is static Text from (("0 0 " + (text of (blocksWidth * blocksCell))) + " ") + (text of (blocksHeight * blocksCell))
+
+# The preview is four cells by two, which is every piece's bounding box,
+# at a third of the board's scale.
+state blocksMini is static Whole starting 8
+state blocksNextViewBox is static Text from (("0 0 " + (text of (blocksMini * 4))) + " ") + (text of (blocksMini * 2))
+
+# The seven marks a settled cell can carry, so a caller can ask for one
+# path per colour without knowing how many colours there are.
+#
+# READ THIS BEFORE PUTTING AN `each` OVER IT INSIDE A `Scene`. Today it
+# will not run. A repeated region inside a `Scene` reads its source by
+# *calling* it, which is right for a `client` signal — the runtime holds
+# one as a thunk — and wrong for everything else: over a `static` signal
+# the browser says `[1,2,3,4,5,6,7] is not a function`, and over a
+# zero-argument function it calls the answer, `kindList(...) is not a
+# function`. The same `each` over the same `static` list is fine inside
+# an `Svg`, and fine anywhere outside a drawing, so it is the canvas
+# emitter's region and not the region itself. Until that is fixed there
+# are two wirings that work: write the seven `Path` lines out — which is
+# what `mines.zd` does with its five, and is one line per appearance
+# rather than one per cell — or keep the list in a `client` signal on the
+# page that draws it.
+state blocksKinds is static List of Whole starting [1, 2, 3, 4, 5, 6, 7]
+
+# --- the pieces -------------------------------------------------------------
+#
+# `#` where the piece is solid. In the original's order — I, O, T, J, L,
+# Z, S — because the id is what the settled cell remembers, and reordering
+# them would repaint every board saved by a reader mid-game.
+
+function blocksShapeFor of id
+    if id is 0
+        give ["####"]
+    if id is 1
+        give ["##", "##"]
+    if id is 2
+        give [".#.", "###"]
+    if id is 3
+        give ["#..", "###"]
+    if id is 4
+        give ["..#", "###"]
+    if id is 5
+        give ["##.", ".##"]
+    give [".##", "##."]
+
+# One hue per piece, tuned for the site's dark warm background — the
+# original's palette, indexed by the mark rather than by the id, because
+# the mark is what a settled cell holds.
+function blocksColor of kind
+    if kind is 1
+        give "#7fd4e0"
+    if kind is 2
+        give "#e6c46d"
+    if kind is 3
+        give "#c792ea"
+    if kind is 4
+        give "#7fb4d9"
+    if kind is 5
+        give "#e8823c"
+    if kind is 6
+        give "#e06a5a"
+    give "#86dcb8"
+
+function blocksPieceColor of game
+    give blocksColor of (game.piece + 1)
+
+function blocksNextColor of game
+    give blocksColor of (game.next + 1)
+
+# The character a settled cell of this piece carries. `text of (id + 1)`
+# rather than `text of id`, so that `0` stays free to mean nothing and a
+# board is legible as a string.
+function blocksMark of id
+    give text of (id + 1)
+
+# Clockwise: row `i` of the answer is column `i` of the shape, bottom to
+# top. The original's `s[0].map((_, i) => s.map(row => row[i]).reverse())`
+# written out, because there is no `map` over an index of another list
+# here and the index is the whole trick.
+function blocksRotated of shape
+    give blocksRotatedRows with shape is shape, column is 0, taken is empty
+
+function blocksRotatedRows with shape, column, taken
+    if column is (textLength of (blocksRowIn with rows is shape, index is 0))
+        give taken
+    give blocksRotatedRows with shape is shape,
+        column is column + 1,
+        taken is (append (
+            blocksRotatedRow with shape is shape,
+            column is column,
+            index is 0,
+            taken is "") to taken)
+
+function blocksRotatedRow with shape, column, index, taken
+    if index is (listLength of shape)
+        give taken
+    give blocksRotatedRow with shape is shape,
+        column is column,
+        index is index + 1,
+        taken is taken + (
+            blocksCellIn with rows is shape,
+            x is column,
+            y is ((listLength of shape) - 1) - index)
+
+# --- reading the board ------------------------------------------------------
+
+function blocksBlankRow
+    give repeat with value is ".", count is blocksWidth
+
+function blocksRowIn with rows, index
+    give valueOr with maybe is (listAt with value is rows, index is index), fallback is ""
+
+function blocksCellIn with rows, x, y
+    give valueOr with maybe is (
+        textAt with value is (blocksRowIn with rows is rows, index is y),
+        index is x),
+        fallback is "."
+
+# The original's collision test, and the order of its clauses matters:
+# a cell above the top of the board is *free* rather than empty, which is
+# what lets a piece spawn at `y = -1` with two of its rows off-screen.
+function blocksBlocked with rows, x, y
+    if (x < 0) or ((x > (blocksWidth - 1)) or (y > (blocksHeight - 1)))
+        give yes
+    if y < 0
+        give no
+    give not ((blocksCellIn with rows is rows, x is x, y is y) is ".")
+
+function blocksCollides with rows, shape, x, y
+    give blocksHits with rows is rows, shape is shape, x is x, y is y, dy is 0
+
+function blocksHits with rows, shape, x, y, dy
+    if dy is (listLength of shape)
+        give no
+    if blocksRowHits with rows is rows,
+        row is (blocksRowIn with rows is shape, index is dy),
+        x is x,
+        y is y + dy,
+        dx is 0
+        give yes
+    give blocksHits with rows is rows, shape is shape, x is x, y is y, dy is dy + 1
+
+function blocksRowHits with rows, row, x, y, dx
+    if dx is (textLength of row)
+        give no
+    if ((
+        valueOr with maybe is (textAt with value is row, index is dx),
+        fallback is ".") is "#") and (
+        blocksBlocked with rows is rows,
+        x is x + dx,
+        y is y)
+        give yes
+    give blocksRowHits with rows is rows, row is row, x is x, y is y, dx is dx + 1
+
+# --- a new game -------------------------------------------------------------
+
+function blocksBlankRows of remaining
+    if remaining is 0
+        give empty
+    give append blocksBlankRow to (blocksBlankRows of (remaining - 1))
+
+function blocksPick of seed
+    give valueOr with maybe is (randomBelow with seed is seed, bound is 7), fallback is 0
+
+function newBlocks of seed
+    give blocksSpawned with rows is (blocksBlankRows of blocksHeight),
+        next is (blocksPick of seed),
+        score is 0,
+        tally is 0,
+        ticks is 0,
+        seed is (nextSeed of seed)
+
+# The piece waiting becomes the piece falling, and a new one takes its
+# place. Centred by its own width, and dead when it cannot sit on row
+# zero — which is the original's test, taken one row below the spawn
+# position rather than at it.
+function blocksSpawned with rows, next, score, tally, ticks, seed
+    with shape is (blocksShapeFor of next)
+    with px is (
+        valueOr with maybe is (
+            quotient with value is blocksWidth - ( textLength of (
+                blocksRowIn with rows is shape,
+                index is 0)),
+            divisor is 2),
+        fallback is 0)
+    give Blocks with rows is rows,
+        shape is shape,
+        piece is next,
+        next is (blocksPick of seed),
+        px is px,
+        py is 0 - 1,
+        score is score,
+        tally is tally,
+        dead is (blocksCollides with rows is rows, shape is shape, x is px, y is 0),
+        ticks is ticks,
+        seed is (nextSeed of seed)
+
+# --- moving the piece -------------------------------------------------------
+#
+# One builder for every move, because a move changes a position and a
+# shape and nothing else. The five handlers below are each a collision
+# test in front of it.
+
+function blocksPlaced with game, shape, x, y
+    give Blocks with rows is game.rows,
+        shape is shape,
+        piece is game.piece,
+        next is game.next,
+        px is x,
+        py is y,
+        score is game.score,
+        tally is game.tally,
+        dead is game.dead,
+        ticks is game.ticks,
+        seed is game.seed
+
+function blocksTicked of game
+    give Blocks with rows is game.rows,
+        shape is game.shape,
+        piece is game.piece,
+        next is game.next,
+        px is game.px,
+        py is game.py,
+        score is game.score,
+        tally is game.tally,
+        dead is game.dead,
+        ticks is game.ticks + 1,
+        seed is game.seed
+
+function blocksLeft of game
+    if game.dead
+        give game
+    if blocksCollides with rows is game.rows,
+        shape is game.shape,
+        x is game.px - 1,
+        y is game.py
+        give game
+    give blocksPlaced with game is game, shape is game.shape, x is game.px - 1, y is game.py
+
+function blocksRight of game
+    if game.dead
+        give game
+    if blocksCollides with rows is game.rows,
+        shape is game.shape,
+        x is game.px + 1,
+        y is game.py
+        give game
+    give blocksPlaced with game is game, shape is game.shape, x is game.px + 1, y is game.py
+
+# Soft drop nudges the piece down; it never insta-locks. Locking is
+# gravity's job, which leaves a beat to slide under an overhang — the
+# original's comment, and its rule.
+function blocksDown of game
+    if game.dead
+        give game
+    if blocksCollides with rows is game.rows,
+        shape is game.shape,
+        x is game.px,
+        y is game.py + 1
+        give game
+    give blocksPlaced with game is game, shape is game.shape, x is game.px, y is game.py + 1
+
+# Up rotates, and on a finished board it deals a new one — the original
+# accepts either up or space there, and so does this.
+#
+# ONE GUARD THAT COULD NOT COME WITH IT. The original rotates only when
+# `!e.repeat`, so holding the key spins the piece once rather than
+# thirty times a second. A key payload here carries `key`, `shift`,
+# `control`, `alt` and `meta` and not `repeat`, so the guard has nothing
+# to read and is not written. Holding up spins.
+function blocksRotate of game
+    if game.dead
+        give newBlocks of (nextSeed of game.seed)
+    give blocksKicked with game is game, shape is (blocksRotated of game.shape), index is 0
+
+# The kicks, tried in order: in place, one left, one right, two left, two
+# right, then up off the floor. A rotation that fits nowhere is refused
+# and the piece is left as it was, which is `index > 5` giving `game`.
+function blocksNudgeAt of index
+    if index is 1
+        give BlocksNudge with dx is 0 - 1, dy is 0
+    if index is 2
+        give BlocksNudge with dx is 1, dy is 0
+    if index is 3
+        give BlocksNudge with dx is 0 - 2, dy is 0
+    if index is 4
+        give BlocksNudge with dx is 2, dy is 0
+    if index is 5
+        give BlocksNudge with dx is 0, dy is 0 - 1
+    give BlocksNudge with dx is 0, dy is 0
+
+function blocksKicked with game, shape, index
+    if index > 5
+        give game
+    with nudge is (blocksNudgeAt of index)
+    if blocksCollides with rows is game.rows,
+        shape is shape,
+        x is game.px + nudge.dx,
+        y is game.py + nudge.dy
+        give blocksKicked with game is game, shape is shape, index is index + 1
+    give blocksPlaced with game is game,
+        shape is shape,
+        x is game.px + nudge.dx,
+        y is game.py + nudge.dy
+
+# Space: fall until something stops it, then lock in the same breath.
+function blocksDrop of game
+    if game.dead
+        give newBlocks of (nextSeed of game.seed)
+    give blocksLock of (blocksSettled of game)
+
+function blocksSettled of game
+    if blocksCollides with rows is game.rows,
+        shape is game.shape,
+        x is game.px,
+        y is game.py + 1
+        give game
+    give blocksSettled of (
+        blocksPlaced with game is game,
+        shape is game.shape,
+        x is game.px,
+        y is game.py + 1)
+
+# The twist. Wipe the bottom row and pay half your score for it, which
+# makes it a way out of a bad stack rather than a free one. Refused on an
+# empty bottom row, so it cannot be spent on nothing.
+function blocksRefactor of game
+    if game.dead
+        give game
+    if (blocksRowIn with rows is game.rows, index is blocksHeight - 1) is blocksBlankRow
+        give game
+    give Blocks with rows is (
+        insertAt with items is ( listTake with items is game.rows, count is blocksHeight - 1),
+        index is 0,
+        item is blocksBlankRow),
+        shape is game.shape,
+        piece is game.piece,
+        next is game.next,
+        px is game.px,
+        py is game.py,
+        score is (
+            valueOr with maybe is (quotient with value is game.score, divisor is 2),
+            fallback is 0),
+        tally is game.tally,
+        dead is game.dead,
+        ticks is game.ticks,
+        seed is game.seed
+
+# --- gravity ----------------------------------------------------------------
+#
+# The clock ticks at a fixed 60 ms and the *counter* decides when the
+# piece falls, which is the original's arrangement and the reason the
+# speed can change without restarting a timer: one interval, one phase,
+# and a divisor that shrinks as lines go in.
+
+function blocksSpeed of tally
+    give max with first is 2,
+        second is 8 - (
+            valueOr with maybe is (quotient with value is tally, divisor is 5),
+            fallback is 0)
+
+function blocksStep of game
+    with ticked is (blocksTicked of game)
+    if game.dead
+        give ticked
+    if (
+        valueOr with maybe is (
+            mod with value is ticked.ticks,
+            divisor is (blocksSpeed of game.tally)),
+        fallback is 1) is 0
+        give blocksFall of ticked
+    give ticked
+
+function blocksFall of game
+    if blocksCollides with rows is game.rows,
+        shape is game.shape,
+        x is game.px,
+        y is game.py + 1
+        give blocksLock of game
+    give blocksPlaced with game is game, shape is game.shape, x is game.px, y is game.py + 1
+
+# --- locking and clearing ---------------------------------------------------
+
+function blocksLock of game
+    with settled is (
+        blocksStamped with rows is game.rows,
+        shape is game.shape,
+        x is game.px,
+        y is game.py,
+        mark is (blocksMark of game.piece),
+        dy is 0)
+    with kept is (blocksCleared of settled)
+    with gone is (blocksHeight - (listLength of kept))
+    give blocksSpawned with rows is (blocksPadded of kept),
+        next is game.next,
+        score is game.score + (blocksAward of gone),
+        tally is game.tally + gone,
+        ticks is game.ticks,
+        seed is game.seed
+
+function blocksStamped with rows, shape, x, y, mark, dy
+    if dy is (listLength of shape)
+        give rows
+    give blocksStamped with rows is (
+        blocksStampedRow with rows is rows,
+        row is (blocksRowIn with rows is shape, index is dy),
+        x is x,
+        y is y + dy,
+        mark is mark,
+        dx is 0),
+        shape is shape,
+        x is x,
+        y is y,
+        mark is mark,
+        dy is dy + 1
+
+function blocksStampedRow with rows, row, x, y, mark, dx
+    if dx is (textLength of row)
+        give rows
+    if (valueOr with maybe is (textAt with value is row, index is dx), fallback is ".") is "#"
+        give blocksStampedRow with rows is (
+            blocksMarked with rows is rows,
+            x is x + dx,
+            y is y,
+            mark is mark),
+            row is row,
+            x is x,
+            y is y,
+            mark is mark,
+            dx is dx + 1
+    give blocksStampedRow with rows is rows,
+        row is row,
+        x is x,
+        y is y,
+        mark is mark,
+        dx is dx + 1
+
+# A cell off the board is dropped rather than refused: the top two rows
+# of a piece are legitimately above the board while it spawns, and the
+# original's `py + dy >= 0` says the same thing at the call site.
+function blocksMarked with rows, x, y, mark
+    if (y < 0) or ((y > (blocksHeight - 1)) or ((x < 0) or (x > (blocksWidth - 1))))
+        give rows
+    give setAt with items is rows,
+        index is y,
+        item is (
+            blocksWritten with row is (blocksRowIn with rows is rows, index is y),
+            x is x,
+            mark is mark)
+
+function blocksWritten with row, x, mark
+    give ((slice with value is row, start is 0, stop is x) + mark) + (
+        slice with value is row,
+        start is x + 1,
+        stop is (textLength of row))
+
+# A full row is one with no gap left in it, which as a string is one that
+# does not contain a dot. The rows that survive keep their order and their
+# colours; the blanks go on the front, so what was above a cleared line
+# falls by exactly the number of lines cleared under it.
+function blocksCleared of rows
+    from rows
+    keep each row where textContains with value is row, needle is "."
+
+function blocksPadded of rows
+    if (listLength of rows) >= blocksHeight
+        give rows
+    give blocksPadded of (insertAt with items is rows, index is 0, item is blocksBlankRow)
+
+# The original's table, written as a fallthrough. Four at once is worth
+# eight times one, which is the whole reason anyone stacks.
+function blocksAward of gone
+    if gone is 1
+        give 100
+    if gone is 2
+        give 300
+    if gone is 3
+        give 500
+    if gone > 3
+        give 800
+    give 0
+
+# --- what the line above the board says -------------------------------------
+
+function blocksStatus of game
+    if game.dead
+        give "topped out. space retries · esc quits"
+    give ((((text of game.score) + " pts · ") + (text of game.tally)) + " lines · ") + "arrows · up rotates · space drops · r refactors (costs half your score)"
+
+# --- the drawing ------------------------------------------------------------
+#
+# One `Path` per colour, holding every cell that wears it — settled tiles
+# and, for the colour it happens to be, the piece still falling. So a
+# board of ninety tiles is seven shapes rather than ninety, and the
+# falling piece needs no path of its own.
+
+function blocksTilePath with game, kind
+    give (
+        blocksSettledTiles with rows is game.rows,
+        mark is (text of kind),
+        y is 0,
+        taken is "") + (blocksFallingTiles with game is game,
+        kind is kind)
+
+function blocksFallingTiles with game, kind
+    if game.dead
+        give ""
+    if not (kind is (game.piece + 1))
+        give ""
+    give blocksShapeTiles with shape is game.shape,
+        x is game.px,
+        y is game.py,
+        cell is blocksCell,
+        dy is 0,
+        taken is ""
+
+function blocksSettledTiles with rows, mark, y, taken
+    if y is blocksHeight
+        give taken
+    give blocksSettledTiles with rows is rows,
+        mark is mark,
+        y is y + 1,
+        taken is taken + (
+            blocksRowOfTiles with row is (blocksRowIn with rows is rows, index is y),
+            mark is mark,
+            y is y,
+            x is 0,
+            taken is "")
+
+function blocksRowOfTiles with row, mark, y, x, taken
+    if x is blocksWidth
+        give taken
+    if (valueOr with maybe is (textAt with value is row, index is x), fallback is ".") is mark
+        give blocksRowOfTiles with row is row,
+            mark is mark,
+            y is y,
+            x is x + 1,
+            taken is taken + (blocksSizedTile with x is x, y is y, cell is blocksCell)
+    give blocksRowOfTiles with row is row, mark is mark, y is y, x is x + 1, taken is taken
+
+# `cell` is a parameter rather than the constant, because the preview
+# draws the same shape at a third of the size and there is no reason for
+# a second copy of this walk.
+function blocksShapeTiles with shape, x, y, cell, dy, taken
+    if dy is (listLength of shape)
+        give taken
+    give blocksShapeTiles with shape is shape,
+        x is x,
+        y is y,
+        cell is cell,
+        dy is dy + 1,
+        taken is taken + (
+            blocksShapeRow with row is (blocksRowIn with rows is shape, index is dy),
+            x is x,
+            y is y + dy,
+            cell is cell,
+            dx is 0,
+            taken is "")
+
+function blocksShapeRow with row, x, y, cell, dx, taken
+    if dx is (textLength of row)
+        give taken
+    if ((
+        valueOr with maybe is (textAt with value is row, index is dx),
+        fallback is ".") is "#") and (y > (0 - 1))
+        give blocksShapeRow with row is row,
+            x is x,
+            y is y,
+            cell is cell,
+            dx is dx + 1,
+            taken is taken + (blocksSizedTile with x is x + dx, y is y, cell is cell)
+    give blocksShapeRow with row is row,
+        x is x,
+        y is y,
+        cell is cell,
+        dx is dx + 1,
+        taken is taken
+
+function blocksSizedTile with x, y, cell
+    with left is (x * cell) + 1
+    with top is (y * cell) + 1
+    with side is cell - 2
+    give ((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of side)) + "v" + (text of side) + "h-" + (text of side) + "Z"
+
+# Where the piece would land. Outline only, so it reads as a hint, and
+# absent when it would sit on top of the piece itself.
+function blocksGhostPath of game
+    if game.dead
+        give ""
+    with landing is (blocksLanding with game is game, y is game.py)
+    if landing is game.py
+        give ""
+    give blocksShapeTiles with shape is game.shape,
+        x is game.px,
+        y is landing,
+        cell is blocksCell,
+        dy is 0,
+        taken is ""
+
+function blocksLanding with game, y
+    if blocksCollides with rows is game.rows, shape is game.shape, x is game.px, y is y + 1
+        give y
+    give blocksLanding with game is game, y is y + 1
+
+# The frame and the column rules, in one path. The original draws them
+# at two different alphas; one stroked path at a low one says the same
+# thing and is one shape instead of eleven.
+function blocksGridPath
+    give blocksColumnRules with x is 1,
+        taken is ((("M0 0h" + (text of (blocksWidth * blocksCell))) + "v") + (text of (blocksHeight * blocksCell))) + "h-" + (text of (blocksWidth * blocksCell)) + "Z"
+
+function blocksColumnRules with x, taken
+    if x is blocksWidth
+        give taken
+    give blocksColumnRules with x is x + 1,
+        taken is ((taken + "M") + (text of (x * blocksCell))) + " 0v" + (text of (blocksHeight * blocksCell))
+
+# The piece waiting, at preview scale, in its own coordinate space.
+function blocksNextPath of game
+    give blocksShapeTiles with shape is (blocksShapeFor of game.next),
+        x is 0,
+        y is 0,
+        cell is blocksMini,
+        dy is 0,
+        taken is ""
