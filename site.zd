@@ -71,6 +71,10 @@ use "./terminal" for screen,
     bestScore,
     serpent,
     stack,
+    lab,
+    labCaught,
+    labGrowth,
+    beat,
     history,
     cursor,
     draft,
@@ -84,6 +88,7 @@ use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./critters" for CritterGame, CritterGrowth, critterNewGame, critterWalk, critterAct, critterViewBox, critterTerrainLayers, critterTerrainPath, critterTerrainFill, critterHeroPath, critterHeroEyePath, critterExploreLine, critterExploreTally, critterBattleLog, critterFoeHeadline, critterFoeTag, critterFoeStars, critterAllyHeadline, critterAllyStatsLine, critterFoeCardPath, critterAllyCardPath, critterFoeBarTrackPath, critterFoeBarFillPath, critterAllyBarTrackPath, critterAllyBarFillPath, critterMenuPath, critterMenuText, critterMenuActive, critterActionSlots
 use "./snake" for Snake, newSnake, snakeSteer, snakeStatus, snakeViewBox, snakePortalPath, snakeFoodPath, snakeStemPath, snakeBodyPath, snakeGlintPath, snakeHeadPath, snakeEyesPath, snakeBodyFill, snakeHeadFill
 use "./blocks" for Blocks, newBlocks, blocksLeft, blocksRight, blocksDown, blocksRotate, blocksDrop, blocksRefactor, blocksStatus, blocksViewBox, blocksNextViewBox, blocksColor, blocksTilePath, blocksGhostPath, blocksGridPath, blocksNextPath, blocksNextColor, blocksPieceColor
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
@@ -383,6 +388,18 @@ component Terminal
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
+            if overlay is "critters"
+                Column class is "term-game-wide", gap is 8, align is "center"
+                    Row gap is 16, align is "center"
+                        Text "critter lab", class is "prompt-path"
+                        Text (critterExploreLine of lab), class is "prompt-mark"
+                    Scene viewBox is critterViewBox, label is "the critter lab"
+                        each layer in critterTerrainLayers
+                            Path outline is (critterTerrainPath with world is lab.world, layer is layer, time is beat), fill is (critterTerrainFill of layer)
+                        Path outline is (critterHeroPath with world is lab.world, time is beat), fill is "#e6c46d"
+                        Path outline is (critterHeroEyePath with world is lab.world, time is beat), fill is "#15100d"
+                    Text (critterExploreTally of lab), class is "prompt-mark"
+
             if overlay is "snake"
                 Column class is "term-game", gap is 8, align is "center"
                     Row gap is 16, align is "center"
@@ -521,6 +538,8 @@ component Terminal
                                     set serpent to (newSnake of (clock))
                                 if answer.launches is "blocks"
                                     set stack to (newBlocks of (clock))
+                                if answer.launches is "critters"
+                                    set lab to (critterNewGame with caught is labCaught, growth is labGrowth, badges is 0, seed is (clock))
                                 if not (isBlank of answer.enters)
                                     set mode to answer.enters
                                 # A fresh code per game, seeded from the
@@ -546,24 +565,28 @@ component Terminal
                             set line to ""
                             set mode to "shell"
 
-                        # Up and down walk history. The caret would
-                        # otherwise jump to one end of the box, which fights
-                        # the recall it is performing — `preventsDefault`
-                        # is what stops that.
-                        if stroke.key is "ArrowUp"
-                            if cursor is 0
-                                set draft to line
-                            set cursor to (steppedBack with all is history, position is cursor)
-                            set line to (
-                                recalled with all is history,
-                                back is (steppedBack with all is history, position is cursor))
-                        if stroke.key is "ArrowDown"
-                            if cursor < 2
-                                set cursor to 0
-                                set line to draft
-                            if cursor > 1
-                                set cursor to cursor - 1
-                                set line to (recalled with all is history, back is cursor - 1)
+                        # Up and down walk history — but only while no game
+                        # holds the panel. Every game below steers with the
+                        # arrows, and without this guard one press both
+                        # moved the piece and recalled a command into the
+                        # box underneath it: two things happening for one
+                        # keystroke, one of them invisible until the reader
+                        # pressed Enter on a line they never typed.
+                        if isBlank of overlay
+                            if stroke.key is "ArrowUp"
+                                if cursor is 0
+                                    set draft to line
+                                set cursor to (steppedBack with all is history, position is cursor)
+                                set line to (
+                                    recalled with all is history,
+                                    back is (steppedBack with all is history, position is cursor))
+                            if stroke.key is "ArrowDown"
+                                if cursor < 2
+                                    set cursor to 0
+                                    set line to draft
+                                if cursor > 1
+                                    set cursor to cursor - 1
+                                    set line to (recalled with all is history, back is cursor - 1)
 
                         # Tab completes. More than one candidate prints the
                         # list, which is what a shell does rather than
@@ -581,6 +604,16 @@ component Terminal
                         # the document for the reason `on key` is: a
                         # document listener stands down while a field has
                         # focus, and the field always has it here.
+                        if overlay is "critters"
+                            if stroke.key is "ArrowLeft"
+                                set lab to (critterWalk with game is lab, dir is "left")
+                            if stroke.key is "ArrowRight"
+                                set lab to (critterWalk with game is lab, dir is "right")
+                            if stroke.key is "ArrowUp"
+                                set lab to (critterWalk with game is lab, dir is "up")
+                            if stroke.key is "ArrowDown"
+                                set lab to (critterWalk with game is lab, dir is "down")
+
                         if overlay is "snake"
                             if stroke.key is "ArrowLeft"
                                 set serpent to (snakeSteer with game is serpent, dx is 0 - 1, dy is 0)

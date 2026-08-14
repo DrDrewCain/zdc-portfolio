@@ -811,7 +811,7 @@ function critterCreatureCells with grid, mark, left, top, step, index, taken
 # `src/lib/terminal/critters.ts`. Levels never cap but power effectively
 # tops out at 99: growth compounds smoothly from one times base to a
 # hundred times across the climb — three-digit stats at the top — and then
-# flattens to a crawl. Wilds ride the same curve at your own ceiling, so a
+# flattens to a crawl. Wilds ride the same curve at your own levelCap, so a
 # maxed team still gets real fights instead of one-shot deletions.
 #
 # THE EVOLUTION THRESHOLDS ARE TWO FIELDS AND NOT A PAIR. The original
@@ -1649,7 +1649,7 @@ function critterPickWild of game
         wanted is (critterRoll with seed is game.seed, bound is pool),
         index is 0
 
-# Your strongest critter's level, which is the ceiling the grass produces
+# Your strongest critter's level, which is the levelCap the grass produces
 # at. One, when you have nothing.
 function critterStrongest of game
     give critterStrongestFrom with game is game, index is 0, best is 1
@@ -1683,25 +1683,25 @@ function critterHuntFor with game, arg
                 done is no
 
 # FIVE DRAWS, IN THIS ORDER: which critter, whether it is shiny, how far
-# below the ceiling its level falls, and the two that roll its personal
+# below the levelCap its level falls, and the two that roll its personal
 # evolution schedule. The order is the original's and the count is why
 # `critterSeedAfter … draws is 5` is what the encounter's state carries
 # forward.
 function critterHuntFresh with game, arg
     with critter is (critterAt of (critterPickWild of game))
     with shiny is ((randomDecimal of (nextSeed of game.seed)) < critterShinyChance)
-    # Hot regions push the ceiling a few levels above your strongest, and
+    # Hot regions push the levelCap a few levels above your strongest, and
     # the draw comes from a window just under it so encounters stay
     # relevant instead of arriving as fodder.
-    with ceiling is ((critterStrongest of game) + (
+    with levelCap is ((critterStrongest of game) + (
         clamp with value is (valueOr with maybe is (parseWhole of arg), fallback is 0),
         low is 0,
         high is 6))
     with wildLevel is (
         max with first is 1,
-        second is (ceiling - (
+        second is (levelCap - (
             critterRoll with seed is (critterSeedAfter with seed is game.seed, draws is 2),
-            bound is (min with first is ceiling, second is 8))))
+            bound is (min with first is levelCap, second is 8))))
     with rolled is (
         critterRolledGrowth of (critterSeedAfter with seed is game.seed, draws is 3))
     with stage is (critterStageOf with growth is rolled, level is wildLevel)

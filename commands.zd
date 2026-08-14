@@ -310,6 +310,7 @@ function helpLines
         "  codebreak         crack a four peg code in ten guesses",
         "  lexer             six guesses, five letters",
         "  2048              slide tiles together (alias: twenty48)",
+        "  critters          catch things in a small ecosystem",
         "  snake             eat, grow, and mind the portals",
         "  blocks            stack them, clear lines, refactor for space",
         "  life              conway, with a glider gun and a pulsar",
@@ -639,7 +640,7 @@ function runCommand of input
     if verb is "home"
         give goingTo with printed is ["going home..."], destination is "/"
     if verb is "games"
-        give entering with printed is ["> what game? (2048, snake, blocks, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
+        give entering with printed is ["> what game? (2048, snake, blocks, critters, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
             mode is "games"
     if (verb is "codebreak") or (verb is "mastermind")
         give entering with printed is [
@@ -670,13 +671,10 @@ function runCommand of input
     if (verb is "minesweeper") or (verb is "mines")
         give launching with printed is ["launching minesweeper... (arrows/wasd move, space/enter reveals, f flags, esc to quit)"],
             game is "minesweeper"
-    # The one game not ported. It says so rather than raising an overlay
-    # with nothing in it, which is what an unimplemented `launch` would
-    # do — a blank panel and no way to tell whether it broke.
     if verb is "critters"
-        give saying of [
-            "the critter lab is not ported yet — it is 660 lines and a creature generator.",
-            "everything else in `games` works."]
+        give launching with printed is [
+            "opening the critter lab... (arrows walk, encounters find you)"],
+            game is "critters"
     if verb is "mode"
         give modeLine of tail
     give saying of [(

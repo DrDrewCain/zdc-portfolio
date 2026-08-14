@@ -19,6 +19,7 @@ use "./commands" for Outcome, Completion, runCommand, completionFor, commandName
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./critters" for CritterGame, CritterGrowth, critterNewGame
 use "./snake" for Snake, newSnake, snakeStep
 use "./blocks" for Blocks, newBlocks, blocksStep
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
@@ -94,6 +95,26 @@ state tiles is client Board starting (freshBoard of 1)
 # beside it.
 state serpent is client Snake every "110ms" starting (newSnake of 1) to (snakeStep of serpent)
 state stack is client Blocks every "60ms" starting (newBlocks of 1) to (blocksStep of stack)
+
+# The critter lab. It does not tick — it is turn based — so it is an
+# ordinary cell rather than a stepping clock.
+#
+# `caught`, `growth` and `badges` open empty. The original keeps them in
+# `localStorage`; making them `remembered` here would be one line and is
+# the *terminal's* call rather than the game's, which is why the module
+# takes them as arguments instead of holding them.
+# `caught` is a `List of Text`, `growth` a `Map of Text to CritterGrowth`
+# and `badges` a count — so the empty save is three empties of three
+# different shapes, and the two collections need their types written
+# because `empty` alone does not say which it is.
+state labCaught is client List of Text starting empty
+state labGrowth is client Map of Text to CritterGrowth starting empty
+state lab is client CritterGame starting (critterNewGame with caught is labCaught, growth is labGrowth, badges is 0, seed is 1)
+
+# The frame clock the lab's drawing reads. A function gives a value and
+# reads no clock of its own, so the animated paths take the time as an
+# argument and this is where it comes from.
+state beat is client Decimal every frame
 state bestScore is remembered Whole starting 0
 state board is client Life every "90ms" starting (
     stamped with pattern is gunCells,

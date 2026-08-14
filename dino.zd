@@ -1,0 +1,464 @@
+# dino.zd — `src/components/game/dino-game.tsx`, ported.
+#
+# The endless runner, with one twist the browser's own does not have: a
+# double jump. Tall cacti need both.
+#
+# WHY THE SIMULATION IS A FOLD ON A CLOCK. The original is a
+# `requestAnimationFrame` loop closing over eight mutable locals. There
+# are no callbacks here and nothing to mutate, so the loop is the shape
+# the language already has for "a value that is a function of the last
+# one": a cell whose step reads the cell it writes.
+#
+#     state runner is client Dino every frame
+#         starting (dinoFresh of 1)
+#         to (dinoAdvanced with run is runner, now is dinoClock, running is …)
+#
+# That is a fold whose accumulator is the world and whose sequence is the
+# display's repaints. The step is an ordinary pure function, so the whole
+# game is testable without a browser — which is exactly what the original
+# gave up by writing it as a closure over `let`s.
+#
+# WHY THERE IS A SECOND CLOCK. `every frame` on its own says *when* to
+# step and not *how much time has passed*, and the original's comment is
+# emphatic about why that matters:
+#
+#   > the sim always advances at 60Hz regardless of the display's refresh
+#   > rate, so the game feels identical on a 60Hz laptop and a 144Hz
+#   > monitor
+#
+# One step per repaint would make the dino run two and a half times
+# faster on a 144 Hz monitor — the bug the original wrote a fixed
+# timestep to avoid. So `dinoClock` is the milliseconds, the run
+# remembers how much of them it has already simulated, and a repaint
+# performs however many sixtieths of a second have actually elapsed. The
+# original's 200 ms catch-up cap is kept for the original's reason: a
+# backgrounded tab should resume, not fast-forward.
+#
+# WHAT IS DRAWN AND WHAT IS SAID. The original draws its score and its
+# "extinct" banner into the canvas with `fillText`. A `Text` is not one
+# of the five things a `Scene` may contain, so those are `Text` elements
+# beside the drawing. Everything that is a shape is a shape.
+
+record DinoRock
+    x is Whole
+    w is Whole
+    h is Whole
+
+# `simulated` is the reading of `dinoClock` this run has already caught
+# up to, and it is the only piece of state the original does not have —
+# it kept the same fact in a closed-over `prev` and an accumulator, which
+# is two variables for one number.
+record Dino
+    y         is Decimal
+    vy        is Decimal
+    jumps     is Whole
+    speed     is Whole
+    score     is Decimal
+    dead      is Truth
+    rocks     is List of DinoRock
+    due       is Whole
+    frame     is Whole
+    simulated is Decimal
+    seed      is Whole
+
+state dinoWide is static Whole starting 640
+state dinoHigh is static Whole starting 200
+state dinoGround is static Whole starting 170
+state dinoViewBox is static Text from (("0 0 " + (text of dinoWide)) + " ") + (text of dinoHigh)
+
+# Sixty steps a second, written as the length of one rather than as a
+# rate, because that is the number the catch-up loop divides by.
+state dinoStepMs is static Decimal from 1000.0 / 60.0
+
+# The milliseconds. The browser's scheduler writes this and nothing in
+# the program may, which is what makes it safe to read from inside the
+# step: a tick cannot start anything, it can only be observed.
+state dinoClock is client Decimal every frame
+
+# --- the draws --------------------------------------------------------------
+#
+# The original calls `Math.random()` four times per spawn. Randomness
+# here is a pure function of a seed the run owns, so a spawn claims a
+# block of four consecutive seeds and reads draw `nth` from the `nth`
+# one: distinct `nth` is a distinct seed is an independent draw.
+
+function dinoSeedAhead with seed, steps
+    if steps < 1
+        give seed
+    give dinoSeedAhead with seed is (nextSeed of seed), steps is steps - 1
+
+function dinoRoll with seed, nth
+    give randomDecimal of (dinoSeedAhead with seed is seed, steps is nth)
+
+function dinoPick with seed, nth, bound
+    give valueOr with maybe is (
+        randomBelow with seed is (dinoSeedAhead with seed is seed, steps is nth),
+        bound is (max with first is 1, second is bound)),
+        fallback is 0
+
+function dinoWholeOf of value
+    give valueOr with maybe is (floor of value), fallback is 0
+
+# --- a fresh run ------------------------------------------------------------
+
+function dinoFresh of seed
+    give Dino with y is (decimalOf of dinoGround),
+        vy is 0.0,
+        jumps is 0,
+        speed is 5,
+        score is 0.0,
+        dead is no,
+        rocks is empty,
+        due is 60,
+        frame is 0,
+        simulated is 0.0,
+        seed is seed
+
+# --- one repaint ------------------------------------------------------------
+#
+# `running` is the panel's own answer to whether the game is up. It gates
+# the *step* and not the clock, for the reason `life.zd` gives about its
+# board: pausing the timer and restarting it is two timers with two
+# phases, and the seam shows.
+#
+# A run that resumes after a pause is behind by however long the pause
+# was, and the catch-up is capped at 200 ms — twelve steps — so coming
+# back to the tab costs a fifth of a second of dino rather than a minute
+# of it at once.
+
+function dinoAdvanced with run, now, running
+    if not running
+        give dinoTimed with run is run, reached is now
+    give dinoStepped with run is run, now is now
+
+function dinoStepped with run, now
+    with elapsed is (now - run.simulated)
+    if elapsed < dinoStepMs
+        give run
+    with behind is (min with first is elapsed, second is 200.0)
+    with steps is (dinoWholeOf of (behind / dinoStepMs))
+    give dinoRepeated with run is (
+        dinoTimed with run is run,
+        reached is (now - behind) + ((decimalOf of steps) * dinoStepMs)),
+        count is steps
+
+function dinoRepeated with run, count
+    if count < 1
+        give run
+    give dinoRepeated with run is (dinoUpdate of run), count is count - 1
+
+function dinoTimed with run, reached
+    give Dino with y is run.y,
+        vy is run.vy,
+        jumps is run.jumps,
+        speed is run.speed,
+        score is run.score,
+        dead is run.dead,
+        rocks is run.rocks,
+        due is run.due,
+        frame is run.frame,
+        simulated is reached,
+        seed is run.seed
+
+# --- one sixtieth of a second -----------------------------------------------
+#
+# Gravity, then the ground, then the score, then the spawn, then the
+# move, then the collision — the original's order, and the order matters
+# in two places: the score is earned at the *old* speed and the cactus
+# that spawns this frame also moves this frame.
+
+function dinoUpdate of run
+    if run.dead
+        give run
+    with vy is (run.vy + 0.7)
+    with y is (min with first is (run.y + vy), second is (decimalOf of dinoGround))
+    with landed is (not (y < (decimalOf of dinoGround)))
+    with score is (run.score + ((decimalOf of run.speed) / 10.0))
+    with speed is (5 + (dinoWholeOf of (score / 200.0)))
+    with due is (run.due - 1)
+    with spawning is (due < 1)
+    with tall is ((dinoRoll with seed is run.seed, nth is 1) < 0.22)
+    with rocks is (
+        dinoRolled with rocks is (
+            (append (dinoRockFrom with seed is run.seed, tall is tall) to run.rocks) if spawning otherwise run.rocks),
+        speed is speed)
+    give Dino with y is y,
+        vy is vy,
+        jumps is (0 if landed otherwise run.jumps),
+        speed is speed,
+        score is score,
+        dead is (dinoHit with rocks is rocks, y is y),
+        rocks is rocks,
+        due is (
+            (dinoWaitFor with seed is run.seed, tall is tall, speed is speed) if spawning otherwise due),
+        frame is run.frame + 1,
+        simulated is run.simulated,
+        seed is ((dinoSeedAhead with seed is run.seed, steps is 5) if spawning otherwise run.seed)
+
+# A cactus is 12 to 25 wide; a tall one is 48 to 61 high and a short one
+# 20 to 44. The tall ones are the reason the double jump exists.
+function dinoRockFrom with seed, tall
+    give DinoRock with x is dinoWide + 20,
+        w is 12 + (dinoPick with seed is seed, nth is 3, bound is 14),
+        h is (
+            (48 + (dinoPick with seed is seed, nth is 2, bound is 14)) if tall otherwise (
+                20 + (dinoPick with seed is seed, nth is 2, bound is 25)))
+
+# The gap to the next one shortens as the run speeds up, which is the
+# whole of the difficulty curve.
+function dinoWaitFor with seed, tall, speed
+    give ((70 if tall otherwise 50) + (
+        dinoPick with seed is seed, nth is 4, bound is 70)) - (
+        min with first is speed * 2, second is 30)
+
+# Move everything left and drop what has left the screen. The original
+# compacts the array in place to avoid allocating one per frame; a
+# pipeline says the same thing and the language has no in-place to offer.
+function dinoRolled with rocks, speed
+    from rocks
+    map each rock to (DinoRock with x is rock.x - speed, w is rock.w, h is rock.h)
+    keep each rock where (rock.x + rock.w) > -10
+
+# The hitbox is the original's, to the pixel: the dino occupies 60…82
+# across, and a cactus is hit when the dino's feet are below its top.
+function dinoHit with rocks, y
+    from rocks
+    map each rock to ((60 < (rock.x + rock.w)) and ((82 > rock.x) and (
+        y > (decimalOf of (dinoGround - rock.h)))))
+    fold each near into found starting no to found or near
+
+# --- the jump ---------------------------------------------------------------
+#
+# Space on a dead run starts a new one, which is the original's
+# behaviour and the reason `jump` and `reset` are one function there too.
+# The second jump is weaker than the first — the original's -11 against
+# -13 — so a double jump is a longer arc rather than twice the height.
+
+function dinoJump of run
+    if run.dead
+        give dinoFresh of (nextSeed of run.seed)
+    if not (run.y < (decimalOf of dinoGround))
+        give dinoLaunched with run is run, vy is 0.0 - 13.0, jumps is 1
+    if run.jumps < 2
+        give dinoLaunched with run is run, vy is 0.0 - 11.0, jumps is 2
+    give run
+
+function dinoLaunched with run, vy, jumps
+    give Dino with y is run.y,
+        vy is vy,
+        jumps is jumps,
+        speed is run.speed,
+        score is run.score,
+        dead is run.dead,
+        rocks is run.rocks,
+        due is run.due,
+        frame is run.frame,
+        simulated is run.simulated,
+        seed is run.seed
+
+# --- what the panel says ----------------------------------------------------
+
+function dinoScore of run
+    give dinoWholeOf of run.score
+
+function dinoStatus of run
+    if run.dead
+        give "extinct · space to try again · esc to flee"
+    give ("score " + (text of (dinoScore of run))) + " · space jumps · tall ones want both"
+
+# The body is grey when the run is over. It is a rule of the game rather
+# than a choice of palette — the original reads `dead ? muted : accent` —
+# so it lives with the rules, and the panel spends it as a `fill`.
+function dinoBodyColour of run
+    give "#aaa295" if run.dead otherwise "#ffa96b"
+
+function dinoPupilColour of run
+    give "#e06a5a" if run.dead otherwise "#0d0b08"
+
+# --- the drawing ------------------------------------------------------------
+#
+# One `Path` per colour, exactly as `life.zd` argues: the dino is four
+# rectangles, the cacti are five each, and each *group* is one shape
+# however many rectangles are in it.
+
+function dinoBoxAt with left, top, wide, tall
+    give ((((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of wide)) + "v") + (text of tall)) + "h-" + (text of wide) + "Z"
+
+# The original's parallax uses `((a % m) + m) % m` because JavaScript's
+# `%` keeps the sign of the dividend and the offsets go negative. The
+# prelude's `mod` is already non-negative for a positive divisor, so one
+# call says what two said.
+function dinoWrapped with value, span
+    give valueOr with maybe is (mod with value is value, divisor is span), fallback is 0
+
+function dinoBase of run
+    give dinoWholeOf of run.y
+
+# Tail, torso, head, snout, and legs that alternate every six frames
+# while the dino is on the ground and hang together while it is not.
+function dinoBodyPath of run
+    with base is (dinoBase of run)
+    give (((((
+        dinoBoxAt with left is 52, top is base - 22, wide is 10, tall is 7) + (
+        dinoBoxAt with left is 60, top is base - 28, wide is 22, tall is 20)) + (
+        dinoBoxAt with left is 72, top is base - 36, wide is 14, tall is 12)) + (
+        dinoBoxAt with left is 84, top is base - 33, wide is 4, tall is 6)) + (
+        dinoLegsPath of run))
+
+function dinoLegsPath of run
+    with base is (dinoBase of run)
+    if run.y < (decimalOf of dinoGround)
+        give (dinoBoxAt with left is 60, top is base - 8, wide is 8, tall is 8) + (
+            dinoBoxAt with left is 74, top is base - 8, wide is 8, tall is 8)
+    give dinoBoxAt with left is (60 if (dinoStride of run) is 0 otherwise 72),
+        top is base - 8,
+        wide is 8,
+        tall is 8
+
+function dinoStride of run
+    give dinoWrapped with value is (
+        valueOr with maybe is (quotient with value is run.frame, divisor is 6),
+        fallback is 0),
+        span is 2
+
+# Light along the back and shadow under the belly: two rectangles that
+# turn a flat silhouette into a body.
+function dinoLitPath of run
+    with base is (dinoBase of run)
+    give (dinoBoxAt with left is 60, top is base - 28, wide is 22, tall is 2) + (
+        dinoBoxAt with left is 72, top is base - 36, wide is 14, tall is 2)
+
+function dinoShadePath of run
+    give dinoBoxAt with left is 60, top is (dinoBase of run) - 11, wide is 22, tall is 3
+
+function dinoEyePath of run
+    give dinoBoxAt with left is 79, top is (dinoBase of run) - 33, wide is 4, tall is 4
+
+function dinoPupilPath of run
+    give dinoBoxAt with left is 80, top is (dinoBase of run) - 32, wide is 2, tall is 2
+
+# --- the cacti --------------------------------------------------------------
+#
+# A stalk, and arms on anything wide and tall enough to carry them —
+# which is what stops a field of cacti from reading as a row of slabs.
+
+function dinoRockPath of run
+    give dinoRocksDrawn with rocks is run.rocks, index is 0, taken is ""
+
+function dinoRocksDrawn with rocks, index, taken
+    when listAt with value is rocks, index is index
+        None
+            give taken
+        Some with rock
+            give dinoRocksDrawn with rocks is rocks,
+                index is index + 1,
+                taken is taken + (dinoStalkOf of rock)
+
+function dinoStalkWidth of rock
+    give max with first is 6,
+        second is (dinoWholeOf of ((decimalOf of rock.w) * 0.4))
+
+function dinoStalkLeft of rock
+    give rock.x + (
+        valueOr with maybe is (
+            quotient with value is rock.w - (dinoStalkWidth of rock),
+            divisor is 2),
+        fallback is 0)
+
+function dinoStalkOf of rock
+    with top is (dinoGround - rock.h)
+    with stalk is (
+        dinoBoxAt with left is (dinoStalkLeft of rock),
+        top is top,
+        wide is (dinoStalkWidth of rock),
+        tall is rock.h)
+    if (rock.w > 15) and (rock.h > 25)
+        give stalk + (dinoArmsOf of rock)
+    give stalk
+
+function dinoArmsOf of rock
+    with top is (dinoGround - rock.h)
+    with left is (dinoStalkLeft of rock)
+    with lift is (dinoWholeOf of ((decimalOf of rock.h) * 0.35))
+    with drop is (dinoWholeOf of ((decimalOf of rock.h) * 0.5))
+    with right is (((dinoStalkLeft of rock) + (dinoStalkWidth of rock)) - 2)
+    give (((
+        dinoBoxAt with left is rock.x,
+        top is top + lift,
+        wide is (left - rock.x) + 2,
+        tall is 5) + (
+        dinoBoxAt with left is rock.x, top is (top + lift) - 8, wide is 5, tall is 10)) + (
+        dinoBoxAt with left is right,
+        top is top + drop,
+        wide is (rock.x + rock.w) - right,
+        tall is 5)) + (
+        dinoBoxAt with left is (rock.x + rock.w) - 5,
+        top is (top + drop) - 7,
+        wide is 5,
+        tall is 9)
+
+function dinoRockLitPath of run
+    give dinoRockEdges with rocks is run.rocks, index is 0, lit is yes, taken is ""
+
+function dinoRockShadePath of run
+    give dinoRockEdges with rocks is run.rocks, index is 0, lit is no, taken is ""
+
+function dinoRockEdges with rocks, index, lit, taken
+    when listAt with value is rocks, index is index
+        None
+            give taken
+        Some with rock
+            give dinoRockEdges with rocks is rocks,
+                index is index + 1,
+                lit is lit,
+                taken is taken + (
+                    dinoBoxAt with left is (
+                        (dinoStalkLeft of rock) if lit otherwise (
+                            ((dinoStalkLeft of rock) + (dinoStalkWidth of rock)) - 2)),
+                    top is dinoGround - rock.h,
+                    wide is 2,
+                    tall is rock.h)
+
+# --- the ground and the sky -------------------------------------------------
+#
+# Neither is scenery: the pebbles scroll at the run's own speed and the
+# clouds at a fraction of it, and between them they are the only reason
+# the dino reads as moving rather than as bobbing on the spot.
+
+function dinoGroundPath of run
+    give (dinoBoxAt with left is 0, top is dinoGround, wide is dinoWide, tall is 2) + (
+        dinoPebbles with run is run, index is 0, taken is "")
+
+function dinoPebbles with run, index, taken
+    if index > 7
+        give taken
+    give dinoPebbles with run is run,
+        index is index + 1,
+        taken is taken + (
+            dinoBoxAt with left is (
+                dinoWrapped with value is (index * 97) - (run.frame * run.speed),
+                span is dinoWide + 40) - 20,
+            top is (dinoGround + 6) + ((dinoWrapped with value is index, span is 3) * 3),
+            wide is 3 + ((dinoWrapped with value is index, span is 2) * 2),
+            tall is 2)
+
+# Two fifths of a pixel per frame in the original, which is a `Whole`
+# division of two frames by five here: the clouds drift, and the drift
+# is the only thing this number decides.
+function dinoCloudPath of run
+    give dinoClouds with run is run, index is 0, taken is ""
+
+function dinoClouds with run, index, taken
+    if index > 2
+        give taken
+    with left is ((
+        dinoWrapped with value is ((index * 260) + 80) - (
+            valueOr with maybe is (quotient with value is run.frame * 2, divisor is 5),
+            fallback is 0),
+        span is dinoWide + 120) - 60)
+    with top is (34 + (index * 22))
+    give dinoClouds with run is run,
+        index is index + 1,
+        taken is taken + ((
+            dinoBoxAt with left is left, top is top, wide is 44, tall is 8) + (
+            dinoBoxAt with left is left + 8, top is top - 5, wide is 26, tall is 6))
