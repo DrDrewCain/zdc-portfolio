@@ -2227,3 +2227,552 @@ function critterStep with game, input
             printed is ["the bushes go quiet. see you."],
             done is yes
     give CritterTurn with game is game, printed is critterHelpLines, done is no
+
+# --- the overworld ----------------------------------------------------------
+#
+# `src/lib/game/overworld.ts`. Twenty-four by fourteen. Grass to walk on,
+# tall grass that hides critters, trees and a pond that do not move.
+#
+# THE TILES ARE ONE `Text`, for the reason `mines.zd` gives: a cell is one
+# fact out of four and a `List of` anything costs a rebuild of the whole
+# list to change one of them. `.` grass, `t` tall, `T` tree, `~` water.
+#
+# The original's `OverTile` union also has `path`, and nothing in the
+# original ever produces one — `createOverworld` writes grass, tall, tree
+# and water and no fifth thing. So there is no character for it here. A
+# variant that cannot be constructed is not a state the port has to
+# represent, and inventing a character for it would be inventing a rule.
+#
+# `w` and `h` are dropped from the record for the same kind of reason:
+# they are `OW_W` and `OW_H` in every value that has ever existed, and two
+# fields that never vary are constants that have been copied into every
+# instance.
+
+record CritterWorld
+    tiles  is Text
+    px     is Whole
+    py     is Whole
+    steps  is Whole
+    # Region heat 0-6. Hotter regions spawn wilds above your strongest.
+    danger is Whole
+
+state critterWorldWide is static Whole starting 24
+state critterWorldTall is static Whole starting 14
+state critterWorldCells is static Whole from critterWorldWide * critterWorldTall
+
+function critterTileAt with world, x, y
+    give valueOr with maybe is (
+        textAt with value is world.tiles,
+        index is (y * critterWorldWide) + x),
+        fallback is "."
+
+function critterTilesWith with tiles, index, mark
+    give ((slice with value is tiles, start is 0, stop is index) + mark) + (
+        slice with value is tiles,
+        start is index + 1,
+        stop is critterWorldCells)
+
+function critterWorldWithTiles with world, tiles
+    give CritterWorld with tiles is tiles,
+        px is world.px,
+        py is world.py,
+        steps is world.steps,
+        danger is world.danger
+
+# EIGHTY-TWO DRAWS, AND THE ORDER MATTERS AS MUCH AS IT DID IN THE
+# GENERATOR: twenty-six tall-grass patches at two draws each, fourteen
+# tree attempts at two more, then the pond's two corners. A tree only
+# lands where the ground is still plain grass, so a patch of tall grass
+# that got there first wins — which is why the two loops cannot be
+# merged.
+function critterFreshWorld with seed, danger
+    with sown is (
+        critterScattered with tiles is (repeat with value is ".", count is critterWorldCells),
+        mark is "t",
+        onlyGrass is no,
+        remaining is 26,
+        seed is seed)
+    with wooded is (
+        critterScattered with tiles is sown,
+        mark is "T",
+        onlyGrass is yes,
+        remaining is 14,
+        seed is (critterSeedAfter with seed is seed, draws is 52))
+    with pondSeed is (critterSeedAfter with seed is seed, draws is 80)
+    with ponded is (
+        critterPond with tiles is wooded,
+        left is (3 + (critterRoll with seed is pondSeed, bound is critterWorldWide - 8)),
+        top is (2 + (
+            critterRoll with seed is (nextSeed of pondSeed),
+            bound is critterWorldTall - 6)),
+        index is 0)
+    # The player starts on a guaranteed-walkable centre tile, whatever
+    # the pond did.
+    give CritterWorld with tiles is (
+        critterTilesWith with tiles is ponded,
+        index is ((critterHalf of critterWorldTall) * critterWorldWide) + (
+            critterHalf of critterWorldWide),
+        mark is "."),
+        px is (critterHalf of critterWorldWide),
+        py is (critterHalf of critterWorldTall),
+        steps is 0,
+        danger is danger
+
+function critterHalf of value
+    give valueOr with maybe is (quotient with value is value, divisor is 2), fallback is 0
+
+function critterScattered with tiles, mark, onlyGrass, remaining, seed
+    if remaining is 0
+        give tiles
+    with spot is (((
+        critterRoll with seed is (nextSeed of seed),
+        bound is critterWorldTall) * critterWorldWide) + (
+        critterRoll with seed is seed,
+        bound is critterWorldWide))
+    if onlyGrass and (not ((
+        valueOr with maybe is (textAt with value is tiles, index is spot),
+        fallback is ".") is "."))
+        give critterScattered with tiles is tiles,
+            mark is mark,
+            onlyGrass is onlyGrass,
+            remaining is remaining - 1,
+            seed is (critterSeedAfter with seed is seed, draws is 2)
+    give critterScattered with tiles is (
+        critterTilesWith with tiles is tiles, index is spot, mark is mark),
+        mark is mark,
+        onlyGrass is onlyGrass,
+        remaining is remaining - 1,
+        seed is (critterSeedAfter with seed is seed, draws is 2)
+
+# Three rows of four, painted last, so the pond sits on top of whatever
+# was scattered under it.
+function critterPond with tiles, left, top, index
+    if index is 12
+        give tiles
+    give critterPond with tiles is (
+        critterTilesWith with tiles is tiles,
+        index is (((top + (
+            valueOr with maybe is (quotient with value is index, divisor is 4),
+            fallback is 0)) * critterWorldWide) + left) + (
+            valueOr with maybe is (mod with value is index, divisor is 4),
+            fallback is 0),
+        mark is "~"),
+        left is left,
+        top is top,
+        index is index + 1
+
+# --- walking ----------------------------------------------------------------
+
+record CritterMove
+    world     is CritterWorld
+    encounter is Truth
+    blocked   is Truth
+    # True when the step crosses the map boundary: the caller loads a
+    # fresh adjacent area rather than blocking the player in place.
+    edge      is Truth
+    seed      is Whole
+
+function critterStepX of dir
+    if dir is "left"
+        give 0 - 1
+    if dir is "right"
+        give 1
+    give 0
+
+function critterStepY of dir
+    if dir is "up"
+        give 0 - 1
+    if dir is "down"
+        give 1
+    give 0
+
+# One tile. Trees and water block. Stepping off an edge flags it so the
+# caller can swap in a new area rather than pretending there is a wall.
+#
+# THE DRAW HAPPENS ONLY IN TALL GRASS. `t === 'tall' && rng() < 0.28`
+# short-circuits, so walking across plain grass costs the stream nothing
+# — and since the same stream feeds the encounter that a step may start,
+# drawing on every step would deal a different critter.
+function critterWalked with world, dir, seed
+    with nx is (world.px + (critterStepX of dir))
+    with ny is (world.py + (critterStepY of dir))
+    if ((nx < 0) or (ny < 0)) or ((nx > (critterWorldWide - 1)) or (ny > (critterWorldTall - 1)))
+        give CritterMove with world is world,
+            encounter is no,
+            blocked is no,
+            edge is yes,
+            seed is seed
+    with tile is (critterTileAt with world is world, x is nx, y is ny)
+    if (tile is "T") or (tile is "~")
+        give CritterMove with world is world,
+            encounter is no,
+            blocked is yes,
+            edge is no,
+            seed is seed
+    with moved is (
+        CritterWorld with tiles is world.tiles,
+        px is nx,
+        py is ny,
+        steps is world.steps + 1,
+        danger is world.danger)
+    if not (tile is "t")
+        give CritterMove with world is moved,
+            encounter is no,
+            blocked is no,
+            edge is no,
+            seed is seed
+    give CritterMove with world is moved,
+        encounter is ((randomDecimal of seed) < 0.28),
+        blocked is no,
+        edge is no,
+        seed is (nextSeed of seed)
+
+# The area you walk into when crossing an edge: a fresh region entered
+# from the opposite side, on the same lane you left on. The entry tile is
+# forced to grass, so crossing can never drop you inside a tree.
+function critterCrossed with world, dir, seed, danger
+    give critterEnteredFrom with area is (
+        critterFreshWorld with seed is seed,
+        danger is danger),
+        world is world,
+        dir is dir
+
+# Re-entering a region you have already been in uses the same rule, which
+# is what makes walking back the way you came arrive where you left.
+function critterEnteredFrom with area, world, dir
+    with px is (critterEntryX with world is world, area is area, dir is dir)
+    with py is (critterEntryY with world is world, area is area, dir is dir)
+    give CritterWorld with tiles is (
+        critterTilesWith with tiles is area.tiles,
+        index is (py * critterWorldWide) + px,
+        mark is "."),
+        px is px,
+        py is py,
+        steps is area.steps,
+        danger is area.danger
+
+function critterEntryX with world, area, dir
+    if dir is "left"
+        give critterWorldWide - 1
+    if dir is "right"
+        give 0
+    give world.px
+
+function critterEntryY with world, area, dir
+    if dir is "up"
+        give critterWorldTall - 1
+    if dir is "down"
+        give 0
+    give world.py
+
+# --- the session ------------------------------------------------------------
+#
+# `critters-game.tsx` keeps nine mutable locals — the rules state, the
+# region you are in, where that region sits on the world grid, every
+# region you have visited, which screen is up, the log, and two cursors —
+# and a `rAF` loop that repaints from them. Here they are one record, so
+# a key is `set game to (critterWalked… )` and the repaint is the view
+# being a function of the signals, which it already is.
+#
+# ONE STREAM FOR THE WHOLE GAME. The original hands `Math.random` to the
+# rules, to the terrain generator and to the region-heat roll alike. So
+# the seed lives in `hunt` and the world functions take it and give it
+# back: one stream, in the original's order, which is what makes a walk
+# reproducible from the number the terminal seeded it with.
+
+record CritterGame
+    hunt    is CritterHunt
+    world   is CritterWorld
+    # The world is a grid of persistent regions keyed by coordinate: walk
+    # back the way you came and you find the same place again.
+    regions is Map of Text to CritterWorld
+    wx      is Whole
+    wy      is Whole
+    # `explore`, `battle`, `dex`, `map` or `party`. A `Text` and not a
+    # `choice` for the reason `terminal.zd` gives about `mode`: it is
+    # compared and never matched on.
+    phase   is Text
+    printed is List of Text
+    # The battle menu cursor, and the party-screen cursor.
+    sel     is Whole
+    party   is Whole
+
+state critterActionKeys is static List of Text starting ["fight", "throw", "swap", "run"]
+state critterActionLabels is static List of Text starting ["FIGHT", "NET", "SWAP", "RUN"]
+
+function critterRegionKey with x, y
+    give (text of x) + "," + (text of y)
+
+function critterNewGame with caught, growth, badges, seed
+    with world is (critterFreshWorld with seed is seed, danger is 0)
+    give CritterGame with hunt is (
+        critterNewHunt with caught is caught,
+        growth is growth,
+        badges is badges,
+        seed is (critterSeedAfter with seed is seed, draws is 82)),
+        world is world,
+        regions is (set (critterRegionKey with x is 0, y is 0) to world in empty),
+        wx is 0,
+        wy is 0,
+        phase is "explore",
+        printed is ["walk into tall grass. G gym · P party · M map · C dex."],
+        sel is 0,
+        party is 0
+
+function critterGameWith with game, hunt, world, regions, wx, wy, phase, printed, sel, party
+    give CritterGame with hunt is hunt,
+        world is world,
+        regions is regions,
+        wx is wx,
+        wy is wy,
+        phase is phase,
+        printed is printed,
+        sel is sel,
+        party is party
+
+# A command run against the rules, with the screen following it. An
+# encounter puts the battle screen up and resets its cursor; the end of
+# one drops back to the grass. Empty output leaves the log alone, which
+# is how a refused move keeps the line that explained the last one.
+function critterAct with game, cmd
+    with turn is (critterStep with game is game.hunt, input is cmd)
+    with said is (
+        game.printed if (listLength of turn.printed) is 0 otherwise turn.printed)
+    if isSome of turn.game.foe
+        give critterGameWith with game is game,
+            hunt is turn.game,
+            world is game.world,
+            regions is game.regions,
+            wx is game.wx,
+            wy is game.wy,
+            phase is "battle",
+            printed is said,
+            sel is 0,
+            party is game.party
+    if game.phase is "battle"
+        give critterGameWith with game is game,
+            hunt is turn.game,
+            world is game.world,
+            regions is game.regions,
+            wx is game.wx,
+            wy is game.wy,
+            phase is "explore",
+            printed is (append "back to the grass." to said),
+            sel is game.sel,
+            party is game.party
+    give critterGameWith with game is game,
+        hunt is turn.game,
+        world is game.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is game.phase,
+        printed is said,
+        sel is game.sel,
+        party is game.party
+
+# One step. `dir` is "up", "down", "left" or "right".
+function critterWalk with game, dir
+    with moved is (
+        critterWalked with world is game.world,
+        dir is dir,
+        seed is game.hunt.seed)
+    if moved.edge
+        give critterCrossedEdge with game is game, dir is dir
+    with walked is (
+        critterGameWith with game is game,
+        hunt is (critterWithSeed with game is game.hunt, seed is moved.seed),
+        world is moved.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is game.phase,
+        printed is game.printed,
+        sel is game.sel,
+        party is game.party)
+    if not moved.encounter
+        give walked
+    give critterAct with game is walked, cmd is "hunt " + (text of moved.world.danger)
+
+# Crossing an edge. The region you are leaving is remembered exactly as
+# it stands, so its trees and its pond are still there when you come
+# back; a region you have not seen is generated, and its heat is rolled
+# against your badge count, which is how the late map gets dangerous
+# without anything saying where the late map is.
+function critterCrossedEdge with game, dir
+    with nx is (game.wx + (critterStepX of dir))
+    with ny is (game.wy + (critterStepY of dir))
+    with remembered is (
+        set (critterRegionKey with x is game.wx, y is game.wy) to game.world in game.regions)
+    when mapAt with value is remembered, key is (critterRegionKey with x is nx, y is ny)
+        None
+            give critterOpenedGround with game is game,
+                dir is dir,
+                nx is nx,
+                ny is ny,
+                remembered is remembered,
+                danger is (
+                    min with first is 6,
+                    second is (
+                        critterRoll with seed is game.hunt.seed,
+                        bound is 2 + game.hunt.badges))
+        Some with area
+            give critterArrived with game is game,
+                nx is nx,
+                ny is ny,
+                seed is game.hunt.seed,
+                world is (
+                    critterEnteredFrom with area is area,
+                    world is game.world,
+                    dir is dir),
+                regions is remembered,
+                printed is ["familiar ground."]
+
+function critterOpenedGround with game, dir, nx, ny, remembered, danger
+    give critterArrived with game is game,
+        nx is nx,
+        ny is ny,
+        # One draw for the heat, then eighty-two for the terrain.
+        seed is (critterSeedAfter with seed is game.hunt.seed, draws is 83),
+        world is (
+            critterCrossed with world is game.world,
+            dir is dir,
+            seed is (nextSeed of game.hunt.seed),
+            danger is danger),
+        regions is remembered,
+        printed is [
+            "a new stretch opens up. the grass hums with power. (+" + (
+                text of danger) + ")" if danger > 2 otherwise (
+                "a new stretch of grass opens up.")]
+
+function critterArrived with game, nx, ny, seed, world, regions, printed
+    give critterGameWith with game is game,
+        hunt is (critterWithSeed with game is game.hunt, seed is seed),
+        world is world,
+        regions is (set (critterRegionKey with x is nx, y is ny) to world in regions),
+        wx is nx,
+        wy is ny,
+        phase is game.phase,
+        printed is printed,
+        sel is game.sel,
+        party is game.party
+
+# --- the screens ------------------------------------------------------------
+#
+# Menu toggles work from the field or from their own screen, which is
+# what makes `c` open the dex and `c` close it. `esc` backs out of a
+# menu; from the field or a battle it is the caller's to act on, and
+# `critterQuitsOnEscape` is that question asked rather than answered here
+# — a rules module that closed a panel would be reaching into the view.
+
+function critterMenu with game, target
+    if not ((game.phase is "explore") or (game.phase is target))
+        give game
+    give critterGameWith with game is game,
+        hunt is game.hunt,
+        world is game.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is ("explore" if game.phase is target otherwise target),
+        printed is game.printed,
+        sel is game.sel,
+        party is 0
+
+function critterQuitsOnEscape of game
+    give not (((game.phase is "dex") or (game.phase is "map")) or (game.phase is "party"))
+
+function critterEscaped of game
+    give critterGameWith with game is game,
+        hunt is game.hunt,
+        world is game.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is "explore",
+        printed is game.printed,
+        sel is game.sel,
+        party is game.party
+
+# The battle menu wraps in both directions. Four actions, so `+ 3` is
+# `- 1` without a negative index.
+function critterMenuMoved with game, step
+    give critterGameWith with game is game,
+        hunt is game.hunt,
+        world is game.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is game.phase,
+        printed is game.printed,
+        sel is (
+            valueOr with maybe is (mod with value is game.sel + step, divisor is 4),
+            fallback is 0),
+        party is game.party
+
+function critterActionAt of index
+    give critterTextAt with items is critterActionKeys, index is index, fallback is "fight"
+
+function critterActionLabelAt of index
+    give critterTextAt with items is critterActionLabels, index is index, fallback is ""
+
+function critterConfirm of game
+    give critterAct with game is game, cmd is (critterActionAt of game.sel)
+
+# The party screen shows at most eight, and the cursor wraps within
+# however many you actually have.
+function critterPartySize of game
+    give min with first is (listLength of game.hunt.caught), second is 8
+
+function critterPartyMoved with game, step
+    with total is (critterPartySize of game)
+    if total is 0
+        give game
+    give critterGameWith with game is game,
+        hunt is game.hunt,
+        world is game.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is game.phase,
+        printed is game.printed,
+        sel is game.sel,
+        party is (
+            valueOr with maybe is (mod with value is game.party + step, divisor is total),
+            fallback is 0)
+
+# Promoting a critter moves it to the front of `caught`, which is the
+# list `swap` cycles and `nextHealthy` walks — so "lead" is not a
+# separate fact that could disagree with the order.
+function critterPromoted of game
+    if game.party is 0
+        give game
+    with name is (
+        critterTextAt with items is game.hunt.caught, index is game.party, fallback is "")
+    if name is ""
+        give game
+    give critterGameWith with game is game,
+        hunt is (
+            critterWithCaught with game is game.hunt,
+            caught is (
+                critterLeadingWith with name is name, caught is game.hunt.caught)),
+        world is game.world,
+        regions is game.regions,
+        wx is game.wx,
+        wy is game.wy,
+        phase is game.phase,
+        printed is [name + " now leads the party."],
+        sel is game.sel,
+        party is 0
+
+function critterMovedToFront with name, caught
+    from caught
+    keep each other where not (other is name)
+
+function critterLeadingWith with name, caught
+    give critterAppendAll with head is [name],
+        rest is (critterMovedToFront with name is name, caught is caught)
+
+function critterAppendAll with head, rest
+    from rest
+    fold each item into taken starting head to (append item to taken)
