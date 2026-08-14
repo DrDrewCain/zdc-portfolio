@@ -19,6 +19,8 @@ use "./commands" for Outcome, Completion, runCommand, completionFor, commandName
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./snake" for Snake, newSnake, snakeStep
+use "./blocks" for Blocks, newBlocks, blocksStep
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
 use "./mines" for Field,
     freshField,
@@ -85,6 +87,13 @@ state field is client Field starting (freshField of 1)
 # The same engine the standalone `twenty48.zd` runs. One board here and
 # one there, and neither knows about the other.
 state tiles is client Board starting (freshBoard of 1)
+
+# Two more self-advancing boards. Both step functions give the board back
+# unchanged once it is dead, so neither needs a `running` gate of its own
+# — a dead game is a still one by its own rule rather than by a flag
+# beside it.
+state serpent is client Snake every "110ms" starting (newSnake of 1) to (snakeStep of serpent)
+state stack is client Blocks every "60ms" starting (newBlocks of 1) to (blocksStep of stack)
 state bestScore is remembered Whole starting 0
 state board is client Life every "90ms" starting (
     stamped with pattern is gunCells,

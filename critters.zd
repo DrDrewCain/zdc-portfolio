@@ -3491,3 +3491,35 @@ function critterPartyStats with game, slot, name
 function critterDexHeading of game
     give "CRITTERDEX  " + (text of (listLength of game.hunt.caught)) + " caught · " + (
         text of game.hunt.badges) + "/" + (text of critterGymCount) + " badges"
+
+# --- slots, because `each` has no index -------------------------------------
+#
+# A repeated region binds the item and not its position, so a screen laid
+# out on a grid iterates the *slots* and looks the item up — which is
+# what `site.zd` already does for the 2048 board, `each band in [0, 4, 8,
+# 12]`. The lists and the lookups live here so a view cannot drift from
+# the geometry above it.
+
+state critterDexSlots is static List of Whole from indices of 12
+state critterPartySlots is static List of Whole from indices of 8
+state critterActionSlots is static List of Whole from indices of 4
+
+function critterDexShown of game
+    give listLength of (critterDexIds of game)
+
+function critterDexIdAt with game, slot
+    give valueOr with maybe is (listAt with value is (critterDexIds of game), index is slot),
+        fallback is (0 - 1)
+
+function critterPartyShown of game
+    give listLength of (critterPartyNames of game)
+
+function critterPartyNameAt with game, slot
+    give critterTextAt with items is (critterPartyNames of game), index is slot, fallback is ""
+
+function critterAllyName of game
+    when game.ally
+        None
+            give ""
+        Some with ally
+            give ally.name

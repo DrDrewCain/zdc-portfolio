@@ -69,6 +69,8 @@ use "./terminal" for screen,
     field,
     tiles,
     bestScore,
+    serpent,
+    stack,
     history,
     cursor,
     draft,
@@ -82,6 +84,8 @@ use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
+use "./snake" for Snake, newSnake, snakeSteer, snakeStatus, snakeViewBox, snakePortalPath, snakeFoodPath, snakeStemPath, snakeBodyPath, snakeGlintPath, snakeHeadPath, snakeEyesPath, snakeBodyFill, snakeHeadFill
+use "./blocks" for Blocks, newBlocks, blocksLeft, blocksRight, blocksDown, blocksRotate, blocksDrop, blocksRefactor, blocksStatus, blocksViewBox, blocksNextViewBox, blocksColor, blocksTilePath, blocksGhostPath, blocksGridPath, blocksNextPath, blocksNextColor, blocksPieceColor
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
 use "./mines" for Field,
     freshField,
@@ -379,6 +383,36 @@ component Terminal
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
+            if overlay is "snake"
+                Column class is "term-game", gap is 8, align is "center"
+                    Row gap is 16, align is "center"
+                        Text "snake", class is "prompt-path"
+                        Text (snakeStatus of serpent), class is "prompt-mark"
+                    Scene viewBox is snakeViewBox, label is "snake"
+                        Path outline is (snakePortalPath of serpent), fill is "none", stroke is "#86dcb8", strokeWidth is 2
+                        Path outline is (snakeStemPath of serpent), fill is "none", stroke is "#6b8f3a", strokeWidth is 2
+                        Path outline is (snakeFoodPath of serpent), fill is "#e6c46d"
+                        Path outline is (snakeBodyPath of serpent), fill is (snakeBodyFill of serpent)
+                        Path outline is (snakeGlintPath of serpent), fill is "#ffffff", opacity is 0.12
+                        Path outline is (snakeHeadPath of serpent), fill is (snakeHeadFill of serpent)
+                        Path outline is (snakeEyesPath of serpent), fill is "#15100d"
+
+            if overlay is "blocks"
+                Column class is "term-game-wide", gap is 8, align is "center"
+                    Row gap is 16, align is "center"
+                        Text "blocks", class is "prompt-path"
+                        Text (blocksStatus of stack), class is "prompt-mark"
+                    Row gap is 14, align is "start"
+                        Scene viewBox is blocksViewBox, label is "blocks"
+                            Path outline is (blocksGridPath), fill is "none", stroke is "#2b261e", strokeWidth is 1
+                            each kind in [1, 2, 3, 4, 5, 6, 7]
+                                Path outline is (blocksTilePath with game is stack, kind is kind), fill is (blocksColor of kind)
+                            Path outline is (blocksGhostPath of stack), fill is "none", stroke is (blocksPieceColor of stack), strokeWidth is 1
+                        Column gap is 6
+                            Text "next", class is "prompt-mark"
+                            Scene viewBox is blocksNextViewBox, label is "the next piece"
+                                Path outline is (blocksNextPath of stack), fill is (blocksNextColor of stack)
+
             if overlay is "2048"
                 Column class is "term-game", gap is 8, align is "center"
                     Row gap is 16, align is "center"
@@ -483,6 +517,10 @@ component Terminal
                                     set field to (freshField of (clock))
                                 if answer.launches is "2048"
                                     set tiles to (freshBoard of (clock))
+                                if answer.launches is "snake"
+                                    set serpent to (newSnake of (clock))
+                                if answer.launches is "blocks"
+                                    set stack to (newBlocks of (clock))
                                 if not (isBlank of answer.enters)
                                     set mode to answer.enters
                                 # A fresh code per game, seeded from the
@@ -543,6 +581,32 @@ component Terminal
                         # the document for the reason `on key` is: a
                         # document listener stands down while a field has
                         # focus, and the field always has it here.
+                        if overlay is "snake"
+                            if stroke.key is "ArrowLeft"
+                                set serpent to (snakeSteer with game is serpent, dx is 0 - 1, dy is 0)
+                            if stroke.key is "ArrowRight"
+                                set serpent to (snakeSteer with game is serpent, dx is 1, dy is 0)
+                            if stroke.key is "ArrowUp"
+                                set serpent to (snakeSteer with game is serpent, dx is 0, dy is 0 - 1)
+                            if stroke.key is "ArrowDown"
+                                set serpent to (snakeSteer with game is serpent, dx is 0, dy is 1)
+                            if stroke.key is " "
+                                set serpent to (newSnake of (clock))
+
+                        if overlay is "blocks"
+                            if stroke.key is "ArrowLeft"
+                                set stack to (blocksLeft of stack)
+                            if stroke.key is "ArrowRight"
+                                set stack to (blocksRight of stack)
+                            if stroke.key is "ArrowDown"
+                                set stack to (blocksDown of stack)
+                            if stroke.key is "ArrowUp"
+                                set stack to (blocksRotate of stack)
+                            if stroke.key is " "
+                                set stack to (blocksDrop of stack)
+                            if stroke.key is "r"
+                                set stack to (blocksRefactor of stack)
+
                         if overlay is "2048"
                             if stroke.key is "ArrowLeft"
                                 set tiles to (afterMove with board is tiles, direction is Left)

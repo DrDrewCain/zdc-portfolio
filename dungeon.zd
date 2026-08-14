@@ -256,14 +256,14 @@ function crawlMidY of room
 # cost four hundred and sixty thousand for the same map.
 
 function crawlGroundRows with plan, y, taken
-    if y is crawlHigh
+    if y > (crawlHigh - 1)
         give taken
     give crawlGroundRows with plan is plan,
         y is y + 1,
         taken is (append (crawlGroundRow with plan is plan, y is y, x is 0, taken is "") to taken)
 
 function crawlGroundRow with plan, y, x, taken
-    if x is crawlWide
+    if x > (crawlWide - 1)
         give taken
     give crawlGroundRow with plan is plan,
         y is y,
@@ -1288,3 +1288,579 @@ function crawlGearLine of game
 function crawlRecent of game
     give listDrop with items is game.log,
         count is (max with first is 0, second is (listLength of game.log) - 4)
+
+# --- the sprites ------------------------------------------------------------
+#
+# The original's 8x8 pixel grids, one `Text` per row: `0` is clear, `1`
+# is the entity's colour, `2` its accent, `3` the merchant's eyes. A
+# collection literal has to fit on one line, and eight rows of eight fit.
+#
+# A `List of Text` rather than one 64-character string because the rows
+# are the picture: an editor's cursor lands on the pixel you meant.
+
+state crawlHeroArt is static List of Text starting ["00111100", "01211210", "01111110", "00111100", "01111110", "10111101", "10100101", "00100100"]
+state crawlRatArt is static List of Text starting ["00000000", "00000101", "00001111", "01111210", "11111110", "01111100", "10010100", "00000000"]
+state crawlKnightArt is static List of Text starting ["00111100", "01111110", "01222210", "01111110", "00111100", "01111110", "01011010", "01000010"]
+state crawlDragonArt is static List of Text starting ["10000010", "11011011", "01122110", "01111110", "11111111", "01111110", "01011010", "10011001"]
+state crawlPotionArt is static List of Text starting ["00111100", "00011000", "00011000", "00111100", "01222210", "01222210", "01222210", "00111100"]
+state crawlCoinArt is static List of Text starting ["00111100", "01222210", "12122121", "12211221", "12211221", "12122121", "01222210", "00111100"]
+state crawlTraderArt is static List of Text starting ["00111100", "01222210", "01133110", "00111100", "01122110", "11122111", "10111101", "00100100"]
+
+# A sprite pixel is two units and a gear pixel is one, which is why the
+# cell is sixteen rather than the original's eighteen. Written down
+# rather than divided, because `crawlCell / 8` is a `Decimal` and a path
+# is built out of `Whole`s.
+state crawlDot is static Whole starting 2
+state crawlGrid is static Whole starting 12
+
+# --- one path for the whole board -------------------------------------------
+#
+# `life.zd` gives the argument: every cell is a subpath of one `d`, so a
+# floor is a handful of shapes however much of it is drawn. The grouping
+# is by *appearance* and not by cell, which is why there are four tile
+# paths — lit wall, remembered wall, lit floor, remembered floor. Fog of
+# war is a colour, so it is a path.
+
+function crawlBoxAt with left, top, wide, tall
+    give ((((((("M" + (text of left)) + " ") + (text of top)) + "h") + (text of wide)) + "v") + (text of tall)) + "h-" + (text of wide) + "Z"
+
+function crawlLit with game, index
+    give ((abs of ((crawlColumn of index) - game.hero.x)) + (
+        abs of ((crawlRow of index) - game.hero.y))) < (crawlReach + 1)
+
+# The stairs are floor with a mark on them, so they take the floor's
+# colour here and the chevron below.
+function crawlCells with game, mark, lit, index, taken
+    if index > (crawlSpan - 1)
+        give taken
+    if not ((crawlMarkAt with value is game.seen, index is index) is "1")
+        give crawlCells with game is game,
+            mark is mark,
+            lit is lit,
+            index is index + 1,
+            taken is taken
+    with cell is (crawlMarkAt with value is game.ground, index is index)
+    if not (("#" if cell is "#" otherwise ".") is mark)
+        give crawlCells with game is game,
+            mark is mark,
+            lit is lit,
+            index is index + 1,
+            taken is taken
+    if not ((crawlLit with game is game, index is index) is lit)
+        give crawlCells with game is game,
+            mark is mark,
+            lit is lit,
+            index is index + 1,
+            taken is taken
+    give crawlCells with game is game,
+        mark is mark,
+        lit is lit,
+        index is index + 1,
+        taken is taken + (crawlTileBox of index)
+
+function crawlTileBox of index
+    give crawlBoxAt with left is ((crawlColumn of index) * crawlCell),
+        top is ((crawlRow of index) * crawlCell),
+        wide is crawlCell,
+        tall is crawlCell
+
+function crawlFloorPath of game
+    give crawlCells with game is game, mark is ".", lit is yes, index is 0, taken is ""
+
+function crawlFloorDimPath of game
+    give crawlCells with game is game, mark is ".", lit is no, index is 0, taken is ""
+
+function crawlWallPath of game
+    give crawlCells with game is game, mark is "#", lit is yes, index is 0, taken is ""
+
+function crawlWallDimPath of game
+    give crawlCells with game is game, mark is "#", lit is no, index is 0, taken is ""
+
+# `>` in the original, drawn with `fillText`. A `Text` is not one of the
+# five things a drawing may contain, so the glyph is the two strokes a
+# `>` is. Stroked rather than filled, which is why it is its own path.
+function crawlStairsPath of game
+    give crawlStairsFrom with game is game, index is 0, taken is ""
+
+function crawlStairsFrom with game, index, taken
+    if index > (crawlSpan - 1)
+        give taken
+    if ((crawlMarkAt with value is game.ground, index is index) is ">") and ((
+        crawlMarkAt with value is game.seen, index is index) is "1")
+        give crawlStairsFrom with game is game,
+            index is index + 1,
+            taken is taken + (crawlChevronAt of index)
+    give crawlStairsFrom with game is game, index is index + 1, taken is taken
+
+function crawlChevronAt of index
+    with left is (((crawlColumn of index) * crawlCell) + 5)
+    with top is (((crawlRow of index) * crawlCell) + 4)
+    give ((("M" + (text of left)) + " ") + (text of top)) + "l4 4l-4 4"
+
+# --- entities ---------------------------------------------------------------
+#
+# One sprite is 64 tests and 8 to 30 subpaths. Every entity of a colour
+# goes into one path, so a floor of ten monsters is one shape and not
+# ten.
+
+function crawlPixelAt with art, row, column
+    give valueOr with maybe is (
+        textAt with value is (
+            valueOr with maybe is (listAt with value is art, index is row),
+            fallback is ""),
+        index is column),
+        fallback is "0"
+
+function crawlEighth of index
+    give valueOr with maybe is (quotient with value is index, divisor is 8), fallback is 0
+
+function crawlEighthOver of index
+    give valueOr with maybe is (mod with value is index, divisor is 8), fallback is 0
+
+function crawlSpriteAt with art, x, y, mark, index, taken
+    if index is 64
+        give taken
+    if (
+        crawlPixelAt with art is art,
+        row is (crawlEighth of index),
+        column is (crawlEighthOver of index)) is mark
+        give crawlSpriteAt with art is art,
+            x is x,
+            y is y,
+            mark is mark,
+            index is index + 1,
+            taken is taken + (
+                crawlBoxAt with left is (x * crawlCell) + ((crawlEighthOver of index) * crawlDot),
+                top is (y * crawlCell) + ((crawlEighth of index) * crawlDot),
+                wide is crawlDot,
+                tall is crawlDot)
+    give crawlSpriteAt with art is art,
+        x is x,
+        y is y,
+        mark is mark,
+        index is index + 1,
+        taken is taken
+
+function crawlArtFor of glyph
+    if glyph is "$"
+        give crawlTraderArt
+    if glyph is "r"
+        give crawlRatArt
+    if glyph is "k"
+        give crawlKnightArt
+    give crawlDragonArt
+
+# Monsters are drawn only inside the sight radius, exactly as the
+# original: a monster you cannot see is not on the screen even where the
+# floor under it is remembered. `shop` picks which of the two kinds of
+# body this sweep is for, because they are two colours.
+function crawlFoesDrawn with game, shop, mark, index, taken
+    when listAt with value is game.foes, index is index
+        None
+            give taken
+        Some with foe
+            if not (((foe.glyph is "$") is shop) and ((
+                crawlGap with hero is game.hero, x is foe.x, y is foe.y) < (crawlReach + 1)))
+                give crawlFoesDrawn with game is game,
+                    shop is shop,
+                    mark is mark,
+                    index is index + 1,
+                    taken is taken
+            give crawlFoesDrawn with game is game,
+                shop is shop,
+                mark is mark,
+                index is index + 1,
+                taken is taken + (
+                    crawlSpriteAt with art is (crawlArtFor of foe.glyph),
+                    x is foe.x,
+                    y is foe.y,
+                    mark is mark,
+                    index is 0,
+                    taken is "")
+
+function crawlFoePath of game
+    give crawlFoesDrawn with game is game, shop is no, mark is "1", index is 0, taken is ""
+
+function crawlMerchantPath of game
+    give crawlFoesDrawn with game is game, shop is yes, mark is "1", index is 0, taken is ""
+
+function crawlHeroPath of game
+    give crawlSpriteAt with art is crawlHeroArt,
+        x is game.hero.x,
+        y is game.hero.y,
+        mark is "1",
+        index is 0,
+        taken is ""
+
+# Every `2` pixel in the scene. The original passes `ink` as the accent
+# for the hero, for monsters and for the merchant alike, so one path
+# carries all three.
+function crawlTrimPath of game
+    give ((
+        crawlSpriteAt with art is crawlHeroArt,
+        x is game.hero.x,
+        y is game.hero.y,
+        mark is "2",
+        index is 0,
+        taken is "") + (
+        crawlFoesDrawn with game is game,
+        shop is no,
+        mark is "2",
+        index is 0,
+        taken is "")) + (
+        crawlFoesDrawn with game is game,
+        shop is yes,
+        mark is "2",
+        index is 0,
+        taken is "")
+
+function crawlEyePath of game
+    give crawlFoesDrawn with game is game, shop is yes, mark is "3", index is 0, taken is ""
+
+# A monster's health, as a bar over its head that shortens as you hit it.
+function crawlHurtPath of game
+    give crawlHurtFrom with game is game, index is 0, taken is ""
+
+function crawlHurtFrom with game, index, taken
+    when listAt with value is game.foes, index is index
+        None
+            give taken
+        Some with foe
+            if (foe.glyph is "$") or ((
+                crawlGap with hero is game.hero, x is foe.x, y is foe.y) > crawlReach)
+                give crawlHurtFrom with game is game, index is index + 1, taken is taken
+            give crawlHurtFrom with game is game,
+                index is index + 1,
+                taken is taken + (
+                    crawlBoxAt with left is (foe.x * crawlCell),
+                    top is (foe.y * crawlCell) - 2,
+                    wide is (
+                        valueOr with maybe is (
+                            quotient with value is foe.hp * crawlCell,
+                            divisor is foe.maxHp),
+                        fallback is 0),
+                    tall is 2)
+
+# --- what is lying on the floor ---------------------------------------------
+#
+# An item is drawn wherever the tile has been *seen*, lit or not — the
+# original does the same, and a remembered potion is the reason to walk
+# back for it.
+#
+# ONE PATH PER COLOUR, WHICH COSTS THE LEGENDARY HUE. The original gives
+# every legendary its own hue, derived from a hash of its name, so a
+# Nullblade never looks like a Segfault Saber. A hue per item is a fill
+# per item is a path per item, which is the thing the single-path rule
+# exists to prevent. What survives is the ornament: a legendary's gem
+# pixels are a `3` and go into their own path, so it still reads as
+# different metal, and the name in the log carries the ✦.
+
+function crawlThingsDrawn with game, kind, mark, index, taken
+    when listAt with value is game.things, index is index
+        None
+            give taken
+        Some with thing
+            if not ((thing.kind is kind) and ((
+                crawlMarkAt with value is game.seen,
+                index is (crawlIndexOf with x is thing.x, y is thing.y)) is "1"))
+                give crawlThingsDrawn with game is game,
+                    kind is kind,
+                    mark is mark,
+                    index is index + 1,
+                    taken is taken
+            give crawlThingsDrawn with game is game,
+                kind is kind,
+                mark is mark,
+                index is index + 1,
+                taken is taken + (
+                    crawlSpriteAt with art is (crawlItemArt of kind),
+                    x is thing.x,
+                    y is thing.y,
+                    mark is mark,
+                    index is 0,
+                    taken is "")
+
+function crawlItemArt of kind
+    give crawlCoinArt if kind is "gold" otherwise crawlPotionArt
+
+function crawlCoinPath of game
+    give crawlThingsDrawn with game is game, kind is "gold", mark is "1", index is 0, taken is ""
+
+function crawlPotionPath of game
+    give crawlThingsDrawn with game is game, kind is "potion", mark is "1", index is 0, taken is ""
+
+function crawlGearPath of game
+    give crawlGearDrawn with game is game, mark is "1", index is 0, taken is ""
+
+function crawlShinePath of game
+    give ((
+        crawlThingsDrawn with game is game,
+        kind is "gold",
+        mark is "2",
+        index is 0,
+        taken is "") + (
+        crawlThingsDrawn with game is game,
+        kind is "potion",
+        mark is "2",
+        index is 0,
+        taken is "")) + (crawlGearDrawn with game is game, mark is "2", index is 0, taken is "")
+
+function crawlGemPath of game
+    give crawlGearDrawn with game is game, mark is "3", index is 0, taken is ""
+
+function crawlGearDrawn with game, mark, index, taken
+    when listAt with value is game.things, index is index
+        None
+            give taken
+        Some with thing
+            if not (((thing.kind is "weapon") or (thing.kind is "armour")) and ((
+                crawlMarkAt with value is game.seen,
+                index is (crawlIndexOf with x is thing.x, y is thing.y)) is "1"))
+                give crawlGearDrawn with game is game,
+                    mark is mark,
+                    index is index + 1,
+                    taken is taken
+            give crawlGearDrawn with game is game,
+                mark is mark,
+                index is index + 1,
+                taken is taken + (
+                    crawlGridDrawn with grid is (crawlGearGrid of thing),
+                    x is thing.x,
+                    y is thing.y,
+                    mark is mark,
+                    index is 0,
+                    taken is "")
+
+# Twelve by twelve at one unit a pixel, centred in a sixteen-unit cell.
+function crawlGridDrawn with grid, x, y, mark, index, taken
+    if index > ((crawlGrid * crawlGrid) - 1)
+        give taken
+    if (crawlMarkAt with value is grid, index is index) is mark
+        give crawlGridDrawn with grid is grid,
+            x is x,
+            y is y,
+            mark is mark,
+            index is index + 1,
+            taken is taken + (
+                crawlBoxAt with left is ((x * crawlCell) + 2) + (crawlGridOver of index),
+                top is ((y * crawlCell) + 2) + (crawlGridDown of index),
+                wide is 1,
+                tall is 1)
+    give crawlGridDrawn with grid is grid,
+        x is x,
+        y is y,
+        mark is mark,
+        index is index + 1,
+        taken is taken
+
+function crawlGridOver of index
+    give valueOr with maybe is (mod with value is index, divisor is crawlGrid), fallback is 0
+
+function crawlGridDown of index
+    give valueOr with maybe is (quotient with value is index, divisor is crawlGrid), fallback is 0
+
+# --- gear-gen.ts ------------------------------------------------------------
+#
+# Every blade and every shield is drawn from a hash of its own name, so a
+# Nullblade and a Segfault Saber are different pictures and are the same
+# picture on every machine and every reload.
+#
+# THE TWO GENERATORS ARE ONE GENERATOR. `gear-gen.ts` implements
+# mulberry32 by hand — `a + 0x6d2b79f5`, the two mixes, the shift by
+# fourteen — and `nextSeed`, `randomBits` and `randomDecimal` in the
+# prelude are that same generator, written out with the same constants.
+# So the draws below are the draws the browser made, and the sprite for
+# "the Kernel Panic" here is the sprite for "the Kernel Panic" there.
+# The first draw is `nth is 1` and not 0 because mulberry32 advances the
+# seed before it mixes it.
+#
+# THE HASH NEEDS A CHARACTER'S NUMBER AND THE LANGUAGE HAS NONE. FNV-1a
+# folds in `charCodeAt(i)`; there is no `codeOf` in the prelude, so a
+# letter's number here is its position in an alphabet plus 32. It is a
+# different hash from the original's — the sprites are consistent with
+# each other rather than with the TypeScript's — and it is the one line
+# of `gear-gen.ts` that could not be ported as written.
+
+state crawlAlphabet is static Text starting " abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'-.0123456789"
+
+function crawlLetterValue of letter
+    give 32 + (
+        valueOr with maybe is (indexOf with value is crawlAlphabet, needle is letter),
+        fallback is 0)
+
+function crawlNameSeed of name
+    give crawlHashFrom with name is name, index is 0, hash is 2166136261
+
+function crawlHashFrom with name, index, hash
+    if index is (textLength of name)
+        give hash
+    give crawlHashFrom with name is name,
+        index is index + 1,
+        hash is (
+            wrappingProduct with left is (
+                bitXor with left is hash,
+                right is (crawlLetterValue of (crawlMarkAt with value is name, index is index))),
+            right is 16777619)
+
+function crawlGridSet with grid, x, y, mark
+    if not ((x > -1) and ((y > -1) and ((x < crawlGrid) and (y < crawlGrid))))
+        give grid
+    give crawlWithMark with value is grid, index is (y * crawlGrid) + x, mark is mark
+
+function crawlBlankGrid
+    give repeat with value is "0", count is crawlGrid * crawlGrid
+
+function crawlGearGrid of thing
+    if thing.kind is "weapon"
+        give crawlBladeGrid with name is thing.name, tier is thing.tier
+    give crawlShieldGrid with name is thing.name, tier is thing.tier
+
+# A blade on the anti-diagonal: hilt at the bottom left, tip at the top
+# right, a crossguard between them, and — for a legendary — a gem in the
+# guard, a gem in the pommel and serrations up the back of the blade.
+function crawlBladeGrid with name, tier
+    with seed is (bitXor with left is (crawlNameSeed of name), right is 40507)
+    with reach is (6 + (crawlPick with seed is seed, nth is 1, bound is 4))
+    with thick is (1 + (1 if (crawlRoll with seed is seed, nth is 2) < (
+        0.7 if tier > 1 otherwise 0.3) otherwise 0))
+    with guardW is (1 + (crawlPick with seed is seed, nth is 3, bound is 2))
+    with edged is (
+        crawlGridSet with grid is (
+            crawlBladeRun with grid is (crawlBlankGrid), i is 0, reach is reach, thick is thick),
+        x is 3 + (reach - 1),
+        y is 8 - (reach - 1),
+        mark is "2")
+    with guarded is (crawlGuard with grid is edged, d is 0 - guardW, width is guardW)
+    with hilted is (
+        crawlGridSet with grid is (
+            crawlGridSet with grid is (
+                crawlGridSet with grid is guarded, x is 1, y is 10, mark is "1"),
+            x is 2,
+            y is 10,
+            mark is "1"),
+        x is 1,
+        y is 11,
+        mark is ("3" if tier is 3 otherwise "1"))
+    if tier is 3
+        give crawlSerrated with grid is (
+            crawlGridSet with grid is hilted, x is 2, y is 9, mark is "3"),
+            i is 1,
+            reach is reach
+    give hilted
+
+function crawlBladeRun with grid, i, reach, thick
+    if i is reach
+        give grid
+    give crawlBladeRun with grid is (
+        crawlGridSet with grid is (
+            crawlBladeThick with grid is grid, x is 3 + i, y is 8 - i, t is 0, thick is thick),
+        x is 3 + i,
+        y is 8 - i,
+        mark is "2"),
+        i is i + 1,
+        reach is reach,
+        thick is thick
+
+function crawlBladeThick with grid, x, y, t, thick
+    if t > thick
+        give grid
+    give crawlBladeThick with grid is (
+        crawlGridSet with grid is (
+            crawlGridSet with grid is grid, x is x, y is y + t, mark is "1"),
+        x is x - t,
+        y is y,
+        mark is "1"),
+        x is x,
+        y is y,
+        t is t + 1,
+        thick is thick
+
+function crawlGuard with grid, d, width
+    if d > width
+        give grid
+    give crawlGuard with grid is (
+        crawlGridSet with grid is grid, x is 2 + d, y is 9 + d, mark is "1"),
+        d is d + 1,
+        width is width
+
+function crawlSerrated with grid, i, reach
+    if not (i < reach)
+        give grid
+    give crawlSerrated with grid is (
+        crawlGridSet with grid is grid, x is 3 + i, y is (8 - i) - 1, mark is "2"),
+        i is i + 2,
+        reach is reach
+
+# A shield: a silhouette that tapers to a point, a boss in the middle,
+# and for a legendary an inlaid stripe down the front.
+function crawlShieldGrid with name, tier
+    with seed is (bitXor with left is (crawlNameSeed of name), right is 20973)
+    with topW is (3 + (crawlPick with seed is seed, nth is 1, bound is 2))
+    with rows is (8 + (crawlPick with seed is seed, nth is 2, bound is 2))
+    with waist is (3 + (crawlPick with seed is seed, nth is 3, bound is 2))
+    with plated is (
+        crawlShieldRows with grid is (crawlBlankGrid), r is 0, rows is rows, topW is topW)
+    with bossed is (
+        crawlGridSet with grid is (
+            crawlGridSet with grid is plated,
+            x is 5,
+            y is waist,
+            mark is ("3" if tier is 3 otherwise "2")),
+        x is 6,
+        y is waist,
+        mark is ("3" if tier is 3 otherwise "2"))
+    with studded is (crawlShieldStuds with grid is bossed, waist is waist, tier is tier)
+    if tier is 3
+        give crawlShieldStripe with grid is studded, y is 2, rows is rows
+    give studded
+
+function crawlShieldStuds with grid, waist, tier
+    if tier < 2
+        give grid
+    give crawlGridSet with grid is (
+        crawlGridSet with grid is grid, x is 5, y is waist + 2, mark is "2"),
+        x is 6,
+        y is waist + 2,
+        mark is "2"
+
+function crawlShieldRows with grid, r, rows, topW
+    if r is rows
+        give grid
+    with wide is (
+        max with first is 1,
+        second is ((valueOr with maybe is (round of ((decimalOf of topW) * (
+            1.0 - ((decimalOf of r) / (decimalOf of (rows + 1)))))), fallback is 1) + (
+            1 if r < 2 otherwise 0)))
+    give crawlShieldRows with grid is (
+        crawlShieldRow with grid is grid, y is 1 + r, dx is 0, wide is wide),
+        r is r + 1,
+        rows is rows,
+        topW is topW
+
+function crawlShieldRow with grid, y, dx, wide
+    if dx > wide
+        give grid
+    give crawlShieldRow with grid is (
+        crawlGridSet with grid is (
+            crawlGridSet with grid is grid,
+            x is 5 - dx,
+            y is y,
+            mark is ("2" if dx is wide otherwise "1")),
+        x is 6 + dx,
+        y is y,
+        mark is ("2" if dx is wide otherwise "1")),
+        y is y,
+        dx is dx + 1,
+        wide is wide
+
+function crawlShieldStripe with grid, y, rows
+    if not (y < rows)
+        give grid
+    give crawlShieldStripe with grid is (
+        crawlGridSet with grid is (
+            crawlGridSet with grid is grid, x is 5, y is 1 + y, mark is "3"),
+        x is 6,
+        y is 1 + y,
+        mark is "3"),
+        y is y + 2,
+        rows is rows

@@ -310,6 +310,8 @@ function helpLines
         "  codebreak         crack a four peg code in ten guesses",
         "  lexer             six guesses, five letters",
         "  2048              slide tiles together (alias: twenty48)",
+        "  snake             eat, grow, and mind the portals",
+        "  blocks            stack them, clear lines, refactor for space",
         "  life              conway, with a glider gun and a pulsar",
         "  minesweeper       clear the board without hitting a mine (alias: mines)",
         "  mode <level>      set interactive mode: off, terminal, full",
@@ -637,7 +639,7 @@ function runCommand of input
     if verb is "home"
         give goingTo with printed is ["going home..."], destination is "/"
     if verb is "games"
-        give entering with printed is ["> what game? (2048, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
+        give entering with printed is ["> what game? (2048, snake, blocks, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
             mode is "games"
     if (verb is "codebreak") or (verb is "mastermind")
         give entering with printed is [
@@ -658,6 +660,10 @@ function runCommand of input
     if (verb is "2048") or (verb is "twenty48")
         give launching with printed is ["launching 2048... (arrows/wasd slide, r restarts, esc to quit)"],
             game is "2048"
+    if verb is "snake"
+        give launching with printed is ["launching snake... (arrows steer, rings are linked portals, esc quits)"], game is "snake"
+    if verb is "blocks"
+        give launching with printed is ["launching blocks... (arrows move, up rotates, space drops, r refactors)"], game is "blocks"
     if (verb is "life") or (verb is "conway")
         give launching with printed is ["seeding a glider gun... (click cells, space runs, n steps, esc quits)"],
             game is "life"
