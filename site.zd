@@ -57,6 +57,8 @@ use "./projects" for Project,
 use "./data" for Line, now, about, aboutOpen, aboutStress, aboutClose, focus, domains
 use "./layers" for layerNames, reaches, oneIfReaches, tickClass
 use "./terminal" for screen,
+    dinoTop,
+    dinoBest,
     line,
     open,
     mode,
@@ -71,6 +73,9 @@ use "./terminal" for screen,
     bestScore,
     serpent,
     stack,
+    runner,
+    crawling,
+    deepest,
     lab,
     labCaught,
     labGrowth,
@@ -91,6 +96,8 @@ use "./trader" for Ship, Move, newShip, stepTrader
 use "./critters" for CritterGame, CritterGrowth, critterNewGame, critterWalk, critterAct, critterViewBox, critterTerrainLayers, critterTerrainPath, critterTerrainFill, critterHeroPath, critterHeroEyePath, critterExploreLine, critterExploreTally, critterBattleLog, critterFoeHeadline, critterFoeTag, critterFoeStars, critterAllyHeadline, critterAllyStatsLine, critterFoeCardPath, critterAllyCardPath, critterFoeBarTrackPath, critterFoeBarFillPath, critterAllyBarTrackPath, critterAllyBarFillPath, critterMenuPath, critterMenuText, critterMenuActive, critterActionSlots
 use "./snake" for Snake, newSnake, snakeSteer, snakeStatus, snakeViewBox, snakePortalPath, snakeFoodPath, snakeStemPath, snakeBodyPath, snakeGlintPath, snakeHeadPath, snakeEyesPath, snakeBodyFill, snakeHeadFill
 use "./blocks" for Blocks, newBlocks, blocksLeft, blocksRight, blocksDown, blocksRotate, blocksDrop, blocksRefactor, blocksStatus, blocksViewBox, blocksNextViewBox, blocksColor, blocksTilePath, blocksGhostPath, blocksGridPath, blocksNextPath, blocksNextColor, blocksPieceColor
+use "./dungeon" for Crawl, crawlStart, crawlStep, crawlStatus, crawlGearLine, crawlRecent, crawlViewBox, crawlFloorPath, crawlFloorDimPath, crawlWallPath, crawlWallDimPath, crawlStairsPath, crawlCoinPath, crawlPotionPath, crawlGearPath, crawlShinePath, crawlGemPath, crawlHurtPath, crawlFoePath, crawlMerchantPath, crawlHeroPath, crawlTrimPath, crawlEyePath
+use "./dino" for Dino, dinoFresh, dinoJump, dinoScore, dinoStatus, dinoViewBox, dinoBodyColour, dinoPupilColour, dinoCloudPath, dinoGroundPath, dinoRockPath, dinoRockLitPath, dinoRockShadePath, dinoBodyPath, dinoLitPath, dinoShadePath, dinoEyePath, dinoPupilPath
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
 use "./mines" for Field,
     freshField,
@@ -430,6 +437,81 @@ component Terminal
                             Scene viewBox is blocksNextViewBox, label is "the next piece"
                                 Path outline is (blocksNextPath of stack), fill is (blocksNextColor of stack)
 
+            # Sixteen paths in the order the original's canvas fills
+            # them: the remembered map underneath, the lit map over it,
+            # then what is lying on the floor, then what is alive.
+            #
+            # A gem is violet where the original gives every legendary a
+            # hue of its own. One hue per item is one fill per item is one
+            # *path* per item, which is the thing the single-path rule
+            # exists to prevent — and gold, the original's colour for an
+            # ordinary gem, was the wrong thing to collapse to: a gem
+            # drawn the colour of the coins beside it is a gem nobody
+            # sees.
+            if overlay is "crawl"
+                Column class is "term-game-wide", gap is 8
+                    Row gap is 16, align is "center"
+                        Text "crawl", class is "prompt-path"
+                        Text (crawlStatus of crawling), class is "prompt-mark"
+                    Row gap is 16, align is "center"
+                        Text (crawlGearLine of crawling), class is "prompt-mark"
+                        Text "deepest floor " + (text of deepest), class is "prompt-mark"
+                    Scene viewBox is crawlViewBox, label is "a dungeon floor"
+                        Path outline is (crawlFloorDimPath of crawling), fill is "#100e0b"
+                        Path outline is (crawlWallDimPath of crawling), fill is "#141210"
+                        Path outline is (crawlFloorPath of crawling), fill is "#171410"
+                        Path outline is (crawlWallPath of crawling), fill is "#2b261e"
+                        Path outline is (crawlStairsPath of crawling),
+                            fill is "none",
+                            stroke is "#ffa96b",
+                            strokeWidth is 2
+                        Path outline is (crawlCoinPath of crawling), fill is "#e6c46d"
+                        Path outline is (crawlPotionPath of crawling), fill is "#86dcb8"
+                        Path outline is (crawlGearPath of crawling), fill is "#c9c3b4"
+                        Path outline is (crawlShinePath of crawling), fill is "#ffa96b"
+                        Path outline is (crawlGemPath of crawling), fill is "#c792ea"
+                        Path outline is (crawlHurtPath of crawling), fill is "#e06a5a"
+                        Path outline is (crawlFoePath of crawling), fill is "#e06a5a"
+                        Path outline is (crawlMerchantPath of crawling), fill is "#e6c46d"
+                        Path outline is (crawlHeroPath of crawling), fill is "#ffa96b"
+                        Path outline is (crawlTrimPath of crawling), fill is "#f2ede3"
+                        Path outline is (crawlEyePath of crawling), fill is "#1a1512"
+                    Column gap is 2
+                        each entry in (crawlRecent of crawling)
+                            Text entry, class is "term-line"
+
+            if overlay is "dino"
+                Column class is "term-game-wide", gap is 8, align is "center"
+                    Row gap is 16, align is "center"
+                        Text "dino", class is "prompt-path"
+                        Text (dinoStatus of runner), class is "prompt-mark"
+                        Text "best " + (text of (
+                            max with first is dinoBest,
+                            second is dinoTop)),
+                            class is "prompt-mark"
+                    Scene viewBox is dinoViewBox, label is "an endless runner"
+                        Path outline is (dinoCloudPath of runner),
+                            fill is "#aaa295",
+                            opacity is 0.22
+                        Path outline is (dinoGroundPath of runner), fill is "#aaa295"
+                        Path outline is (dinoRockPath of runner), fill is "#79b98a"
+                        Path outline is (dinoRockLitPath of runner),
+                            fill is "#ffffff",
+                            opacity is 0.2
+                        Path outline is (dinoRockShadePath of runner),
+                            fill is "#000000",
+                            opacity is 0.28
+                        Path outline is (dinoBodyPath of runner), fill is (dinoBodyColour of runner)
+                        Path outline is (dinoLitPath of runner),
+                            fill is "#ffffff",
+                            opacity is 0.18
+                        Path outline is (dinoShadePath of runner),
+                            fill is "#000000",
+                            opacity is 0.22
+                        Path outline is (dinoEyePath of runner), fill is "#f2ede3"
+                        Path outline is (dinoPupilPath of runner),
+                            fill is (dinoPupilColour of runner)
+
             if overlay is "2048"
                 Column class is "term-game", gap is 8, align is "center"
                     Row gap is 16, align is "center"
@@ -640,6 +722,40 @@ component Terminal
                             if stroke.key is "r"
                                 set stack to (blocksRefactor of stack)
 
+                        # A bump is a move, so attacking, buying, looting
+                        # and descending are all this and nothing else.
+                        # Space restarts a finished run; `Enter` does too
+                        # in the original, and cannot here, because
+                        # `Enter` already belongs to the prompt.
+                        if overlay is "crawl"
+                            if stroke.key is "ArrowLeft"
+                                set crawling to (
+                                    crawlStep with game is crawling,
+                                    dx is 0 - 1,
+                                    dy is 0)
+                            if stroke.key is "ArrowRight"
+                                set crawling to (crawlStep with game is crawling, dx is 1, dy is 0)
+                            if stroke.key is "ArrowUp"
+                                set crawling to (
+                                    crawlStep with game is crawling,
+                                    dx is 0,
+                                    dy is 0 - 1)
+                            if stroke.key is "ArrowDown"
+                                set crawling to (crawlStep with game is crawling, dx is 0, dy is 1)
+                            if (stroke.key is " ") and crawling.over
+                                set crawling to (crawlStart of (clock))
+                            if crawling.depth > deepest
+                                set deepest to crawling.depth
+
+                        if overlay is "dino"
+                            if stroke.key is " "
+                                if runner.dead
+                                    set runner to (dinoFresh of (clock))
+                                if not runner.dead
+                                    set runner to (dinoJump of runner)
+                            if dinoTop > dinoBest
+                                set dinoBest to dinoTop
+
                         if overlay is "2048"
                             if stroke.key is "ArrowLeft"
                                 set tiles to (afterMove with board is tiles, direction is Left)
@@ -691,6 +807,8 @@ component Terminal
                                     seed is board.seed)
 
                         if stroke.key is "Escape"
+                            if dinoTop > dinoBest
+                                set dinoBest to dinoTop
                             if isBlank of overlay
                                 set open to no
                             set overlay to ""

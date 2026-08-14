@@ -313,6 +313,7 @@ function helpLines
         "  critters          catch things in a small ecosystem",
         "  snake             eat, grow, and mind the portals",
         "  blocks            stack them, clear lines, refactor for space",
+        "  crawl             descend a dungeon; bump a thing to fight it",
         "  life              conway, with a glider gun and a pulsar",
         "  minesweeper       clear the board without hitting a mine (alias: mines)",
         "  mode <level>      set interactive mode: off, terminal, full",
@@ -640,7 +641,7 @@ function runCommand of input
     if verb is "home"
         give goingTo with printed is ["going home..."], destination is "/"
     if verb is "games"
-        give entering with printed is ["> what game? (2048, snake, blocks, critters, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
+        give entering with printed is ["> what game? (2048, snake, blocks, critters, crawl, life, minesweeper, codebreak, lexer, trader) or 'exit'"],
             mode is "games"
     if (verb is "codebreak") or (verb is "mastermind")
         give entering with printed is [
@@ -675,6 +676,18 @@ function runCommand of input
         give launching with printed is [
             "opening the critter lab... (arrows walk, encounters find you)"],
             game is "critters"
+    if (verb is "crawl") or (verb is "dungeon")
+        give launching with printed is [
+            "descending into the dungeon... (arrows move, bump to attack, step on > to descend)"],
+            game is "crawl"
+
+    # Kept out of `help` and out of completion, because the only clue
+    # `help` gives is the line about dinosaurs having roamed here — and a
+    # hidden command that the help lists is not hidden.
+    if verb is "dino"
+        give launching with printed is [
+            "launching dino... (space jumps, twice for the tall ones, esc to quit)"],
+            game is "dino"
     if verb is "mode"
         give modeLine of tail
     give saying of [(

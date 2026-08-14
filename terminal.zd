@@ -22,6 +22,8 @@ use "./trader" for Ship, Move, newShip, stepTrader
 use "./critters" for CritterGame, CritterGrowth, critterNewGame
 use "./snake" for Snake, newSnake, snakeStep
 use "./blocks" for Blocks, newBlocks, blocksStep
+use "./dungeon" for Crawl, crawlStart
+use "./dino" for Dino, dinoClock, dinoFresh, dinoAdvanced, dinoScore
 use "./game2048" for Board, Direction, cellOf, afterMove, freshBoard, tileClass, tileText
 use "./mines" for Field,
     freshField,
@@ -95,6 +97,45 @@ state tiles is client Board starting (freshBoard of 1)
 # beside it.
 state serpent is client Snake every "110ms" starting (newSnake of 1) to (snakeStep of serpent)
 state stack is client Blocks every "60ms" starting (newBlocks of 1) to (blocksStep of stack)
+
+# The runner, on the display's own clock rather than on a millisecond
+# count of its own — the sim decides for itself how many sixtieths of a
+# second a repaint is worth, so a 144Hz monitor and a 60Hz laptop run the
+# same game.
+#
+# `running` is the overlay and not a flag beside it. Snake and blocks
+# hold still when they are dead, so neither needs one; a runner is never
+# dead for long enough to matter and would otherwise sprint into a cactus
+# behind a closed panel and be over before anyone opened it.
+state runner is client Dino every frame starting (dinoFresh of 1) to (
+    dinoAdvanced with run is runner, now is dinoClock, running is (overlay is "dino"))
+
+# The crawl. Turn based, like the lab, so an ordinary cell.
+#
+# `deepest` is the terminal's and not the dungeon's, for the same reason
+# `bestScore` is the terminal's: a rule of the game does not know there is
+# a browser to remember anything in, and `remembered` is a placement a
+# panel chooses.
+state crawling is client Crawl starting (crawlStart of 1)
+state deepest is remembered Whole starting 1
+
+# The high score is two cells rather than one, and the reason is a rule
+# of the language. The score climbs every frame the runner is alive, so
+# the fold that tracks its best belongs on the clock that raises it — but
+# a `remembered` cell is a *store*, and E0322 will not let a tick write
+# to one, on the grounds that a tick writing to a store writes sixty
+# times a second. The rule is right.
+#
+# So `dinoTop` is the fold, on the browser's clock, and `dinoBest` is
+# what survives the visit; the panel copies one to the other on the two
+# keys that end a run — space restarts it and escape leaves it. What that
+# does not catch is dying and then closing the tab without pressing
+# anything, which the original catches because its write is inside the
+# animation loop. That is the one write this language declines to allow,
+# and one lost record is a smaller price than a store written at 60Hz.
+state dinoTop is client Whole every frame starting 0 to (
+    max with first is dinoTop, second is (dinoScore of runner))
+state dinoBest is remembered Whole starting 0
 
 # The critter lab. It does not tick — it is turn based — so it is an
 # ordinary cell rather than a stepping clock.
