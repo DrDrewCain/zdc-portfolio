@@ -72,10 +72,12 @@ function aliveAt with rows, x, y
             index is (wrapped with value is x, most is lifeWidth)),
         fallback is ".") is "#"
 
+# Eight calls, so this stays a function. The conditional expression
+# replaces the helpers that existed *only* because there was no
+# conditional expression; one that is called eight times has earned its
+# name.
 function oneIfAlive with rows, x, y
-    if aliveAt with rows is rows, x is x, y is y
-        give 1
-    give 0
+    give 1 if aliveAt with rows is rows, x is x, y is y otherwise 0
 
 function neighbours with rows, x, y
     give (((

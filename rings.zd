@@ -98,7 +98,7 @@ function rampAt with ratio, alternate
     with eased is (
         valueOr with maybe is (power with value is ratio, exponent is RAMP_EASE),
         fallback is 0.0)
-    with shade is (shadeFactor of alternate)
+    with shade is (ALTERNATE if alternate otherwise 1.0)
     with red is (rampChannel with low is 74.0, high is 255.0, eased is eased, shade is shade)
     with green is (rampChannel with low is 65.0, high is 169.0, eased is eased, shade is shade)
     with blue is (rampChannel with low is 42.0, high is 107.0, eased is eased, shade is shade)
@@ -118,11 +118,6 @@ function rampAt with ratio, alternate
         channelOf with raw is blue,
         grey is grey,
         blend is blend)) + ")"
-
-function shadeFactor of alternate
-    if alternate
-        give ALTERNATE
-    give 1.0
 
 function channelOf with raw, grey, blend
     give min with first is 255,

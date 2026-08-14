@@ -145,7 +145,7 @@ function nextRow with left, right, previous, index, column, taken
     with best is (
         leastOf with first is above + 1,
         second is behind + 1,
-        third is diagonal + (oneUnless of same))
+        third is diagonal + (0 if same otherwise 1))
     give nextRow with left is left,
         right is right,
         previous is previous,
@@ -165,11 +165,6 @@ function sameCharacter with left, right, cursor, column
 
 function characterAt with value, index
     give valueOr with maybe is (textAt with value is value, index is index), fallback is ""
-
-function oneUnless of same
-    if same
-        give 0
-    give 1
 
 function leastOf with first, second, third
     give min with first is (min with first is first, second is second), second is third
@@ -356,12 +351,7 @@ function nowLines
     map each entry to ((
         padEnd with value is entry.label,
         width is 20,
-        using is " ") + entry.title) + (detailAfter of entry.detail)
-
-function detailAfter of detail
-    if isBlank of detail
-        give ""
-    give " — " + detail
+        using is " ") + entry.title) + ("" if isBlank of entry.detail otherwise " — " + entry.detail)
 
 # `cat stack` counts the technologies rather than listing them, and counts
 # them out of the projects: the hardcoded tally in the original's neofetch
@@ -584,25 +574,15 @@ function searchLines with query, hits
     if isEmpty of hits
         give [("no matches for '" + query) + "'."]
     give (
-        joinedLines with head is [((((text of (listLength of hits)) + " match") + (esWhenMany of (listLength of hits))) + " for '") + query + "':"],
+        joinedLines with head is [((((text of (listLength of hits)) + " match") + ("" if (listLength of hits) is 1 otherwise "es")) + " for '") + query + "':"],
         rest is (hitLines of hits))
-
-function esWhenMany of count
-    if count is 1
-        give ""
-    give "es"
 
 function hitLines of hits
     from hits
-    map each hit to ((("  " + (kindLabel of hit.kind)) + "  ") + (
+    map each hit to ((("  " + ("project" if hit.kind is "project" otherwise "   post")) + "  ") + (
         padEnd with value is hit.slug,
         width is 38,
         using is " ")) + (truncated of hit.detail)
-
-function kindLabel of kind
-    if kind is "project"
-        give "project"
-    give "   post"
 
 function joinedLines with head, rest
     from rest
