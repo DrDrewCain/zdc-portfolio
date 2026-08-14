@@ -71,19 +71,13 @@ state blocksNextViewBox is static Text from (("0 0 " + (text of (blocksMini * 4)
 # The seven marks a settled cell can carry, so a caller can ask for one
 # path per colour without knowing how many colours there are.
 #
-# READ THIS BEFORE PUTTING AN `each` OVER IT INSIDE A `Scene`. Today it
-# will not run. A repeated region inside a `Scene` reads its source by
-# *calling* it, which is right for a `client` signal — the runtime holds
-# one as a thunk — and wrong for everything else: over a `static` signal
-# the browser says `[1,2,3,4,5,6,7] is not a function`, and over a
-# zero-argument function it calls the answer, `kindList(...) is not a
-# function`. The same `each` over the same `static` list is fine inside
-# an `Svg`, and fine anywhere outside a drawing, so it is the canvas
-# emitter's region and not the region itself. Until that is fixed there
-# are two wirings that work: write the seven `Path` lines out — which is
-# what `mines.zd` does with its five, and is one line per appearance
-# rather than one per cell — or keep the list in a `client` signal on the
-# page that draws it.
+# An `each` over it inside a `Scene` did not run when this was written:
+# the emitter *called* a repeated region's source, which is right for a
+# `client` signal and wrong for a `static` one or a literal, so the
+# browser said `[1,2,3,4,5,6,7] is not a function`. This port is what
+# found that bug. It is fixed, and `site.zd` now draws the seven colours
+# from one `each` rather than the seven written-out `Path` lines the
+# workaround needed.
 state blocksKinds is static List of Whole starting [1, 2, 3, 4, 5, 6, 7]
 
 # --- the pieces -------------------------------------------------------------
