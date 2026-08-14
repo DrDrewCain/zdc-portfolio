@@ -1,0 +1,367 @@
+# critters.zd — `src/components/game/critters-game.tsx`, and the three
+# modules it is a view onto: `src/lib/game/creature-gen.ts`,
+# `src/lib/terminal/critters.ts` and `src/lib/game/overworld.ts`.
+#
+# Walk grass, flush out a procedurally generated creature, wear it down,
+# net it, level it until it evolves, and take eight badges off the gym
+# leaders. Three hundred species, none of them drawn by hand.
+#
+# WHY THE GENERATOR PORTS WITHOUT AN ARGUMENT. `creature-gen.ts` opens by
+# saying it is "deterministic from an integer seed: the same seed always
+# yields the same name, stats, palette, and pixel silhouette". That is the
+# only kind of randomness this language has. The original had to write
+# mulberry32 out by hand to get a reproducible creature; here mulberry32
+# *is* the generator — `nextSeed`, `randomBits`, `randomDecimal` — and the
+# absence of an ambient `Math.random` is what the original was working
+# around with `prng(id * 2654435761 + 1)`. So the port is not a
+# translation of the technique, it is the technique arriving at a language
+# that already agreed with it.
+#
+# WHY THE STREAM IS BIT-IDENTICAL TO THE ORIGINAL. mulberry32 increments
+# its state *before* mixing; this prelude's `randomBits of seed` mixes the
+# seed it is handed and leaves the increment to `nextSeed`. One `nextSeed`
+# up front reconciles the two, so `critterStream of n` is exactly the
+# original's `prng(n)` and every creature on the deployed site has the same
+# name, stats, silhouette and colours here. That was worth an extra call:
+# a port that quietly reshuffles three hundred creatures is not a port.
+#
+# WHY DRAWS ARE `floor(r * bound)` AND NOT `randomBelow`. `randomBelow` is
+# `randomBits mod bound`, which is a *different draw* from the original's
+# `Math.floor(rand() * bound)` — same generator, same seed, different
+# number. Reproducing the site's roster means reproducing its arithmetic,
+# so `critterRoll` is written out and `randomBelow` goes unused in this
+# file. Where the original wrote `rand() < p` the port writes
+# `randomDecimal of seed < p`, which is the same comparison.
+#
+# WHY A SPRITE IS A `Text`. `makeSprite` builds a 12x12 `number[][]` and
+# then mutates it eight times over — body, ears, band, eyes, feet, and
+# three more passes for the evolved forms. None of that is expressible.
+# The grid is one hundred and forty-four characters instead, indexed
+# `y * 12 + x`, and each pass gives back a new one; `mines.zd` makes the
+# same case for the same reason, and here it also buys the thing the
+# original's array of arrays cannot do — a pass reads the grid *as the
+# previous pass left it*, because there is no other grid to read.
+#
+# WHAT IS NOT HERE. The original persists to `localStorage` on every
+# action. There is no `localStorage` in this language and deliberately so:
+# what survives a reload is a `remembered` signal, which is a placement the
+# *terminal* writes down, not something a rules module can reach for. So
+# `CritterHunt` carries the three saved facts — `caught`, `growth`,
+# `badges` — as ordinary fields and the caller decides whether they are
+# remembered. That is the same split `terminal.zd` already makes for
+# `bestScore`.
+#
+# The other absence is text inside the drawing. The vector vocabulary is
+# `Group`, `Path`, `Circle` and `Segment`, and a string is not one of them,
+# so every `ctx.fillText` in the original becomes a `Text` element the
+# caller places beside the `Scene`. The lines themselves are here, as
+# functions giving `Text` — what is not here is where they sit, which is
+# the view's business anyway. `mines.zd` reached the same arrangement for
+# its status line.
+
+# --- the seeded stream ------------------------------------------------------
+#
+# One decision, written once. `critterStream` turns an integer into the
+# first seed of the original's `prng(n)`; `critterRoll` is its
+# `Math.floor(rand() * bound)`; and every generator below threads the seed
+# by hand, because a draw that does not hand back its successor is a draw
+# that happened twice.
+
+function critterStream of start
+    give nextSeed of (toUnsigned32 of start)
+
+function critterRoll with seed, bound
+    give valueOr with maybe is (
+        floor of ((randomDecimal of seed) * (decimalOf of bound))),
+        fallback is 0
+
+# `seedAfter` in `codebreak.zd` is this function; it is written again
+# rather than imported because a rules module that reaches into another
+# game's file to borrow a loop counter has coupled two things that have
+# nothing to do with each other.
+function critterSeedAfter with seed, draws
+    if draws is 0
+        give seed
+    give critterSeedAfter with seed is (nextSeed of seed), draws is draws - 1
+
+# --- the name and trait tables ----------------------------------------------
+#
+# Verbatim from `creature-gen.ts`. Thirty prefixes and thirty suffixes make
+# nine hundred names for three hundred creatures, which is why the roster
+# has to disambiguate collisions at all.
+
+state critterPrefixes is static List of Text starting [
+    "byte", "null", "seg", "fork", "cron", "hex", "stack", "cache", "ping", "loop",
+    "ram", "bit", "daem", "proc", "kern", "sig", "mut", "async", "lex", "glyph",
+    "vex", "nyx", "oro", "quill", "zeph", "thorn", "ember", "frost", "gale", "moss"]
+
+state critterSuffixes is static List of Text starting [
+    "bit", "fox", "moth", "hog", "owl", "cat", "pup", "worm", "mite", "fawn",
+    "mouse", "frog", "wing", "ling", "kin", "drake", "paw", "tail", "fin", "maw",
+    "snout", "crest", "horn", "shade", "spark", "wisp", "grub", "beak", "claw", "husk"]
+
+# The twelve signature names keep their identities at the low ids, and
+# their rarities are fixed rather than rolled — five commons, four
+# uncommons, three legendaries, so a new player's first few catches are
+# not decided by a coin.
+state critterSignatures is static List of Text starting [
+    "rambit", "pingpup", "loopworm", "cachecat", "bitmite", "stackowl",
+    "forkfrog", "cronmoth", "hexhog", "nullfox", "segfawn", "daemouse"]
+
+state critterSignatureRarity is static List of Whole starting [
+    1, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3]
+
+# The Roman-ish tag a colliding name takes. Eight is as far as the original
+# goes before falling back to a bare number.
+state critterRomanTags is static List of Text starting [
+    "", " ii", " iii", " iv", " v", " vi", " vii", " viii"]
+
+# Each trait carries stat modifiers: `bulk` shifts hit points, `bite`
+# shifts attack. The field is `bulk` and not `hp` because the record also
+# has to read well next to `Critter.maxHp`, which is the number this
+# modifies rather than another one.
+record CritterTrait
+    blurb is Text
+    bulk  is Whole
+    bite  is Whole
+
+state critterTraits is static List of CritterTrait starting [
+    (CritterTrait with blurb is "curls into 0xFF when startled", bulk is 5, bite is 0 - 1),
+    (CritterTrait with blurb is "hoards spare memory in its cheeks", bulk is 4, bite is 0),
+    (CritterTrait with blurb is "yips once every thirty seconds, exactly", bulk is 0, bite is 1),
+    (CritterTrait with blurb is "keeps coming back until you break it", bulk is 6, bite is 0 - 1),
+    (CritterTrait with blurb is "naps somewhere warm, forgets everything", bulk is 3, bite is 0 - 1),
+    (CritterTrait with blurb is "nibbles the low bits when nobody looks", bulk is 0 - 1, bite is 2),
+    (CritterTrait with blurb is "silently watches your frames", bulk is 1, bite is 1),
+    (CritterTrait with blurb is "there are always two of them", bulk is 0, bite is 2),
+    (CritterTrait with blurb is "arrives exactly on schedule", bulk is 2, bite is 1),
+    (CritterTrait with blurb is "provably not there", bulk is 0 - 2, bite is 4),
+    (CritterTrait with blurb is "touches what it should not", bulk is 1, bite is 3),
+    (CritterTrait with blurb is "runs in the background forever", bulk is 4, bite is 1),
+    (CritterTrait with blurb is "only appears in production, never in staging", bulk is 3, bite is 3),
+    (CritterTrait with blurb is "counts in base thirteen for reasons it will not share", bulk is 2, bite is 0),
+    (CritterTrait with blurb is "purrs at a steady 60fps", bulk is 2, bite is 0),
+    (CritterTrait with blurb is "molts a new skin every deploy", bulk is 3, bite is 1),
+    (CritterTrait with blurb is "is genuinely afraid of semicolons", bulk is 0 - 2, bite is 0),
+    (CritterTrait with blurb is "collects orphaned pointers like seashells", bulk is 1, bite is 0),
+    (CritterTrait with blurb is "smells faintly of warm silicon", bulk is 1, bite is 1),
+    (CritterTrait with blurb is "blinks in binary when it thinks", bulk is 0, bite is 1),
+    (CritterTrait with blurb is "hums one single tone, forever, out of spite", bulk is 2, bite is 0),
+    (CritterTrait with blurb is "leaves absolutely no stack trace", bulk is 0 - 1, bite is 3),
+    (CritterTrait with blurb is "eats trailing commas off your plate", bulk is 1, bite is 1),
+    (CritterTrait with blurb is "guards a cache everyone else forgot about", bulk is 5, bite is 0),
+    (CritterTrait with blurb is "dreams exclusively in hexadecimal", bulk is 2, bite is 2),
+    (CritterTrait with blurb is "went into recursion in 2019 and has not returned", bulk is 6, bite is 2),
+    (CritterTrait with blurb is "rounds 0.1 + 0.2 to 0.30000000000000004", bulk is 0, bite is 1),
+    (CritterTrait with blurb is "insists it is not a bug but a feature", bulk is 2, bite is 2),
+    (CritterTrait with blurb is "has strong opinions about tabs", bulk is 1, bite is 2),
+    (CritterTrait with blurb is "segfaults politely and apologizes after", bulk is 0 - 1, bite is 3),
+    (CritterTrait with blurb is "refuses to compile before its coffee", bulk is 3, bite is 0 - 1),
+    (CritterTrait with blurb is "holds a grudge against the garbage collector", bulk is 2, bite is 3),
+    (CritterTrait with blurb is "panics, then unwraps anyway", bulk is 0 - 1, bite is 4),
+    (CritterTrait with blurb is "lives rent-free in a memory leak", bulk is 4, bite is 0),
+    (CritterTrait with blurb is "ships on Fridays out of pure chaos", bulk is 0, bite is 3),
+    (CritterTrait with blurb is "overflows the buffer just to feel something", bulk is 1, bite is 4),
+    (CritterTrait with blurb is "has never once closed a file handle", bulk is 3, bite is 0),
+    (CritterTrait with blurb is "sharpens its claws on the type system", bulk is 0, bite is 3),
+    (CritterTrait with blurb is "is armored in legacy code no one dares touch", bulk is 7, bite is 0 - 1),
+    (CritterTrait with blurb is "moves in O(1) but only downhill", bulk is 1, bite is 2),
+    (CritterTrait with blurb is "caches grudges with a very long TTL", bulk is 4, bite is 2),
+    (CritterTrait with blurb is "was spawned by a race condition", bulk is 2, bite is 3),
+    (CritterTrait with blurb is "bites first, logs the exception later", bulk is 0 - 1, bite is 5),
+    (CritterTrait with blurb is "meditates inside an infinite while(true)", bulk is 5, bite is 1)]
+
+# --- a species --------------------------------------------------------------
+
+record Critter
+    id     is Whole
+    name   is Text
+    rarity is Whole
+    blurb  is Text
+    maxHp  is Whole
+    attack is Whole
+    # Turn order in battle: higher acts first. 5 (sluggish) to 18
+    # (blinding).
+    speed  is Whole
+
+state critterRosterSize is static Whole starting 300
+
+function critterTextAt with items, index, fallback
+    give valueOr with maybe is (listAt with value is items, index is index), fallback is fallback
+
+function critterWholeAt with items, index
+    give valueOr with maybe is (listAt with value is items, index is index), fallback is 0
+
+# THE DRAW ORDER IS THE SPECIES. `makeSpecies` branches on whether the id
+# is one of the twelve signatures, and the branch *consumes different
+# numbers of draws*: a signature spends none on rarity and none on its
+# name, an ordinary id spends one and then two. Everything after that —
+# trait, bulk, bite, speed — reads from wherever the branch left the
+# stream. Getting the count wrong does not fail, it produces three hundred
+# plausible creatures that are the wrong three hundred, which is why the
+# arithmetic is spelled out one draw at a time below rather than folded
+# into something shorter.
+function critterSpecies of id
+    with start is (critterStream of ((id * 2654435761) + 1))
+    # A signature spends nothing here; an ordinary id spends one draw on
+    # rarity and two on its name.
+    with afterName is (critterSeedAfter with seed is start, draws is (0 if id < 12 otherwise 3))
+    with rarity is (critterRarityOf with id is id, seed is start)
+    with trait is (
+        critterTraitAt of (
+            critterRoll with seed is afterName,
+            bound is (listLength of critterTraits)))
+    with bulkRoll is (critterRoll with seed is (nextSeed of afterName), bound is 4)
+    with biteRoll is (
+        critterRoll with seed is (critterSeedAfter with seed is afterName, draws is 2),
+        bound is 2)
+    with speedRoll is (
+        critterRoll with seed is (critterSeedAfter with seed is afterName, draws is 3),
+        bound is 5)
+    give Critter with id is id,
+        name is (critterBaseName with id is id, seed is start),
+        rarity is rarity,
+        blurb is trait.blurb,
+        maxHp is (max with first is 4, second is ((critterBaseHp of rarity) + trait.bulk) + bulkRoll),
+        attack is (
+            max with first is 1,
+            second is ((critterBaseAttack of rarity) + trait.bite) + biteRoll),
+        # Bulkier creatures skew slower; the trait's bite nudges speed up.
+        speed is (
+            max with first is 5,
+            second is (
+                min with first is 18,
+                second is ((((12 - trait.bulk) + trait.bite) + speedRoll) - 2)))
+
+function critterTraitAt of index
+    give valueOr with maybe is (listAt with value is critterTraits, index is index),
+        fallback is (CritterTrait with blurb is "", bulk is 0, bite is 0)
+
+function critterBaseHp of rarity
+    if rarity is 3
+        give 22
+    if rarity is 2
+        give 14
+    give 8
+
+function critterBaseAttack of rarity
+    if rarity is 3
+        give 6
+    if rarity is 2
+        give 4
+    give 2
+
+# 60% common, 30% uncommon, 10% legendary — one draw, and only for the
+# ids past the signatures.
+function critterRarityOf with id, seed
+    if id < 12
+        give critterWholeAt with items is critterSignatureRarity, index is id
+    with roll is (randomDecimal of seed)
+    if roll < 0.6
+        give 1
+    if roll < 0.9
+        give 2
+    give 3
+
+function critterBaseName with id, seed
+    if id < 12
+        give critterTextAt with items is critterSignatures, index is id, fallback is "critter"
+    give (
+        critterTextAt with items is critterPrefixes,
+        index is (critterRoll with seed is (nextSeed of seed), bound is 30),
+        fallback is "byte") + (
+        critterTextAt with items is critterSuffixes,
+        index is (critterRoll with seed is (critterSeedAfter with seed is seed, draws is 2), bound is 30),
+        fallback is "bit")
+
+# --- the roster -------------------------------------------------------------
+#
+# Three hundred species with guaranteed-unique names, built once at
+# **build time**. `static` is the placement that says so: the roster is a
+# pure function of nothing, three hundred creatures never change between
+# two loads of the page, and computing them in the browser would be work
+# the reader pays for and the build host would not.
+#
+# The uniquifying pass is two folds rather than the original's `Map`. The
+# base names come first, then each id counts how many earlier ids share
+# its name and takes that many Roman tags — which is exactly what the
+# original's `seen.get(name) ?? 0` returns, computed by looking rather than
+# by remembering. It is quadratic and it runs once on the build host, on
+# three hundred short strings.
+
+state critterBaseNames is static List of Text from critterNamesFrom with id is 0, taken is empty
+
+function critterNamesFrom with id, taken
+    if id is critterRosterSize
+        give taken
+    give critterNamesFrom with id is id + 1,
+        taken is (append (critterSpecies of id).name to taken)
+
+state critterRoster is static List of Critter from critterRosterFrom with id is 0, taken is empty
+
+function critterRosterFrom with id, taken
+    if id is critterRosterSize
+        give taken
+    give critterRosterFrom with id is id + 1,
+        taken is (append (critterNamed of id) to taken)
+
+function critterNamed of id
+    with base is (critterSpecies of id)
+    with seenBefore is (
+        critterNameCount with wanted is base.name, index is 0, stop is id, running is 0)
+    if seenBefore is 0
+        give base
+    give Critter with id is base.id,
+        name is base.name + (critterRomanTag of seenBefore),
+        rarity is base.rarity,
+        blurb is base.blurb,
+        maxHp is base.maxHp,
+        attack is base.attack,
+        speed is base.speed
+
+function critterRomanTag of count
+    if count > 7
+        give " " + (text of (count + 1))
+    give critterTextAt with items is critterRomanTags, index is count, fallback is ""
+
+function critterNameCount with wanted, index, stop, running
+    if index is stop
+        give running
+    if (critterTextAt with items is critterBaseNames, index is index, fallback is "") is wanted
+        give critterNameCount with wanted is wanted,
+            index is index + 1,
+            stop is stop,
+            running is running + 1
+    give critterNameCount with wanted is wanted, index is index + 1, stop is stop, running is running
+
+function critterAt of id
+    give valueOr with maybe is (listAt with value is critterRoster, index is id),
+        fallback is (
+            Critter with id is 0,
+            name is "?",
+            rarity is 1,
+            blurb is "",
+            maxHp is 4,
+            attack is 1,
+            speed is 5)
+
+# `CRITTERS.find(c => c.name === name)`, which the original calls on every
+# read of the active ally. A linear scan of three hundred is what the
+# original does and what it costs; the alternative is a `Map of Text to
+# Whole` built at build time, which is the same scan paid once — worth
+# doing if a profile ever asks, and not worth doing before one has.
+function critterIdOf of name
+    give critterIdFrom with name is name, index is 0
+
+function critterIdFrom with name, index
+    if index is critterRosterSize
+        give 0 - 1
+    if (critterAt of index).name is name
+        give index
+    give critterIdFrom with name is name, index is index + 1
+
+function critterKnown of name
+    give (critterIdOf of name) > (0 - 1)
+
+function critterByName of name
+    give critterAt of (max with first is 0, second is (critterIdOf of name))
