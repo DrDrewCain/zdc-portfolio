@@ -379,15 +379,22 @@ body:has(.term) {
  * it lives in and scrolled the scrollback out from under itself; these cap
  * it at whatever the terminal body actually has, which is the only number
  * that is true at every window size. */
+ *
+ * `width`, not `max-width`. A maximum is not a size: an `align-self:
+ * center` item in a column shrinks to fit its contents, and the drawing
+ * inside is `width: 100%` of exactly that — which is circular, so the
+ * browser falls back to a canvas's intrinsic 300x150 and the board
+ * arrives at a third of the room the panel has for it. A definite width
+ * breaks the loop, and the height then follows from the `aspect-ratio`
+ * the compiler writes out of each drawing's own `viewBox`. */
 .term-game {
   align-self: center;
-  max-width: min(100%, 520px);
+  width: min(100%, 520px);
   max-height: 100%;
-  aspect-ratio: 1;
 }
 .term-game-wide {
   align-self: center;
-  max-width: min(100%, 720px);
+  width: min(100%, 720px);
   max-height: 100%;
 }
 .term-input { border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface); margin-top: 10px; }
