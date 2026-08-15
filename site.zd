@@ -93,7 +93,7 @@ use "./commands" for runCommand, completionFor
 use "./codebreak" for Pegs, Round, newPegs, stepPegs
 use "./lexer" for Lex, Reply, newLex, stepLex
 use "./trader" for Ship, Move, newShip, stepTrader
-use "./critters" for CritterGame, CritterGrowth, critterNewGame, critterWalk, critterAct, critterViewBox, critterTerrainLayers, critterTerrainPath, critterTerrainFill, critterHeroPath, critterHeroEyePath, critterExploreLine, critterExploreTally, critterBattleLog, critterFoeHeadline, critterFoeTag, critterFoeStars, critterAllyHeadline, critterAllyStatsLine, critterFoeCardPath, critterAllyCardPath, critterFoeBarTrackPath, critterFoeBarFillPath, critterAllyBarTrackPath, critterAllyBarFillPath, critterMenuPath, critterMenuText, critterMenuActive, critterActionSlots
+use "./critters" for CritterGame, CritterGrowth, critterNewGame, critterWalk, critterAct, critterMenuMoved, critterConfirm, critterViewBox, critterTerrainLayers, critterTerrainPath, critterTerrainFill, critterHeroPath, critterHeroEyePath, critterExploreLine, critterExploreTally, critterBattleLog, critterFoeHeadline, critterFoeTag, critterFoeStars, critterAllyHeadline, critterAllyStatsLine, critterFoeCardPath, critterAllyCardPath, critterFoeBarTrackPath, critterFoeBarFillPath, critterAllyBarTrackPath, critterAllyBarFillPath, critterMenuPath, critterMenuText, critterMenuActive, critterActionSlots
 use "./snake" for Snake, newSnake, snakeSteer, snakeStatus, snakeViewBox, snakePortalPath, snakeFoodPath, snakeStemPath, snakeBodyPath, snakeGlintPath, snakeHeadPath, snakeEyesPath, snakeBodyFill, snakeHeadFill
 use "./blocks" for Blocks, newBlocks, blocksLeft, blocksRight, blocksDown, blocksRotate, blocksDrop, blocksRefactor, blocksStatus, blocksViewBox, blocksNextViewBox, blocksColor, blocksTilePath, blocksGhostPath, blocksGridPath, blocksNextPath, blocksNextColor, blocksPieceColor
 use "./dungeon" for Crawl, crawlStart, crawlStep, crawlStatus, crawlGearLine, crawlRecent, crawlViewBox, crawlFloorPath, crawlFloorDimPath, crawlWallPath, crawlWallDimPath, crawlStairsPath, crawlCoinPath, crawlPotionPath, crawlGearPath, crawlShinePath, crawlGemPath, crawlHurtPath, crawlFoePath, crawlMerchantPath, crawlHeroPath, crawlTrimPath, crawlEyePath
@@ -395,17 +395,64 @@ component Terminal
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
+            # Two screens, and which one is up is a fact the game already
+            # holds: `hunt.foe` is `Some` exactly while a battle is on. So
+            # this is a `when` over that option rather than a second overlay
+            # name — the terminal never has to know a battle started, and
+            # cannot disagree with the game about whether one is happening.
             if overlay is "critters"
                 Column class is "term-game-wide", gap is 8, align is "center"
-                    Row gap is 16, align is "center"
-                        Text "critter lab", class is "prompt-path"
-                        Text (critterExploreLine of lab), class is "prompt-mark"
-                    Scene viewBox is critterViewBox, label is "the critter lab"
-                        each layer in critterTerrainLayers
-                            Path outline is (critterTerrainPath with world is lab.world, layer is layer, time is beat), fill is (critterTerrainFill of layer)
-                        Path outline is (critterHeroPath with world is lab.world, time is beat), fill is "#e6c46d"
-                        Path outline is (critterHeroEyePath with world is lab.world, time is beat), fill is "#15100d"
-                    Text (critterExploreTally of lab), class is "prompt-mark"
+                    when lab.hunt.foe
+                        None
+                            Column gap is 8, align is "center"
+                                Row gap is 16, align is "center"
+                                    Text "critter lab", class is "prompt-path"
+                                    Text (critterExploreLine of lab), class is "prompt-mark"
+                                Scene viewBox is critterViewBox, label is "the critter lab"
+                                    each layer in critterTerrainLayers
+                                        Path outline is (critterTerrainPath with world is lab.world, layer is layer, time is beat), fill is (critterTerrainFill of layer)
+                                    Path outline is (critterHeroPath with world is lab.world, time is beat), fill is "#e6c46d"
+                                    Path outline is (critterHeroEyePath with world is lab.world, time is beat), fill is "#15100d"
+                                Text (critterExploreTally of lab), class is "prompt-mark"
+                        Some with foe
+                            Column gap is 8, align is "center"
+                                Row gap is 16, align is "center"
+                                    Text (critterFoeHeadline of foe), class is "prompt-path"
+                                    Text (critterFoeStars of foe), class is "prompt-mark"
+                                    Text (critterFoeTag of foe), class is "prompt-mark"
+                                # The cards, the two health bars and the four
+                                # menu boxes. A `Scene` may hold none of the
+                                # words, so every label is a `Text` beside it
+                                # — the same division `mines.zd` argues for
+                                # its glyphs.
+                                Scene viewBox is critterViewBox, label is "a critter battle"
+                                    Path outline is (critterFoeCardPath), fill is "#1a1512"
+                                    Path outline is (critterAllyCardPath), fill is "#1a1512"
+                                    Path outline is (critterFoeBarTrackPath), fill is "#2b261e"
+                                    Path outline is (critterFoeBarFillPath of foe), fill is "#e06a5a"
+                                    Path outline is (critterAllyBarTrackPath), fill is "#2b261e"
+                                    Path outline is (critterAllyBarFillPath of lab.hunt), fill is "#86dcb8"
+                                    each slot in critterActionSlots
+                                        Path outline is (critterMenuPath of slot),
+                                            fill is "none",
+                                            stroke is (
+                                                "#ffa96b" if (
+                                                    critterMenuActive with game is lab,
+                                                    index is slot) otherwise "#2b261e"),
+                                            strokeWidth is 2
+                                Text (critterAllyHeadline of lab.hunt), class is "prompt-mark"
+                                Text (critterAllyStatsLine of lab.hunt), class is "prompt-mark"
+                                Row gap is 14, align is "center"
+                                    each slot in critterActionSlots
+                                        Text (critterMenuText of slot),
+                                            class is "prompt-mark",
+                                            weight is (
+                                                "800" if (
+                                                    critterMenuActive with game is lab,
+                                                    index is slot) otherwise "400")
+                                Column gap is 2
+                                    each said in (critterBattleLog of lab)
+                                        Text said, class is "term-line"
 
             if overlay is "snake"
                 Column class is "term-game", gap is 8, align is "center"
@@ -686,15 +733,37 @@ component Terminal
                         # the document for the reason `on key` is: a
                         # document listener stands down while a field has
                         # focus, and the field always has it here.
+                        # The same four arrows mean two things, and the game
+                        # decides which: walking the world while nothing has
+                        # found you, moving the action cursor once something
+                        # has. Asking `isNone of lab.hunt.foe` rather than
+                        # keeping a mode of our own is what stops the panel
+                        # and the game disagreeing about whether a battle is
+                        # on — the bug that had arrows both steering a piece
+                        # and walking the command history.
                         if overlay is "critters"
-                            if stroke.key is "ArrowLeft"
-                                set lab to (critterWalk with game is lab, dir is "left")
-                            if stroke.key is "ArrowRight"
-                                set lab to (critterWalk with game is lab, dir is "right")
-                            if stroke.key is "ArrowUp"
-                                set lab to (critterWalk with game is lab, dir is "up")
-                            if stroke.key is "ArrowDown"
-                                set lab to (critterWalk with game is lab, dir is "down")
+                            if isNone of lab.hunt.foe
+                                if stroke.key is "ArrowLeft"
+                                    set lab to (critterWalk with game is lab, dir is "left")
+                                if stroke.key is "ArrowRight"
+                                    set lab to (critterWalk with game is lab, dir is "right")
+                                if stroke.key is "ArrowUp"
+                                    set lab to (critterWalk with game is lab, dir is "up")
+                                if stroke.key is "ArrowDown"
+                                    set lab to (critterWalk with game is lab, dir is "down")
+                            if isSome of lab.hunt.foe
+                                # Two columns of two, so left and right step
+                                # by one and up and down step by two.
+                                if stroke.key is "ArrowLeft"
+                                    set lab to (critterMenuMoved with game is lab, step is 3)
+                                if stroke.key is "ArrowRight"
+                                    set lab to (critterMenuMoved with game is lab, step is 1)
+                                if stroke.key is "ArrowUp"
+                                    set lab to (critterMenuMoved with game is lab, step is 2)
+                                if stroke.key is "ArrowDown"
+                                    set lab to (critterMenuMoved with game is lab, step is 2)
+                                if (stroke.key is " ") or (stroke.key is "Enter")
+                                    set lab to (critterConfirm of lab)
 
                         if overlay is "snake"
                             if stroke.key is "ArrowLeft"
