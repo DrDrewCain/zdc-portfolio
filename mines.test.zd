@@ -1,0 +1,49 @@
+# mines.test.zd — the edges, which are real.
+#
+# Run it with `zdc test mines.test.zd`.
+#
+# WHY THIS FILE EXISTS. `mines.zd` says what it is careful about: a
+# neighbour offset is "bounded rather than wrapped: minesweeper's edges
+# are real, and a count that wrapped would make a corner claim neighbours
+# on the far side". A board that wraps still plays — every interior cell
+# counts correctly, and the boundary is where the numbers quietly lie.
+#
+# The board is 16 wide and 12 high, so index `n` is at column `n mod 16`
+# and row `n / 16`. Index 15 is the top-right corner; a wrapping
+# implementation gives it index 16, which is the *first cell of the next
+# row* and nowhere near it.
+
+use "./mines" for neighbourList, neighbourAt, columnOfIndex, rowOfIndex
+
+test "an interior cell has eight neighbours"
+    expect listLength of (neighbourList of 17) is 8
+
+test "the top-left corner has three"
+    expect listLength of (neighbourList of 0) is 3
+
+test "the top-right corner has three as well"
+    expect listLength of (neighbourList of 15) is 3
+
+test "the bottom-left corner has three"
+    expect listLength of (neighbourList of 176) is 3
+
+test "a cell along the top edge has five"
+    expect listLength of (neighbourList of 1) is 5
+
+# The sharp one. Index 16 is the first cell of row 1, on the far side of
+# the board from index 15. A wrapped offset hands it over as a neighbour.
+test "the top-right corner does not reach around to the next row"
+    expect (listContains with items is (neighbourList of 15), value is 16) is no
+
+test "and the cell below it is the neighbour it does have"
+    expect (listContains with items is (neighbourList of 15), value is 31) is yes
+
+# The offset itself, rather than the list it builds.
+test "an offset off the left edge is refused"
+    expect (neighbourAt with index is 0, dx is 0 - 1, dy is 0) is 0 - 1
+
+test "an offset off the right edge is refused"
+    expect (neighbourAt with index is 15, dx is 1, dy is 0) is 0 - 1
+
+test "and an offset that stays on the board is the cell it names"
+    expect (neighbourAt with index is 17, dx is 1, dy is 0) is 18
