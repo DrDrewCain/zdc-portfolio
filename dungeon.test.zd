@@ -1,0 +1,62 @@
+# dungeon.test.zd — out of bounds is wall, and a splice is a splice.
+#
+# Run it with `zdc test dungeon.test.zd`.
+#
+# WHY THIS FILE EXISTS. `dungeon.zd` states an invariant that the rest of
+# the file then relies on: reading off the board gives `#`, "which is what
+# makes every caller's edge test a courtesy rather than a requirement".
+# Every movement, sight line and spawn check in 1,954 lines is written
+# against that promise. If it ever returned something walkable instead,
+# nothing would report it — the player would simply be able to leave.
+#
+# The board is 40 wide and 24 high, and a row is flat `Text`.
+
+use "./dungeon" for crawlCellAt, crawlRunIn, crawlInside
+
+# Three short rows. They are shorter than a real board on purpose: a row
+# that ends early is exactly the case `crawlCellAt` is promising about.
+state patch is static List of Text from ["....", ".@..", "...."]
+
+# --- reading off the board ---------------------------------------------------
+
+test "a cell on the board reads what is written there"
+    expect (crawlCellAt with rows is patch, x is 1, y is 1) is "@"
+
+test "left of the board is wall"
+    expect (crawlCellAt with rows is patch, x is 0 - 1, y is 1) is "#"
+
+test "above the board is wall"
+    expect (crawlCellAt with rows is patch, x is 1, y is 0 - 1) is "#"
+
+test "past the end of a row is wall"
+    expect (crawlCellAt with rows is patch, x is 9, y is 1) is "#"
+
+test "below the last row is wall"
+    expect (crawlCellAt with rows is patch, x is 1, y is 9) is "#"
+
+# --- what counts as inside ---------------------------------------------------
+
+test "the first cell is inside"
+    expect (crawlInside with x is 0, y is 0) is yes
+
+test "the last cell is inside"
+    expect (crawlInside with x is 39, y is 23) is yes
+
+test "one past the last column is not"
+    expect (crawlInside with x is 40, y is 23) is no
+
+test "and a negative column is not"
+    expect (crawlInside with x is 0 - 1, y is 0) is no
+
+# --- writing a run -----------------------------------------------------------
+#
+# Both writers on this board write a run, and a run of one is a character.
+
+test "a run replaces the span it names and nothing else"
+    expect (crawlRunIn with row is ".....", start is 1, stop is 3, mark is "#") is ".###."
+
+test "a run of one is a single character"
+    expect (crawlRunIn with row is ".....", start is 2, stop is 2, mark is "#") is "..#.."
+
+test "a run to the last column keeps the length"
+    expect (crawlRunIn with row is ".....", start is 3, stop is 4, mark is "#") is "...##"
