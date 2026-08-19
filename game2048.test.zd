@@ -1,0 +1,62 @@
+# game2048.test.zd — one slide of a row, and the merge that must not repeat.
+#
+# Run it with `zdc test game2048.test.zd`.
+#
+# WHY THIS FILE EXISTS. The rule that makes 2048 the game it is: a tile
+# formed by a merge may not merge again in the same move. `[2 2 4]` slid
+# is `[4 4]`, never `[8]`. An engine that lets the new tile merge again
+# plays a different, much easier game — and every slide without two
+# adjacent equal pairs looks identical, so the fault does not show in
+# casual play.
+#
+# `game2048.zd` is the engine and holds no state at all, so a slide is a
+# function of its argument and can be asked directly.
+
+use "./game2048" for slideLine
+
+# A padded line comes back four long whatever went in.
+function slotOf with line, index
+    give valueOr with maybe is (
+        listAt with value is (slideLine of line).line,
+        index is index),
+        fallback is 0
+
+test "two pairs make two tiles, not one"
+    expect (slotOf with line is [2, 2, 4, 4], index is 0) is 4
+
+test "and the second pair is the second tile"
+    expect (slotOf with line is [2, 2, 4, 4], index is 1) is 8
+
+test "so nothing is left in the third slot"
+    expect (slotOf with line is [2, 2, 4, 4], index is 2) is 0
+
+test "four of a kind make two tiles, not one of eight"
+    expect (slotOf with line is [2, 2, 2, 2], index is 0) is 4
+
+test "and the other two make the second"
+    expect (slotOf with line is [2, 2, 2, 2], index is 1) is 4
+
+test "a merged tile does not merge again with what follows it"
+    expect (slotOf with line is [2, 2, 4, 0], index is 0) is 4
+
+test "so the four it formed sits beside the four already there"
+    expect (slotOf with line is [2, 2, 4, 0], index is 1) is 4
+
+test "gaps close before anything merges"
+    expect (slotOf with line is [2, 0, 0, 2], index is 0) is 4
+
+test "unequal neighbours do not merge"
+    expect (slotOf with line is [2, 4, 2, 4], index is 0) is 2
+
+test "and keep their order"
+    expect (slotOf with line is [2, 4, 2, 4], index is 1) is 4
+
+# The score is what the merges made, not what is on the board.
+test "a merge scores the tile it made"
+    expect (slideLine of [2, 2, 0, 0]).gained is 4
+
+test "two merges score both"
+    expect (slideLine of [2, 2, 4, 4]).gained is 12
+
+test "a slide with no merge scores nothing"
+    expect (slideLine of [2, 4, 2, 4]).gained is 0
