@@ -1,0 +1,48 @@
+# codebreak.test.zd — what a guess scores, including the repeats.
+#
+# Run it with `zdc test codebreak.test.zd`.
+#
+# WHY THIS FILE EXISTS. Mastermind allows repeated pegs, and that is the
+# whole difficulty of scoring it: four `1`s guessed against a code holding
+# two must score two exact and nothing misplaced, not four of anything. A
+# scorer that double-counts is right on every guess without a repeat, which
+# is most of them, so the fault hides.
+#
+# A code is four pegs drawn from six colours, written as the digits `1`
+# to `6` — `pegsFrom` builds one as `text of (n + 1)`.
+
+use "./codebreak" for scoreOf
+
+test "the code itself is four exact and nothing misplaced"
+    expect (scoreOf with guess is "1234", hidden is "1234").exact is 4
+
+test "and it leaves nothing to be misplaced"
+    expect (scoreOf with guess is "1234", hidden is "1234").misplaced is 0
+
+test "a guess sharing no colour scores nothing"
+    expect (scoreOf with guess is "1111", hidden is "2222").exact is 0
+
+test "and nothing misplaced either"
+    expect (scoreOf with guess is "1111", hidden is "2222").misplaced is 0
+
+test "the code reversed is every peg present and none in place"
+    expect (scoreOf with guess is "4321", hidden is "1234").exact is 0
+
+test "so all four are misplaced"
+    expect (scoreOf with guess is "4321", hidden is "1234").misplaced is 4
+
+# The case repeats exist to break: four of one colour against a code that
+# holds two of it.
+test "four ones against a code holding two score two exact"
+    expect (scoreOf with guess is "1111", hidden is "1123").exact is 2
+
+test "and the other two ones are not misplaced — there are no more to find"
+    expect (scoreOf with guess is "1111", hidden is "1123").misplaced is 0
+
+# The same rule from the other side: a repeat in the guess where the code
+# holds one, with an exact hit already taken.
+test "a repeated guess peg is credited once"
+    expect (scoreOf with guess is "1122", hidden is "1234").exact is 1
+
+test "and once only"
+    expect (scoreOf with guess is "1122", hidden is "1234").misplaced is 1
