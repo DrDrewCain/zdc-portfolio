@@ -1,0 +1,60 @@
+# dino.test.zd — a draw lands inside its bound, and the seed walk is a walk.
+#
+# Run it with `zdc test dino.test.zd`.
+#
+# WHY THIS FILE EXISTS. Everything this game generates comes from
+# `dinoPick`, and `randomBelow` gives an `Option` — so every draw passes
+# through a `valueOr` with a fallback of 0. A fallback is silent by
+# construction: a draw that starts failing does not raise, it returns 0
+# forever, and the game keeps running with every obstacle in the same
+# place. The guard `max with first is 1, second is bound` is there for the
+# same reason, since a bound of 0 has no value below it.
+#
+# So the claims are about the range rather than the numbers: a pick is at
+# least 0 and less than its bound, whatever the seed.
+
+use "./dino" for dinoPick, dinoSeedAhead, dinoWholeOf
+
+# --- the seed walk ------------------------------------------------------------
+
+test "no steps leaves the seed where it was"
+    expect (dinoSeedAhead with seed is 12345, steps is 0) is 12345
+
+test "and a negative count is no steps"
+    expect (dinoSeedAhead with seed is 12345, steps is 0 - 3) is 12345
+
+test "a step moves it"
+    expect ((dinoSeedAhead with seed is 12345, steps is 1) is 12345) is no
+
+test "and the walk is the same walk every time"
+    expect (dinoSeedAhead with seed is 12345, steps is 4) is (
+        dinoSeedAhead with seed is 12345, steps is 4)
+
+# --- the range of a draw --------------------------------------------------------
+
+test "a draw is below its bound"
+    expect ((dinoPick with seed is 1, nth is 0, bound is 4) < 4) is yes
+
+test "and not negative"
+    expect ((dinoPick with seed is 1, nth is 0, bound is 4) > (0 - 1)) is yes
+
+test "a different seed is still below the bound"
+    expect ((dinoPick with seed is 99, nth is 2, bound is 4) < 4) is yes
+
+test "and a different step is too"
+    expect ((dinoPick with seed is 99, nth is 7, bound is 4) < 4) is yes
+
+test "a bound of one leaves only zero"
+    expect (dinoPick with seed is 12345, nth is 3, bound is 1) is 0
+
+# A bound of zero has no value below it. The guard turns it into one.
+test "a bound of zero does not fall through to the silent fallback"
+    expect (dinoPick with seed is 12345, nth is 3, bound is 0) is 0
+
+# --- flooring -------------------------------------------------------------------
+
+test "a decimal floors downward"
+    expect dinoWholeOf of 3.7 is 3
+
+test "and an exact one is itself"
+    expect dinoWholeOf of 4.0 is 4
