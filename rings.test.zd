@@ -1,0 +1,60 @@
+# rings.test.zd — the clamps, and the ramp between two channels.
+#
+# Run it with `zdc test rings.test.zd`.
+#
+# WHY THIS FILE EXISTS. `atLeast` and `atMost` are written out here rather
+# than taken from the prelude, because the prelude's `largerOf` and
+# `smallerOf` take an `Option` — they are the step of a fold that has not
+# seen an element yet. A hand-written clamp is one comparison, and a
+# comparison written the wrong way round does not crash: it inverts the
+# geometry, and a drawing that is subtly wrong looks like a drawing.
+#
+# `rampChannel` is the lerp the colour ramp is built from. Its endpoints
+# are the part worth pinning: at 0 it must be the low channel exactly, and
+# at 1 the high one, or every colour in the ring is off by a fraction
+# nobody can see and everybody renders.
+
+use "./rings" for atLeast, atMost, rampChannel
+
+# --- the clamps ---------------------------------------------------------------
+
+test "a value below the floor comes up to it"
+    expect (atLeast with value is 3.0, floorAt is 5.0) is 5.0
+
+test "a value above the floor is left alone"
+    expect (atLeast with value is 7.0, floorAt is 5.0) is 7.0
+
+test "a value already at the floor is left alone"
+    expect (atLeast with value is 5.0, floorAt is 5.0) is 5.0
+
+test "a value above the ceiling comes down to it"
+    expect (atMost with value is 7.0, ceilingAt is 5.0) is 5.0
+
+test "a value below the ceiling is left alone"
+    expect (atMost with value is 3.0, ceilingAt is 5.0) is 3.0
+
+test "a value already at the ceiling is left alone"
+    expect (atMost with value is 5.0, ceilingAt is 5.0) is 5.0
+
+# The two together are how the geometry bounds a ratio.
+test "the two compose into a range, from below"
+    expect (atMost with value is (
+        atLeast with value is 0.0 - 2.0, floorAt is 0.0), ceilingAt is 1.0) is 0.0
+
+test "and from above"
+    expect (atMost with value is (
+        atLeast with value is 4.0, floorAt is 0.0), ceilingAt is 1.0) is 1.0
+
+# --- the ramp -----------------------------------------------------------------
+
+test "at nothing eased the ramp is the low channel"
+    expect (rampChannel with low is 2.0, high is 10.0, eased is 0.0, shade is 1.0) is 2.0
+
+test "fully eased it is the high channel"
+    expect (rampChannel with low is 2.0, high is 10.0, eased is 1.0, shade is 1.0) is 10.0
+
+test "half way it is half way"
+    expect (rampChannel with low is 2.0, high is 10.0, eased is 0.5, shade is 1.0) is 6.0
+
+test "and shade scales the whole of it"
+    expect (rampChannel with low is 2.0, high is 10.0, eased is 1.0, shade is 0.5) is 5.0
