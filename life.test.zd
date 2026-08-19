@@ -1,0 +1,96 @@
+# life.test.zd — Conway's four rules, checked.
+#
+# Run it with `zdc test life.test.zd`.
+#
+# WHY THIS FILE EXISTS. `life.zd` implements Conway's Life and nothing
+# checked that it implements *Conway's*. The rules are the one part of a
+# game that has a right answer known before the program was written, so
+# they are the part worth pinning: a board that oscillates wrongly still
+# looks alive, and a neighbour count off by one is invisible on a 48×28
+# grid moving at 90 ms.
+#
+# WHY A THREE-ROW BOARD IS ENOUGH. `aliveAt` wraps a coordinate and then
+# reads through `valueOr`, so a row beyond the list reads as `""` and a
+# column beyond the row reads as `"."` — dead. A short board therefore
+# behaves as one surrounded by dead cells, which is what these claims
+# want, and it can be written out and read by eye.
+
+use "./life" for wrapped, neighbours, nextCell, aliveAt
+
+# A blinker: the smallest oscillator, and the one whose period every
+# implementation of this game agrees on.
+#
+#   . . . . .
+#   . # # # .
+#   . . . . .
+state blinker is static List of Text from [".....", ".###.", "....."]
+
+# A block: the smallest still life. Every one of its four cells has
+# exactly three neighbours, which is the case a blinker cannot reach —
+# its live cells have one neighbour or two, never three.
+#
+#   . . . . .
+#   . # # . .
+#   . # # . .
+state block is static List of Text from [".....", ".##..", ".##.."]
+
+# Six live cells in a 3×2 bar. The middle of a long edge has five
+# neighbours, which is the crowding rule a blinker and a block both miss.
+#
+#   . . . . .
+#   . # # # .
+#   . # # # .
+state crowd is static List of Text from [".....", ".###.", ".###."]
+
+# --- the wrap arithmetic ----------------------------------------------------
+#
+# `wrapped` is `(n + max) % max` written out because `mod` gives an
+# `Option`. These two are the cases the fallback would hide.
+
+test "one before the first column is the last column"
+    expect (wrapped with value is 0 - 1, most is 48) is 47
+
+test "one past the last column is the first"
+    expect (wrapped with value is 48, most is 48) is 0
+
+# --- counting ---------------------------------------------------------------
+
+test "the middle of a blinker has two neighbours"
+    expect (neighbours with rows is blinker, x is 2, y is 1) is 2
+
+test "an end of a blinker has one"
+    expect (neighbours with rows is blinker, x is 1, y is 1) is 1
+
+test "the cell above the middle has three"
+    expect (neighbours with rows is blinker, x is 2, y is 0) is 3
+
+# --- the four rules ---------------------------------------------------------
+
+test "a live cell with two neighbours lives"
+    expect (nextCell with rows is blinker, x is 2, y is 1) is "#"
+
+test "a live cell with one neighbour dies of loneliness"
+    expect (nextCell with rows is blinker, x is 1, y is 1) is "."
+
+test "a dead cell with exactly three neighbours is born"
+    expect (nextCell with rows is blinker, x is 2, y is 0) is "#"
+
+test "and the blinker turns over, so the cell below is born too"
+    expect (nextCell with rows is blinker, x is 2, y is 2) is "#"
+
+test "a live cell with three neighbours also lives — a block is still"
+    expect (nextCell with rows is block, x is 1, y is 1) is "#"
+
+test "and every corner of the block agrees, so it does not drift"
+    expect (nextCell with rows is block, x is 2, y is 2) is "#"
+
+test "a live cell with more than three dies of crowding"
+    expect (neighbours with rows is crowd, x is 2, y is 1) is 5
+
+test "so the middle of a crowded bar goes out"
+    expect (nextCell with rows is crowd, x is 2, y is 1) is "."
+
+# The board is read, never written, while a generation is computed — the
+# mistake that makes a glider crawl instead of glide.
+test "the board a step reads is the old one"
+    expect (aliveAt with rows is blinker, x is 2, y is 1) is yes
