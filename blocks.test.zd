@@ -1,0 +1,67 @@
+# blocks.test.zd — above the board is free, and a rotation comes home.
+#
+# Run it with `zdc test blocks.test.zd`.
+#
+# WHY THIS FILE EXISTS. `blocks.zd` names the clause whose order matters:
+# "a cell above the top of the board is *free* rather than empty, which is
+# what lets a piece spawn at `y = -1` with two of its rows off-screen."
+# Every other direction off the board is blocked. A bounds test written the
+# obvious way — anything outside is blocked — reads correctly, plays
+# correctly for a while, and then no piece can enter the board at all.
+#
+# The board is 10 wide and 18 high, and a shape is a list of rows.
+
+use "./blocks" for blocksBlocked, blocksRotated, blocksShapeFor, blocksRowIn
+
+state emptyBoard is static List of Text from [".........."]
+
+# --- what is blocked, and what is merely elsewhere ---------------------------
+
+test "above the board is free, so a piece can spawn into it"
+    expect (blocksBlocked with rows is emptyBoard, x is 4, y is 0 - 1) is no
+
+test "left of the board is blocked"
+    expect (blocksBlocked with rows is emptyBoard, x is 0 - 1, y is 0) is yes
+
+test "right of the board is blocked"
+    expect (blocksBlocked with rows is emptyBoard, x is 10, y is 0) is yes
+
+test "below the board is blocked — that is the floor"
+    expect (blocksBlocked with rows is emptyBoard, x is 4, y is 18) is yes
+
+test "an empty cell on the board is not blocked"
+    expect (blocksBlocked with rows is emptyBoard, x is 4, y is 0) is no
+
+test "a settled cell is"
+    expect (blocksBlocked with rows is ["####......"], x is 2, y is 0) is yes
+
+# --- rotation ----------------------------------------------------------------
+#
+# Four turns is the identity for every piece, which is the property that
+# does not depend on which way the rotation goes.
+
+test "the square is its own rotation"
+    expect (blocksRowIn with rows is (blocksRotated of (blocksShapeFor of 1)), index is 0) is "##"
+
+test "and stays two rows tall"
+    expect listLength of (blocksRotated of (blocksShapeFor of 1)) is 2
+
+test "the bar turns on its end"
+    expect listLength of (blocksRotated of (blocksShapeFor of 0)) is 4
+
+test "and each of its cells is one wide"
+    expect (blocksRowIn with rows is (blocksRotated of (blocksShapeFor of 0)), index is 0) is "#"
+
+test "four turns bring the tee home"
+    expect (
+        blocksRowIn with rows is (
+            blocksRotated of (blocksRotated of (
+                blocksRotated of (blocksRotated of (blocksShapeFor of 2))))),
+        index is 0) is ".#."
+
+test "and its second row with it"
+    expect (
+        blocksRowIn with rows is (
+            blocksRotated of (blocksRotated of (
+                blocksRotated of (blocksRotated of (blocksShapeFor of 2))))),
+        index is 1) is "###"
