@@ -1,0 +1,38 @@
+# lexer.test.zd — the scoring rule, and the duplicate letters that break it.
+#
+# Run it with `zdc test lexer.test.zd`.
+#
+# WHY THIS FILE EXISTS. `lexer.zd`'s own comment names the case that makes
+# this algorithm hard — "`geese` against `crest` must mark exactly one
+# `e`, and a single sweep marks both" — and then nothing checked it. A
+# scorer that marks both is wrong in a way a player notices and a reader
+# of the source does not: every other guess still scores correctly.
+#
+# The marks are `X` for a letter in its place, `x` for a letter in the
+# word elsewhere, and `.` for one that is not there, joined by spaces.
+
+use "./lexer" for scoreGuess, isFiveLetters
+
+test "a word guessed exactly is all in place"
+    expect (scoreGuess with guess is "crest", target is "crest") is "C R E S T"
+
+# The case the source calls out by name.
+test "geese against crest marks exactly one e — the one in its place"
+    expect (scoreGuess with guess is "geese", target is "crest") is ". . E S ."
+
+# The same rule from the other side: three guessed `e`s, one in the word,
+# none of them in place. Exactly one may be marked.
+test "melee against crest marks one e and no more"
+    expect (scoreGuess with guess is "melee", target is "crest") is ". e . . ."
+
+test "a letter in the word but out of place is marked in the lower case"
+    expect (scoreGuess with guess is "steal", target is "crest") is "s t E . ."
+
+test "a letter that is not in the word at all is a dot"
+    expect (scoreGuess with guess is "xxxxx", target is "crest") is ". . . . ."
+
+test "five letters is the length a guess must be"
+    expect (isFiveLetters of "crest") is yes
+
+test "and four is not"
+    expect (isFiveLetters of "cres") is no
