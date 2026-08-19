@@ -1,0 +1,64 @@
+# trader.test.zd — the three-field setter, and what it must not disturb.
+#
+# Run it with `zdc test trader.test.zd`.
+#
+# WHY THIS FILE EXISTS. `withAmount` is a setter written as three branches
+# over three fields, each rebuilding the whole record. That shape is where
+# a copy-paste error lives: write `spice is amount` in the `ore` branch and
+# buying ore silently fills the spice hold instead. Every other operation
+# still works, the totals still add up, and the only symptom is a cargo
+# manifest that is wrong in a way a player reads as bad luck.
+#
+# The property is a round trip — set a good, read it back, and check the
+# other two did not move.
+
+use "./trader" for Goods, amountOf, withAmount, holdUsed, isGood
+
+state someCargo is static Goods from (Goods with ore is 3, spice is 5, tech is 7)
+
+# --- the round trip ----------------------------------------------------------
+
+test "setting ore reads back as ore"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "ore", amount is 11), good is "ore") is 11
+
+test "and leaves spice alone"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "ore", amount is 11), good is "spice") is 5
+
+test "and tech alone"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "ore", amount is 11), good is "tech") is 7
+
+test "setting spice reads back as spice"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "spice", amount is 11), good is "spice") is 11
+
+test "and leaves ore alone"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "spice", amount is 11), good is "ore") is 3
+
+test "setting tech reads back as tech"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "tech", amount is 11), good is "tech") is 11
+
+test "and leaves spice alone"
+    expect (amountOf with goods is (
+        withAmount with goods is someCargo, good is "tech", amount is 11), good is "spice") is 5
+
+# --- the hold ----------------------------------------------------------------
+
+test "the hold holds the sum of the three"
+    expect holdUsed of someCargo is 15
+
+test "and grows by what a purchase adds"
+    expect holdUsed of (
+        withAmount with goods is someCargo, good is "ore", amount is 13) is 25
+
+# --- what counts as a good ---------------------------------------------------
+
+test "ore is a good"
+    expect isGood of "ore" is yes
+
+test "and a word that is not one is not"
+    expect isGood of "gold" is no
