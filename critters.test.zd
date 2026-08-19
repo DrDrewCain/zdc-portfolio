@@ -1,0 +1,61 @@
+# critters.test.zd — the mirrored pair, which is what makes a blob an animal.
+#
+# Run it with `zdc test critters.test.zd`.
+#
+# WHY THIS FILE EXISTS. `critters.zd` says why the write is one function:
+# "Every write in the original is a mirrored pair — `g[y][half-1-dx]` and
+# `g[y][half+dx]` — which is what makes a generated blob read as an animal
+# rather than as noise. One function, so the symmetry cannot be broken by
+# forgetting a line."
+#
+# One function is a good defence against forgetting a line and no defence
+# at all against writing the wrong index in it. A sprite half-mirrored
+# still draws — it is a creature with one side, and the generator makes
+# three hundred of them, so nobody is looking at any particular one.
+#
+# The sprite is 12 by 12, so the half is 6 and a row is 12 cells.
+
+use "./critters" for critterMirrored, critterCellAt, critterSpriteCells, critterSpriteSpan
+
+# A blank sprite: 144 dots, which is what `critterCellAt` reads back as
+# empty anyway.
+state blankSprite is static Text from (repeat with value is ".", count is 144)
+
+# Painting at row 3, one step out from the middle, puts a mark at columns
+# 5 and 6 of that row — indices 41 and 42.
+state painted is static Text from (
+    critterMirrored with grid is blankSprite, y is 3, dx is 0, mark is "#")
+
+test "the left of the pair is painted"
+    expect (critterCellAt with grid is painted, index is 41) is "#"
+
+test "and the right of the pair is painted"
+    expect (critterCellAt with grid is painted, index is 42) is "#"
+
+test "the cell outside the pair is not"
+    expect (critterCellAt with grid is painted, index is 40) is "."
+
+test "nor the one beyond it"
+    expect (critterCellAt with grid is painted, index is 43) is "."
+
+test "and the row above is untouched"
+    expect (critterCellAt with grid is painted, index is 29) is "."
+
+test "a write does not change the size of the sprite"
+    expect textLength of painted is 144
+
+# One step further out: columns 4 and 7 of the same row, indices 40 and 43.
+state widerPaint is static Text from (
+    critterMirrored with grid is blankSprite, y is 3, dx is 1, mark is "#")
+
+test "a wider pair steps out on the left"
+    expect (critterCellAt with grid is widerPaint, index is 40) is "#"
+
+test "and out on the right by the same step"
+    expect (critterCellAt with grid is widerPaint, index is 43) is "#"
+
+test "leaving the middle of that row empty"
+    expect (critterCellAt with grid is widerPaint, index is 41) is "."
+
+test "on both sides of the middle"
+    expect (critterCellAt with grid is widerPaint, index is 42) is "."
