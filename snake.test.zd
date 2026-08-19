@@ -1,0 +1,58 @@
+# snake.test.zd — the turn that must be refused, and the portal.
+#
+# Run it with `zdc test snake.test.zd`.
+#
+# WHY THIS FILE EXISTS. `snake.zd` explains the rule it is careful about:
+# the queued turn is compared against the *committed* direction and not
+# against the previous queued one, because "two turns inside a single
+# 110 ms tick would otherwise let a player queue up-then-left while
+# travelling right and reverse into their own neck". That is a claim about
+# two calls, and only two calls can check it.
+#
+# A new game travels right from (8, 9): `dirX` is 1 and `dirY` is 0.
+
+use "./snake" for newSnake, snakeSteer, snakeLanding, SnakeSpot, snakeColumn, snakeRow
+
+# --- the reversal ------------------------------------------------------------
+
+test "a turn back the way it came is refused"
+    expect (snakeSteer with game is (newSnake of 1), dx is 0 - 1, dy is 0).turnX is 1
+
+test "a turn across the way it is going is taken"
+    expect (snakeSteer with game is (newSnake of 1), dx is 0, dy is 0 - 1).turnY is 0 - 1
+
+# The case the source describes: up is queued, then left inside the same
+# tick. Left is compared against the committed direction — still right —
+# so it is refused, and the queued up survives.
+test "up then left in one tick keeps the up"
+    expect (
+        snakeSteer with game is (
+            snakeSteer with game is (newSnake of 1), dx is 0, dy is 0 - 1),
+        dx is 0 - 1,
+        dy is 0).turnY is 0 - 1
+
+test "and does not take the left"
+    expect (
+        snakeSteer with game is (
+            snakeSteer with game is (newSnake of 1), dx is 0, dy is 0 - 1),
+        dx is 0 - 1,
+        dy is 0).turnX is 0
+
+# --- the portals -------------------------------------------------------------
+#
+# A head landing on one portal comes out of the other, still travelling.
+
+test "landing on the first portal comes out of the second"
+    expect (
+        snakeLanding with game is (newSnake of 1),
+        spot is (SnakeSpot with x is 4, y is 3)).x is 24
+
+test "on the same row it went in"
+    expect (
+        snakeLanding with game is (newSnake of 1),
+        spot is (SnakeSpot with x is 4, y is 3)).y is 14
+
+test "a cell that is not a portal is left alone"
+    expect (
+        snakeLanding with game is (newSnake of 1),
+        spot is (SnakeSpot with x is 9, y is 9)).x is 9
