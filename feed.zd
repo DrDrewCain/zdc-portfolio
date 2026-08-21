@@ -1,0 +1,55 @@
+# feed.zd — the RSS the blog has always described and never written.
+#
+# `examples/writing.zd` in the compiler's own repository carries this
+# comment beside its feed:
+#
+#   > It is not yet derived from every post's title, and the reason is
+#   > §14F: folding a `List of Post` into one piece of `Text` needs `join`,
+#   > and there is no standard library to take it from.
+#
+# `join` is in the prelude now, so the reason has expired. This is that
+# feed written the way the comment said it could not be.
+#
+# Everything here is `static`: the posts are read from disk at build time,
+# the XML is folded on the build host, and `emitting` writes the result
+# into the bundle. Nothing reaches the browser and no boundary is crossed,
+# which is why a feed is a `Text` and not a `Remote of Text`.
+
+use "./posts" for Post, ordered
+
+state siteUrl is static Text starting "https://marksturman.com"
+
+state feed is static Text from feedFrom with items is ordered emitting "rss.xml"
+
+function feedFrom with items
+    give ((("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + "<rss version=\"2.0\">") + (
+        "<channel><title>Mark Sturman</title>" + (
+            ("<link>" + siteUrl) + "</link>"))) + (
+        join with parts is (entriesOf with items is items), using is "")) + "</channel></rss>"
+
+function entriesOf with items
+    from items
+    map each post to (entryFor with post is post)
+
+# One `<item>`. The description is the summary rather than the body: a
+# feed reader that renders the whole post is a feed reader nobody can
+# style, and the summary is already written for exactly this.
+function entryFor with post
+    give ((((("<item><title>" + (escaped of post.title)) + "</title><link>") + (
+        linkFor with slug is post.slug)) + "</link><description>") + (
+        escaped of post.summary)) + "</description></item>"
+
+function linkFor with slug
+    give ((siteUrl + "/blog/") + slug) + "/"
+
+# XML has five predefined entities and a feed needs three of them: a title
+# holding `&` or `<` produces a document no reader will parse, and a post
+# titled "Signals & Effects" is not a hypothetical.
+function escaped of value
+    give replace with value is (
+        replace with value is (
+            replace with value is value, old is "&", new is "&amp;"),
+        old is "<",
+        new is "&lt;"),
+        old is ">",
+        new is "&gt;"

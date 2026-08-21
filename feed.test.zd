@@ -1,0 +1,33 @@
+# feed.test.zd — the characters that break a feed.
+#
+# Run it with `zdc test feed.test.zd`.
+#
+# WHY THIS FILE EXISTS. No post has an ampersand in its title today, so
+# `escaped` is the part of the feed most likely to be wrong and least
+# likely to be noticed: a title reading "Signals & Effects" produces a
+# document no reader will parse, and the failure lands in the reader
+# rather than in the build. Every page of the site keeps working, and
+# nothing here reports it.
+
+use "./feed" for escaped, linkFor
+
+test "an ampersand becomes an entity"
+    expect escaped of "Signals & Effects" is "Signals &amp; Effects"
+
+test "a less-than becomes an entity"
+    expect escaped of "a < b" is "a &lt; b"
+
+test "a greater-than becomes an entity"
+    expect escaped of "a > b" is "a &gt; b"
+
+# The order matters, and this is what pins it. Escaping `<` before `&`
+# turns `<` into `&lt;` and then that new ampersand into `&amp;lt;`,
+# which a reader renders as the literal text `&lt;`.
+test "an escape does not escape its own output"
+    expect escaped of "a & b < c" is "a &amp; b &lt; c"
+
+test "ordinary text is left alone"
+    expect escaped of "Hello, world" is "Hello, world"
+
+test "a link is absolute and ends in a slash"
+    expect (linkFor with slug is "hello-world") is "https://marksturman.com/blog/hello-world/"
