@@ -731,6 +731,19 @@ component Terminal
                 on key "ArrowDown"
                     set tiles to (afterMove with board is tiles, direction is Down)
 
+                # `wasd` because the launch message promises it. Only on the
+                # document: a reader pressing `a` to slide left is not typing
+                # a command, and a reader who *is* typing gets the letter,
+                # because `on key` stands down while the field has focus.
+                on key "a"
+                    set tiles to (afterMove with board is tiles, direction is Left)
+                on key "d"
+                    set tiles to (afterMove with board is tiles, direction is Right)
+                on key "w"
+                    set tiles to (afterMove with board is tiles, direction is Up)
+                on key "s"
+                    set tiles to (afterMove with board is tiles, direction is Down)
+
             if overlay is "minesweeper"
                 Column class is "term-game-wide", gap is 8
                     Row gap is 16, align is "center"
@@ -759,6 +772,16 @@ component Terminal
                 on key "ArrowUp"
                     set field to (movedBy with field is field, dx is 0, dy is 0 - 1)
                 on key "ArrowDown"
+                    set field to (movedBy with field is field, dx is 0, dy is 1)
+
+                # The same promise, in this game's own message.
+                on key "a"
+                    set field to (movedBy with field is field, dx is 0 - 1, dy is 0)
+                on key "d"
+                    set field to (movedBy with field is field, dx is 1, dy is 0)
+                on key "w"
+                    set field to (movedBy with field is field, dx is 0, dy is 0 - 1)
+                on key "s"
                     set field to (movedBy with field is field, dx is 0, dy is 1)
                     set field to (
                         revealAt with field is field,
