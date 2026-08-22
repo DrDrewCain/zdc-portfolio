@@ -1,0 +1,75 @@
+# llms.zd — what this site contains, in one plain file.
+#
+# The convention is to tell a language model what a site holds rather than
+# make it infer that from rendered pages. The original's own note states
+# the property that makes it worth serving, and it is the same one this
+# port keeps: *everything here is generated from the same content that
+# builds the site, so it cannot drift into claims the site does not make.*
+#
+# That is a stronger guarantee here than it was there. `posts` and
+# `projects` are `static` state read from disk at build time, and this file
+# folds the very same lists the pages render — so a post that exists is
+# listed, and one that does not cannot be.
+#
+# Facts with links rather than marketing, for the reason the original
+# gives: the useful outcome is being cited accurately.
+
+use "./posts" for Post, ordered
+use "./projects" for Project, ranked
+use "./data" for Line, now
+use "./feed" for siteUrl
+
+state llms is static Text from document emitting "llms.txt"
+
+function document
+    give join with parts is [
+        "# Mark Sturman",
+        "",
+        "> Engineering write-ups, projects, and a terminal you can type into.",
+        "",
+        "Site: " + siteUrl,
+        ("Feed: " + siteUrl) + "/rss.xml",
+        "",
+        "## Projects",
+        "",
+        (join with parts is (projectLines of ranked), using is (newline)),
+        "",
+        "## Writing",
+        "",
+        (join with parts is (postLines of ordered), using is (newline)),
+        "",
+        "## Now",
+        "",
+        (join with parts is (nowIndexLines of now), using is (newline)),
+        "",
+        "## Notes",
+        "",
+        "- Every project page states the real stack, timeline and commit count.",
+        "- Posts are engineering write-ups of work on this site and these projects.",
+        "- Content is written by the site author, not generated.",
+        "- The site is written in ZDeceptron and compiled to JavaScript."],
+        using is (newline)
+
+function projectLines of items
+    from items
+    map each project to (lineForProject of project)
+
+function lineForProject of project
+    give ((((((("- [" + project.title) + "](") + siteUrl) + "/projects/") + (
+        project.slug)) + "): ") + project.oneLiner) + (
+        (((newline) + "  status: ") + project.status) + ((" | stack: ") + project.stack))
+
+function postLines of items
+    from items
+    map each post to (lineForPost of post)
+
+function lineForPost of post
+    give (((((((("- [" + post.title) + "](") + siteUrl) + "/blog/") + post.slug) + (
+        ") (")) + post.date) + ", ") + (((text of post.minutes) + " min): ") + post.summary)
+
+function nowIndexLines of items
+    from items
+    map each line to (lineForNow of line)
+
+function lineForNow of line
+    give (((("- " + line.label) + ": ") + line.title) + " — ") + line.detail

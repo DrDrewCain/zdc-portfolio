@@ -1,0 +1,27 @@
+# llms.test.zd — the file cannot claim what the site does not hold.
+#
+# Run it with `zdc test llms.test.zd`.
+#
+# WHY THIS FILE EXISTS. The point of `llms.txt` is that it is generated
+# from the content that builds the site, so it cannot drift. That is a
+# property, and a property is a claim: these check that every project and
+# every post is named, and that the count is the list's count rather than
+# a number written beside it.
+
+use "./llms" for projectLines, postLines, lineForNow
+use "./posts" for ordered
+use "./projects" for ranked
+use "./data" for Line
+
+test "every project is listed"
+    expect listLength of (projectLines of ranked) is listLength of ranked
+
+test "every post is listed"
+    expect listLength of (postLines of ordered) is listLength of ordered
+
+# A `Line` is three pieces of text, so one can be written here and the
+# formatting checked without reaching into a list for a real post.
+test "a now line reads label, title, then detail"
+    expect (lineForNow of (
+        Line with label is "building", title is "a thing", detail is "for a reason")) is (
+        "- building: a thing — for a reason")

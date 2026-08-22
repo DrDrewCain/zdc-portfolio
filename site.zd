@@ -36,6 +36,7 @@ use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
 # `rss.xml` in this build rather than in a second one nobody runs.
 use "./feed" for feed
 use "./sitemap" for sitemap, robots
+use "./llms" for llms
 use "./rings" for trunkOutlines,
     grain,
     pithPath,
