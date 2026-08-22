@@ -1,0 +1,65 @@
+# widgets.test.zd — which layers a project owns.
+#
+# Run it with `zdc test widgets.test.zd`.
+#
+# WHY THIS FILE EXISTS. `focusedOn` reads a document's `focus:` line and
+# asks whether a layer is named in it. Get that wrong in either direction
+# and the page still renders: too few marked and a project looks like it
+# owns nothing, too many and it claims work it did not do. Neither is a
+# broken build, and neither is visible unless you know which layers the
+# project is supposed to own.
+
+use "./widgets" for focusedOn, layerClass, layers, rungs
+
+test "a layer named in the focus line is owned"
+    expect (focusedOn with argument is "focus: Tensors,Operators", name is "Tensors") is yes
+
+test "and one that is not, is not"
+    expect (focusedOn with argument is "focus: Tensors,Operators", name is "Hardware") is no
+
+test "a single-layer focus works"
+    expect (focusedOn with argument is "focus: Model", name is "Model") is yes
+
+test "an empty focus owns nothing"
+    expect (focusedOn with argument is "", name is "Model") is no
+
+# The class is what the stylesheet reads, so it is the thing that decides
+# whether a rail is drawn.
+test "an owned layer carries the owned class"
+    expect (layerClass with argument is "focus: Model", name is "Model") is (
+        "stack-layer stack-owned")
+
+test "and an unowned one carries only the base class"
+    expect (layerClass with argument is "focus: Model", name is "Tensors") is "stack-layer"
+
+# **The hazard, written down before it bites.** `focusedOn` asks whether
+# the focus line *contains* the name, so a layer whose name is a prefix of
+# another would be marked by its neighbour. No two layers here collide —
+# `Model`, `Autodifferentiation`, `Tensors`, `Operators`, `Schedule`,
+# `Hardware` — and this claim is what notices if a seventh arrives that
+# does.
+test "no layer name is contained in another"
+    expect containments is listLength of layers
+
+# Every ordered pair of names, counting the ones where the first contains
+# the second. A name always contains itself, so a healthy stack scores
+# exactly one per layer.
+state containments is static Whole from totalContainments of layers
+
+function totalContainments of all
+    from all
+    fold each outer into found starting 0 to found + (
+        containedIn with outer is outer.name, all is all)
+
+function containedIn with outer, all
+    from all
+    fold each inner into hits starting 0 to hits + (
+        oneIfContained with outer is outer, inner is inner.name)
+
+function oneIfContained with outer, inner
+    if textContains with value is outer, needle is inner
+        give 1
+    give 0
+
+test "the stack has six layers and the ladder three"
+    expect ((listLength of layers) * 10) + (listLength of rungs) is 63
