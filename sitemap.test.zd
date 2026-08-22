@@ -1,0 +1,33 @@
+# sitemap.test.zd — what a crawler is told.
+#
+# Run it with `zdc test sitemap.test.zd`.
+#
+# WHY THIS FILE EXISTS. A sitemap is read by machines that never report a
+# problem: a malformed `<loc>`, a relative URL, or a slug that closed the
+# document early is a page that quietly stops being indexed. Nothing about
+# the site looks wrong afterwards.
+
+use "./sitemap" for urlFor, robotsText, everyUrl
+use "./posts" for slugs
+use "./projects" for projectSlugs
+
+test "a url is absolute"
+    expect (urlFor of "/blog/") is "<url><loc>https://marksturman.com/blog/</loc></url>"
+
+# The escape matters here for the same reason it does in the feed, and is
+# easier to miss: a slug is generated from a filename, so nobody writes one
+# by hand and nobody sees the ampersand coming.
+test "an ampersand in a path is escaped"
+    expect (urlFor of "/blog/a&b/") is "<url><loc>https://marksturman.com/blog/a&amp;b/</loc></url>"
+
+test "every post and project is listed, plus the home page and the index"
+    expect listLength of (
+        everyUrl with posts is slugs, projects is projectSlugs) is (
+        (listLength of slugs) + (listLength of projectSlugs)) + 2
+
+test "robots points at the sitemap"
+    expect (textContains with value is robotsText,
+        needle is "Sitemap: https://marksturman.com/sitemap.xml") is yes
+
+test "and lets everything be crawled"
+    expect (textContains with value is robotsText, needle is "Allow: /") is yes

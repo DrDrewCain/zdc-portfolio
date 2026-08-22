@@ -1,0 +1,57 @@
+# sitemap.zd — every URL this site serves, as the crawlers want it.
+#
+# The route table is the source. `route Site` names four shapes — the home
+# page, the blog index, an entry per post slug and a card per project slug
+# — and this file walks the same two lists the router walks, so a sitemap
+# cannot name a page the site does not serve or miss one it does.
+#
+# `static` throughout, like the feed: the slugs are read from disk at build
+# time and `emitting` writes the document into the bundle.
+
+use "./posts" for slugs
+use "./projects" for projectSlugs
+use "./feed" for siteUrl, escaped
+
+state sitemap is static Text from sitemapFrom with posts is slugs,
+    projects is projectSlugs emitting "sitemap.xml"
+
+function sitemapFrom with posts, projects
+    give (("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + (
+        "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">")) + (
+        join with parts is (everyUrl with posts is posts, projects is projects),
+        using is "")) + "</urlset>"
+
+# One flat list, built in the order a reader would walk them: the home
+# page, the blog index, every entry, every project.
+function everyUrl with posts, projects
+    give append (urlFor of "/") to (
+        append (urlFor of "/blog/") to (
+            listJoin with left is (postUrls of posts), right is (projectUrls of projects)))
+
+function listJoin with left, right
+    from right
+    fold each url into taken starting left to (append url to taken)
+
+function postUrls of items
+    from items
+    map each slug to (urlFor of (("/blog/" + slug) + "/"))
+
+function projectUrls of items
+    from items
+    map each slug to (urlFor of (("/projects/" + slug) + "/"))
+
+# A `<loc>` is a URL, and a URL in XML is escaped text like any other: a
+# slug holding `&` would otherwise close the document early.
+function urlFor of path
+    give ("<url><loc>" + (escaped of (siteUrl + path))) + "</loc></url>"
+
+# --- robots -----------------------------------------------------------------
+#
+# Two lines, and the second is the whole reason this file writes the first:
+# a sitemap nothing points at is a sitemap no crawler looks for.
+
+state robots is static Text from robotsText emitting "robots.txt"
+
+function robotsText
+    give ((("User-agent: *" + (newline)) + ("Allow: /" + (newline))) + (newline)) + (
+        ("Sitemap: " + siteUrl) + "/sitemap.xml")

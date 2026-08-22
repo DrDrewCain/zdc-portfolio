@@ -35,6 +35,7 @@ use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
 # The feed is `static` and emits its own file, so importing it is what puts
 # `rss.xml` in this build rather than in a second one nobody runs.
 use "./feed" for feed
+use "./sitemap" for sitemap, robots
 use "./rings" for trunkOutlines,
     grain,
     pithPath,
