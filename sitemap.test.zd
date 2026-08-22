@@ -10,6 +10,9 @@
 use "./sitemap" for urlFor, robotsText, everyUrl
 use "./posts" for slugs
 use "./projects" for projectSlugs
+# The widget set is the program's to declare, and a program that reads a
+# project reads a document that names one.
+use "./widgets" for Widget
 
 test "a url is absolute"
     expect (urlFor of "/blog/") is "<url><loc>https://marksturman.com/blog/</loc></url>"

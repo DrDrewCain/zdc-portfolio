@@ -37,6 +37,7 @@ use "./posts" for Post, posts, ordered, missingPost, postWith, slugs
 use "./feed" for feed
 use "./sitemap" for sitemap, robots
 use "./llms" for llms
+use "./widgets" for Widget, DeepStackOf, MemoryLadderOf
 use "./rings" for trunkOutlines,
     grain,
     pithPath,
@@ -347,7 +348,13 @@ component Working with project
                 Row height is 10
                 Text project.shown, class is "stack"
                 Row height is 30
-                Prose project.body, class is "prose"
+                each part in project.parts
+                    if isBlank of part.widget
+                        Prose part.markup, class is "prose"
+                    if part.widget is "DeepStack"
+                        DeepStackOf part.argument
+                    if part.widget is "MemoryLadder"
+                        MemoryLadderOf
 
 # One bar of the coverage chart. `width` is a percentage the build worked
 # out, and it is written into the class rather than the style because a

@@ -12,6 +12,9 @@ use "./llms" for projectLines, postLines, lineForNow
 use "./posts" for ordered
 use "./projects" for ranked
 use "./data" for Line
+# The widget set is the program's to declare, and a program that reads a
+# project reads a document that names one.
+use "./widgets" for Widget
 
 test "every project is listed"
     expect listLength of (projectLines of ranked) is listLength of ranked

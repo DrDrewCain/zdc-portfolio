@@ -15,6 +15,9 @@
 # nobody can see and everybody renders.
 
 use "./rings" for atLeast, atMost, rampChannel
+# The widget set is the program's to declare, and a program that reads a
+# project reads a document that names one.
+use "./widgets" for Widget
 
 # --- the clamps ---------------------------------------------------------------
 

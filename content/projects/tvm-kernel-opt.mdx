@@ -52,7 +52,8 @@ loads it does perform are amortized across all of them.
 Both schedules perform identical arithmetic. The difference is entirely in
 which level of memory the operands are read from, and how many times:
 
-<MemoryLadder />
+```zd MemoryLadder
+```
 
 Note which level won. The textbook answer for GEMM is to stage tiles in shared
 memory so a whole block can read them, and I wrote that version; the one that
@@ -92,7 +93,9 @@ project on this site that was scored against other people on a stopwatch.
 
 In stack terms it is the two layers most people never touch:
 
-<DeepStack focus="Schedule,Hardware" />
+```zd DeepStack
+focus: Schedule,Hardware
+```
 
 Source is a GitHub Classroom repository and stays private under academic
 integrity rules, so there is no public link to give.

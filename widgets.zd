@@ -1,0 +1,106 @@
+# widgets.zd — the two diagrams a project page embeds in its prose.
+#
+# A post is not always one `Markup`. `build parts` splits a document at the
+# fences whose info string begins with `zd`, giving a list of prose runs
+# and named widgets, and this file is the widget half: the closed set the
+# program declares, and what each one draws.
+#
+# WHY THE SET IS CLOSED. A component cannot be resolved from a file's text
+# — components are resolved statically, and a name out of a `.mdx` is not a
+# name the compiler saw. So the program dispatches on the name and a
+# document naming anything else is a failed build rather than a page with a
+# hole in it.
+#
+# WHAT WAS HERE BEFORE. Five project pages rendered `<DeepStack focus="…"
+# />` as literal text, in the middle of a sentence promising a diagram. The
+# tags were carried over from the original's MDX, where they are React
+# components, and `build markdown` has no reason to treat them as anything
+# but the characters they are.
+
+choice Widget
+    DeepStack
+    MemoryLadder
+
+record Layer
+    name  is Text
+    what  is Text
+    built is Text
+
+# The original's own list, in its own order: a stack read from the top,
+# where each layer is a thing somebody has to build and the row below it is
+# what that thing stands on.
+state layers is static List of Layer starting [
+    (
+        Layer with name is "Model",
+        what is "attention, embeddings, the block that repeats twelve times",
+        built is "MiniMacLLM-127M"),
+    (
+        Layer with name is "Autodifferentiation",
+        what is "the tape, the chain rule, one backward per forward",
+        built is "MiniTorch, module 1"),
+    (
+        Layer with name is "Tensors",
+        what is "strides, broadcasting, views that cost nothing",
+        built is "MiniTorch, module 2"),
+    (
+        Layer with name is "Operators",
+        what is "map, zip, reduce, matmul, and fusing them into one pass",
+        built is "MiniTorch, module 3"),
+    (
+        Layer with name is "Schedule",
+        what is "tiling, vectorising, choosing which memory holds what",
+        built is "TVM, ECE 5545"),
+    (
+        Layer with name is "Hardware",
+        what is "the cache line, the warp, the thing the schedule is aimed at",
+        built is "TVM, ECE 5545")]
+
+record Rung
+    name    is Text
+    note    is Text
+    latency is Text
+
+state rungs is static List of Rung starting [
+    (
+        Rung with name is "Global memory",
+        note is "DRAM, visible to every thread",
+        latency is "~400 cycles"),
+    (
+        Rung with name is "Shared memory",
+        note is "per thread block, explicitly managed",
+        latency is "~30 cycles"),
+    (
+        Rung with name is "Registers",
+        note is "per thread, where the math happens",
+        latency is "~1 cycle")]
+
+# `focus: Tensors,Operators` marks the layers a project owns. The argument
+# is `Text` the widget reads, which is the whole of what a document may
+# pass — a post cannot hand a widget a value.
+function focusedOn with argument, name
+    give textContains with value is (after with value is argument, delimiter is ":"),
+        needle is name
+
+function layerClass with argument, name
+    if focusedOn with argument is argument, name is name
+        give "stack-layer stack-owned"
+    give "stack-layer"
+
+component DeepStackOf with argument
+    Column class is "deep-stack", gap is 0
+        each layer in layers
+            Column class is (layerClass with argument is argument, name is layer.name),
+                padding is 10,
+                gap is 2
+                Row gap is 8, align is "baseline"
+                    Text layer.name, class is "stack-name"
+                    Text layer.built, class is "stack-where"
+                Text layer.what, class is "stack-what"
+
+component MemoryLadderOf
+    Column class is "memory-ladder", gap is 0
+        each rung in rungs
+            Row class is "ladder-rung", padding is 10, gap is 8, align is "baseline"
+                Text rung.name, class is "rung-name"
+                Text rung.note, class is "rung-note"
+                Text rung.latency, class is "rung-latency"

@@ -47,7 +47,7 @@ record Project
     shown     is Text
     timeline  is Text
     rank      is Whole
-    body      is Markup
+    parts     is List of Part
 
 state projectSlugs is static List of Text starting [
     "appmeee",
@@ -89,7 +89,7 @@ function projectFromRaw with path, raw
         rank is (
             valueOr with maybe is (parseWhole of (fieldOf with raw is raw, key is "order")),
             fallback is 99),
-        body is build markdown (linkified of (bodyOf of raw))
+        parts is build parts (linkified of (bodyOf of raw))
 
 # The effort, not the whole timeline. "Feb 2026 to now, over 9,000 commits"
 # is a period and an effort, and the listing's right-hand column wants only
@@ -268,7 +268,7 @@ function missingWork with title
         shown is "",
         timeline is "",
         rank is 99,
-        body is build markdown ""
+        parts is build parts ""
 
 function projectWith with all, slug, index, fallback
     when listAt with value is all, index is index
