@@ -35,6 +35,26 @@ for suite in *.test.zd; do
     fi
 done
 
+# The claims pass on modules; a program is more than its modules. §14D.2
+# makes every top-level name across a program *and the files it imports*
+# unique, and that is a property only the assembled program has — checking
+# each file alone reported 39 modules and 0 diagnostics while `site.zd`
+# would not build, because `llms.zd` and `commands.zd` both declared
+# `nowLines`. So the build runs here too.
+echo
+printf '%-22s ' "site.zd"
+if OUT=$(mktemp -d) && "$ZDC" build ./site.zd --out "$OUT" >/dev/null 2>&1; then
+    docs=$(find "$OUT" -name '*.html' | wc -l | tr -d ' ')
+    files=$(ls "$OUT"/*.xml "$OUT"/*.txt 2>/dev/null | wc -l | tr -d ' ')
+    echo "builds — $docs documents, $files generated files"
+    rm -rf "$OUT"
+else
+    echo "DOES NOT BUILD"
+    "$ZDC" build ./site.zd --out "$OUT" 2>&1 | head -6
+    rm -rf "$OUT"
+    broken=$((broken + 1))
+fi
+
 echo
 if [ "$broken" -gt 0 ]; then
     echo "$broken of $suites suites have a broken claim"
