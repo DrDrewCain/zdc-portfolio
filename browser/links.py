@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Every internal link points at a document this build emitted.
+"""Every internal link points somewhere, and every outline is one outline.
 
 WHY THIS EXISTS. The blog page linked to `/rss.xml` from the commit that
 styled it, and the feed answering that link was written weeks later. In
@@ -52,7 +52,42 @@ def main():
     print("  internal links: %d checked, %d dead" % (checked, len(dead)))
     for page, href in dead:
         print("    %s -> %s" % (page, href))
-    return 1 if dead else 0
+
+    outlines = badly_outlined(root)
+    print("  outlines: %d documents, %d wrong" % (
+        len(list(root.rglob("*.html"))), len(outlines)))
+    for page, why in outlines:
+        print("    %s: %s" % (page, why))
+
+    return 1 if dead or outlines else 0
+
+
+def badly_outlined(root):
+    """Pages whose headings do not describe one document.
+
+    A `Heading`'s level is its nesting depth, so an outline that skips a
+    level is not expressible — but *two* documents' worth of `h1` is, and
+    that is what a list of cards produces: every card is a component, and a
+    component starts its own depth. The blog index shipped fifteen `h1`s,
+    one for the page and one per post, until the cards were wrapped in a
+    `Section`.
+    """
+    import re as _re
+    out = []
+    for p in sorted(root.rglob("*.html")):
+        page = str(p.relative_to(root))
+        levels = [int(m.group(1)) for m in _re.finditer(r"<h([1-6])", p.read_text())]
+        if not levels:
+            continue
+        if levels[0] != 1:
+            out.append((page, "starts at h%d" % levels[0]))
+        if levels.count(1) > 1:
+            out.append((page, "%d h1s — a page is one document" % levels.count(1)))
+        for a, b in zip(levels, levels[1:]):
+            if b > a + 1:
+                out.append((page, "h%d -> h%d skips a level" % (a, b)))
+                break
+    return out
 
 
 if __name__ == "__main__":

@@ -1349,9 +1349,15 @@ view title is "Mark Sturman"
                                     Text "rss"
                             Row height is 28
 
-                            Column gap is 14
-                                each post in ordered
-                                    Card post
+                            # A `Section`, so each card's `Heading` is an
+                            # h2 rather than a second h1. A heading's level
+                            # is its nesting depth, and fourteen h1s on one
+                            # page is the outline failure the vocabulary is
+                            # closed to prevent.
+                            Section
+                                Column gap is 14
+                                    each post in ordered
+                                        Card post
 
                 Entry with slug
                     Shell yes
