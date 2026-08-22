@@ -398,6 +398,29 @@ component Terminal
                     Scene viewBox is lifeViewBox, label is "Conway's game of life"
                         Path outline is (boardPath of board), fill is "#ffa96b"
 
+                # The same keys, on the document. The handlers on the
+                # terminal's input fire only while that field has focus,
+                # and a reader who clicks the board has just taken it
+                # away. `on key` stands down while a field has focus, so
+                # exactly one of the pair runs and a press is never
+                # counted twice.
+                on key " "
+                    set running to not running
+                on key "n"
+                    set board to (stepLife of board)
+                on key "g"
+                    set board to (
+                        stamped with pattern is gunCells,
+                        seed is board.seed)
+                on key "p"
+                    set board to (
+                        stamped with pattern is pulsarCells,
+                        seed is board.seed)
+                on key "c"
+                    set board to (
+                        stamped with pattern is gliderCells,
+                        seed is board.seed)
+
             # Two screens, and which one is up is a fact the game already
             # holds: `hunt.foe` is `Some` exactly while a battle is on. So
             # this is a `when` over that option rather than a second overlay
@@ -456,6 +479,41 @@ component Terminal
                                 Column gap is 2
                                     each said in (critterBattleLog of lab)
                                         Text said, class is "term-line"
+                # The same keys, on the document, for the reason the other
+                # games carry. The guard moves *inside* the handler rather
+                # than around it: `on key` names one key and sits beside an
+                # element, so the two meanings of an arrow — walking the
+                # world, and moving the action cursor once something has
+                # found you — are one listener that asks which it is. That
+                # is the same question `isNone of lab.hunt.foe` answers in
+                # the input handler, and asking it in both places is what
+                # keeps the panel and the game agreeing.
+                on key "ArrowLeft"
+                    if isNone of lab.hunt.foe
+                        set lab to (critterWalk with game is lab, dir is "left")
+                    if isSome of lab.hunt.foe
+                        set lab to (critterMenuMoved with game is lab, step is 3)
+                on key "ArrowRight"
+                    if isNone of lab.hunt.foe
+                        set lab to (critterWalk with game is lab, dir is "right")
+                    if isSome of lab.hunt.foe
+                        set lab to (critterMenuMoved with game is lab, step is 1)
+                on key "ArrowUp"
+                    if isNone of lab.hunt.foe
+                        set lab to (critterWalk with game is lab, dir is "up")
+                    if isSome of lab.hunt.foe
+                        set lab to (critterMenuMoved with game is lab, step is 2)
+                on key "ArrowDown"
+                    if isNone of lab.hunt.foe
+                        set lab to (critterWalk with game is lab, dir is "down")
+                    if isSome of lab.hunt.foe
+                        set lab to (critterMenuMoved with game is lab, step is 2)
+                on key " "
+                    if isSome of lab.hunt.foe
+                        set lab to (critterConfirm of lab)
+                on key "Enter"
+                    if isSome of lab.hunt.foe
+                        set lab to (critterConfirm of lab)
 
             if overlay is "snake"
                 Column class is "term-game", gap is 8, align is "center"
@@ -470,6 +528,23 @@ component Terminal
                         Path outline is (snakeGlintPath of serpent), fill is "#ffffff", opacity is 0.12
                         Path outline is (snakeHeadPath of serpent), fill is (snakeHeadFill of serpent)
                         Path outline is (snakeEyesPath of serpent), fill is "#15100d"
+
+                # The same keys, on the document. The handlers on the
+                # terminal's input fire only while that field has focus,
+                # and a reader who clicks the board has just taken it
+                # away. `on key` stands down while a field has focus, so
+                # exactly one of the pair runs and a press is never
+                # counted twice.
+                on key "ArrowLeft"
+                    set serpent to (snakeSteer with game is serpent, dx is 0 - 1, dy is 0)
+                on key "ArrowRight"
+                    set serpent to (snakeSteer with game is serpent, dx is 1, dy is 0)
+                on key "ArrowUp"
+                    set serpent to (snakeSteer with game is serpent, dx is 0, dy is 0 - 1)
+                on key "ArrowDown"
+                    set serpent to (snakeSteer with game is serpent, dx is 0, dy is 1)
+                on key " "
+                    set serpent to (newSnake of (clock))
 
             if overlay is "blocks"
                 Column class is "term-game-wide", gap is 8, align is "center"
@@ -486,6 +561,25 @@ component Terminal
                             Text "next", class is "prompt-mark"
                             Scene viewBox is blocksNextViewBox, label is "the next piece"
                                 Path outline is (blocksNextPath of stack), fill is (blocksNextColor of stack)
+
+                # The same keys, on the document. The handlers on the
+                # terminal's input fire only while that field has focus,
+                # and a reader who clicks the board has just taken it
+                # away. `on key` stands down while a field has focus, so
+                # exactly one of the pair runs and a press is never
+                # counted twice.
+                on key "ArrowLeft"
+                    set stack to (blocksLeft of stack)
+                on key "ArrowRight"
+                    set stack to (blocksRight of stack)
+                on key "ArrowDown"
+                    set stack to (blocksDown of stack)
+                on key "ArrowUp"
+                    set stack to (blocksRotate of stack)
+                on key " "
+                    set stack to (blocksDrop of stack)
+                on key "r"
+                    set stack to (blocksRefactor of stack)
 
             # Sixteen paths in the order the original's canvas fills
             # them: the remembered map underneath, the lit map over it,
@@ -530,6 +624,29 @@ component Terminal
                         each entry in (crawlRecent of crawling)
                             Text entry, class is "term-line"
 
+                # The same keys, on the document. The handlers on the
+                # terminal's input fire only while that field has focus,
+                # and a reader who clicks the board has just taken it
+                # away. `on key` stands down while a field has focus, so
+                # exactly one of the pair runs and a press is never
+                # counted twice.
+                on key "ArrowLeft"
+                    set crawling to (
+                        crawlStep with game is crawling,
+                        dx is 0 - 1,
+                        dy is 0)
+                on key "ArrowRight"
+                    set crawling to (crawlStep with game is crawling, dx is 1, dy is 0)
+                on key "ArrowUp"
+                    set crawling to (
+                        crawlStep with game is crawling,
+                        dx is 0,
+                        dy is 0 - 1)
+                on key "ArrowDown"
+                    set crawling to (crawlStep with game is crawling, dx is 0, dy is 1)
+                    set crawling to (crawlStart of (clock))
+                    set deepest to crawling.depth
+
             if overlay is "dino"
                 Column class is "term-game-wide", gap is 8, align is "center"
                     Row gap is 16, align is "center"
@@ -561,6 +678,19 @@ component Terminal
                         Path outline is (dinoEyePath of runner), fill is "#f2ede3"
                         Path outline is (dinoPupilPath of runner),
                             fill is (dinoPupilColour of runner)
+
+                # The same keys, on the document. The handlers on the
+                # terminal's input fire only while that field has focus,
+                # and a reader who clicks the board has just taken it
+                # away. `on key` stands down while a field has focus, so
+                # exactly one of the pair runs and a press is never
+                # counted twice.
+                on key " "
+                    if runner.dead
+                        set runner to (dinoFresh of (clock))
+                    if not runner.dead
+                        set runner to (dinoJump of runner)
+                    set dinoBest to dinoTop
 
             if overlay is "2048"
                 Column class is "term-game", gap is 8, align is "center"
@@ -615,6 +745,28 @@ component Terminal
                             fill is "none",
                             stroke is "#ffa96b",
                             strokeWidth is 2
+
+                # The same keys, on the document. The handlers on the
+                # terminal's input fire only while that field has focus,
+                # and a reader who clicks the board has just taken it
+                # away. `on key` stands down while a field has focus, so
+                # exactly one of the pair runs and a press is never
+                # counted twice.
+                on key "ArrowLeft"
+                    set field to (movedBy with field is field, dx is 0 - 1, dy is 0)
+                on key "ArrowRight"
+                    set field to (movedBy with field is field, dx is 1, dy is 0)
+                on key "ArrowUp"
+                    set field to (movedBy with field is field, dx is 0, dy is 0 - 1)
+                on key "ArrowDown"
+                    set field to (movedBy with field is field, dx is 0, dy is 1)
+                    set field to (
+                        revealAt with field is field,
+                        index is field.cursor)
+                on key "f"
+                    set field to (flagAt with field is field, index is field.cursor)
+                on key "r"
+                    set field to (freshField of (clock))
 
             Row class is "term-input", gap is 8, align is "center", padding is 12
                 Text "~/portfolio", class is "prompt-path"
