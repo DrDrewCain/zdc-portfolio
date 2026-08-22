@@ -1,0 +1,64 @@
+/* widgets.css — the two diagrams a project page embeds.
+ *
+ * `widgets.zd` emits the structure and this gives it the shape. Written
+ * against `base.css`'s tokens rather than against hex values, so a diagram
+ * follows the site's palette when the palette moves.
+ *
+ * The stack is read from the top, and each row sits *on* the one below it —
+ * so the rows share a border rather than each carrying their own, and the
+ * whole reads as one object rather than six.
+ */
+
+.deep-stack,
+.memory-ladder {
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 1.4rem 0;
+  background: var(--color-surface);
+}
+
+.stack-layer,
+.ladder-rung {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.stack-layer:last-child,
+.ladder-rung:last-child {
+  border-bottom: 0;
+}
+
+/* The layers this project owns. A left rail rather than a fill: the point
+ * is which rows belong to the page you are on, and a filled row competes
+ * with the prose around it. */
+.stack-owned {
+  background: var(--color-raised);
+  box-shadow: inset 3px 0 0 var(--color-accent);
+}
+
+.stack-name,
+.rung-name {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.stack-owned .stack-name {
+  color: var(--color-accent);
+}
+
+.stack-where,
+.rung-latency {
+  color: var(--color-gold);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stack-what,
+.rung-note {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.ladder-rung {
+  justify-content: space-between;
+}
