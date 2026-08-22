@@ -47,6 +47,11 @@ if OUT=$(mktemp -d) && "$ZDC" build ./site.zd --out "$OUT" >/dev/null 2>&1; then
     docs=$(find "$OUT" -name '*.html' | wc -l | tr -d ' ')
     files=$(ls "$OUT"/*.xml "$OUT"/*.txt 2>/dev/null | wc -l | tr -d ' ')
     echo "builds — $docs documents, $files generated files"
+    # A dead link is not a broken build, which is why it needs asking for:
+    # the blog linked to `/rss.xml` for weeks before the feed existed.
+    if ! python3 browser/links.py "$OUT"; then
+        broken=$((broken + 1))
+    fi
     rm -rf "$OUT"
 else
     echo "DOES NOT BUILD"
