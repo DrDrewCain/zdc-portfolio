@@ -584,6 +584,22 @@ component Terminal
                                             cellOf with cells is tiles.cells,
                                             index is band + step)),
                                             weight is "800"
+                # The same four moves, on the document. The handlers on the
+                # terminal's input fire only while that field has focus, and
+                # a reader who clicks the board to look at it has just taken
+                # it away — after which the game stopped answering arrows at
+                # all. `on key` is the other half of that pair by
+                # construction: §14's listener *stands down* while a field
+                # has focus, so exactly one of the two runs and a move is
+                # never counted twice.
+                on key "ArrowLeft"
+                    set tiles to (afterMove with board is tiles, direction is Left)
+                on key "ArrowRight"
+                    set tiles to (afterMove with board is tiles, direction is Right)
+                on key "ArrowUp"
+                    set tiles to (afterMove with board is tiles, direction is Up)
+                on key "ArrowDown"
+                    set tiles to (afterMove with board is tiles, direction is Down)
 
             if overlay is "minesweeper"
                 Column class is "term-game-wide", gap is 8
