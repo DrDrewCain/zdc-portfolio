@@ -67,7 +67,7 @@ if ! echo "$VERDICT" | grep -q "done"; then
     exit 1
 fi
 if echo "$VERDICT" | grep -qE "STUCK|NO-TERMINAL|NO-GRID"; then
-    echo "2048 does not answer arrows when the field loses focus"
+    echo "a game does not answer its keys when the field loses focus"
     exit 1
 fi
-echo "2048 answers arrows without focus"
+echo "every game answers its keys without focus"
