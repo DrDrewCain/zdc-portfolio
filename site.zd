@@ -792,6 +792,16 @@ component Terminal
                     set field to (movedBy with field is field, dx is 0, dy is 0 - 1)
                 on key "s"
                     set field to (movedBy with field is field, dx is 0, dy is 1)
+
+                # Reveal, which the focused path spells the same way. It
+                # was written under `s` by mistake, so a reader walking
+                # down with `wasd` revealed every cell they stepped on —
+                # in minesweeper, a way to lose without choosing to.
+                on key " "
+                    set field to (
+                        revealAt with field is field,
+                        index is field.cursor)
+                on key "Enter"
                     set field to (
                         revealAt with field is field,
                         index is field.cursor)
