@@ -1,0 +1,116 @@
+# docs.zd — the language documentation, read off disk.
+#
+# The same shape as `posts.zd` and for the same reasons: what reasons about
+# a document lives here, what links to one lives with the routes in
+# `site.zd`, because a `Card` links to a route variant and a route variant
+# cannot cross a module boundary.
+#
+# What differs from a post is the order. A post is newest-first, which is a
+# fact about its date; a doc is in the order somebody decided to teach it,
+# which is a fact about the writing and has to be written down. That is the
+# `order` field, and it is why `byOrder` sorts on a `Whole` where
+# `newestFirst` sorts on a date's text.
+
+use "./frontmatter" for fieldOf, bodyOf, slugOf, linkified
+
+record Doc
+    slug        is Text
+    title       is Text
+    # What the side navigation calls it, which is shorter than the title
+    # more often than not: "How it works" against "How the language works".
+    # A separate field rather than a truncation, because where to cut a
+    # title is a judgement and the person who wrote it already made it.
+    navTitle    is Text
+    description is Text
+    # Teaching order, ascending. Not the file name: `getting-started`
+    # sorting before `language-tour` is a coincidence of spelling, and
+    # `standard-library` before `examples` would be wrong.
+    order       is Whole
+    # `Markup` for `Prose`, exactly as a post's body is: `Text` would set
+    # `nodeValue` and a heading would arrive as visible `#` characters.
+    body        is Markup
+
+# Written out, and the reason is `posts.zd`'s: a route parameter's `in`
+# collection has to be a literal `static` list, because the compiler emits
+# one document per value and the value set has to be settled before the
+# build host has run anything. `build list` runs during the build, which is
+# after. So adding a page is two edits — the file, and this line.
+state docSlugs is static List of Text starting [
+    "getting-started",
+    "language-tour",
+    "standard-library",
+    "examples"]
+
+state docs is static List of Doc from readDocs with directory is "content/zdeceptron"
+
+function readDocs with directory
+    from build list directory
+    map each path to (docFrom of path)
+
+# Read once and handed on, as `postFrom` does: there is no `let`, so "read
+# it once" is spelled as a second function taking the text.
+function docFrom of path
+    give docFromRaw with path is path, raw is build read path
+
+function docFromRaw with path, raw
+    give Doc with slug is (slugOf of path),
+        title is (fieldOf with raw is raw, key is "title"),
+        navTitle is (fieldOf with raw is raw, key is "navTitle"),
+        description is (fieldOf with raw is raw, key is "description"),
+        order is (wholeFrom of (fieldOf with raw is raw, key is "order")),
+        body is build markdown (linkified of (withoutTitle of (bodyOf of raw)))
+
+# **The title, stated once.** These files were written for a renderer that
+# showed the frontmatter title *and* the body, and every body opens with
+# its own `# Getting started`. Rendered as they are, each page carries two
+# h1s — which the outline check catches and calls what it is: a page is one
+# document, and two h1s is two.
+#
+# The heading in the frontmatter wins, because it is the one the card, the
+# sitemap and `llms.txt` already use, and a title that disagreed with them
+# would be a fourth spelling of the same thing.
+function withoutTitle of body
+    if startsWith with value is (trim of body), prefix is "# "
+        give after with value is (trim of body), delimiter is (newline)
+    give body
+
+# `order` arrives as the text of a number, because frontmatter is text. A
+# page with no `order` sorts last rather than first: `0` would put an
+# unmarked page ahead of the one somebody chose to open with.
+function wholeFrom of text
+    when parseWhole of text
+        None
+            give 999
+        Some with n
+            give n
+
+state orderedDocs is static List of Doc from byOrder with all is docs
+
+function byOrder with all
+    from all
+    sort each doc by doc.order
+
+# The "no such page" page, built on the build host for `missingPost`'s
+# reason: `build markdown` is readable only while the build runs, so a
+# lookup that happens in the browser cannot construct one.
+state missingDoc is static Doc from missingWith with title is "Not found"
+
+function missingWith with title
+    give Doc with slug is "",
+        title is title,
+        navTitle is title,
+        description is "",
+        order is 999,
+        body is build markdown ""
+
+function docWith with all, slug, index, fallback
+    when listAt with value is all, index is index
+        None
+            give fallback
+        Some with doc
+            if doc.slug is slug
+                give doc
+            give docWith with all is all,
+                slug is slug,
+                index is index + 1,
+                fallback is fallback

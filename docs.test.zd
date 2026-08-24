@@ -1,0 +1,57 @@
+# docs.test.zd — what the documentation section is made of.
+#
+# WHY THIS FILE EXISTS. The four pages were written for a renderer that
+# showed the frontmatter title *and* the body, and every body opens with
+# its own `# Getting started`. Ported as they were, each page carried two
+# h1s — which the build's outline check caught and named exactly: *a page
+# is one document*. That fault is invisible to a reader and to every unit
+# claim about the text; the two below are what make it visible here.
+
+use "./docs" for Doc,
+    docSlugs,
+    orderedDocs,
+    missingDoc,
+    docWith,
+    withoutTitle,
+    wholeFrom
+
+test "the body's own title is dropped, because the page states it"
+    expect (withoutTitle of "# Getting started\nInstall it.") is "Install it."
+
+# Only the *leading* one. A `#` in the middle of a page is a heading the
+# writer meant, and a body that does not open with one is handed back
+# whole rather than losing its first line.
+test "a body that does not open with a heading is left alone"
+    expect (withoutTitle of "Install it.\n# Later") is "Install it.\n# Later"
+
+test "a page with no order sorts last, not first"
+    expect (wholeFrom of "") is 999
+
+test "and a page with one keeps it"
+    expect (wholeFrom of "2") is 2
+
+# Teaching order, which is the whole reason `order` exists: sorted by file
+# name, `examples` comes first and it is the page to read last.
+test "the page to open with is the one that opens"
+    expect (docWith with all is orderedDocs,
+        slug is "getting-started",
+        index is 0,
+        fallback is missingDoc).order is 0
+
+test "and the examples come after the tour"
+    expect ((docWith with all is orderedDocs,
+        slug is "examples",
+        index is 0,
+        fallback is missingDoc).order > (docWith with all is orderedDocs,
+        slug is "language-tour",
+        index is 0,
+        fallback is missingDoc).order) is yes
+
+test "every declared slug is a page that was read"
+    expect listLength of orderedDocs is listLength of docSlugs
+
+test "a slug nobody wrote gives the fallback rather than nothing"
+    expect (docWith with all is orderedDocs,
+        slug is "no-such-page",
+        index is 0,
+        fallback is missingDoc).title is "Not found"
