@@ -688,17 +688,33 @@ component Terminal
                         crawlStep with game is crawling,
                         dx is 0 - 1,
                         dy is 0)
+                    if crawling.depth > deepest
+                        set deepest to crawling.depth
                 on key "ArrowRight"
                     set crawling to (crawlStep with game is crawling, dx is 1, dy is 0)
+                    if crawling.depth > deepest
+                        set deepest to crawling.depth
                 on key "ArrowUp"
                     set crawling to (
                         crawlStep with game is crawling,
                         dx is 0,
                         dy is 0 - 1)
+                    if crawling.depth > deepest
+                        set deepest to crawling.depth
                 on key "ArrowDown"
                     set crawling to (crawlStep with game is crawling, dx is 0, dy is 1)
-                    set crawling to (crawlStart of (clock))
-                    set deepest to crawling.depth
+                    if crawling.depth > deepest
+                        set deepest to crawling.depth
+
+                # Restart, which the focused path spells `space` *and only
+                # once the run is over*. Both lines were written under
+                # `ArrowDown`, so walking down threw the dungeon away and
+                # dealt a new one — every time, from the first step.
+                on key " "
+                    if crawling.over
+                        set crawling to (crawlStart of (clock))
+                    if crawling.depth > deepest
+                        set deepest to crawling.depth
 
             if overlay is "dino"
                 Column class is "term-game-wide", gap is 8, align is "center"
