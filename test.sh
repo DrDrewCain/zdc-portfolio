@@ -60,6 +60,20 @@ else
     broken=$((broken + 1))
 fi
 
+# The two halves of a key. `on key "X"` and `if stroke.key is "X"` are
+# written for the same press — §14's listener stands down while a field
+# has focus, so exactly one runs — and nothing checked they agree. Three
+# bugs came of that, all of them statements written one key too low, and
+# none reachable from a claim: the fault is in the wiring rather than in
+# any function.
+echo
+printf '%-22s ' "key handlers"
+if python3 check-handler-parity.py site.zd; then
+    :
+else
+    broken=$((broken + 1))
+fi
+
 echo
 if [ "$broken" -gt 0 ]; then
     echo "$broken of $suites suites have a broken claim"
