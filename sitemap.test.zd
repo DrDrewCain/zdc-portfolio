@@ -10,6 +10,7 @@
 use "./sitemap" for urlFor, robotsText, everyUrl
 use "./posts" for slugs
 use "./projects" for projectSlugs
+use "./docs" for docSlugs
 # The widget set is the program's to declare, and a program that reads a
 # project reads a document that names one.
 use "./widgets" for Widget
@@ -23,10 +24,18 @@ test "a url is absolute"
 test "an ampersand in a path is escaped"
     expect (urlFor of "/blog/a&b/") is "<url><loc>https://marksturman.com/blog/a&amp;b/</loc></url>"
 
-test "every post and project is listed, plus the home page and the index"
+# The `+ 3` is the home page and the two indexes — `/blog/` and `/docs/`.
+# Counted rather than listed, because the point of the claim is that
+# nothing is *dropped*: a fold that lost an arm of the join would still
+# produce a well-formed sitemap, and the only thing that would notice is
+# this number.
+test "every post, project and doc is listed, plus the home page and the two indexes"
     expect listLength of (
-        everyUrl with posts is slugs, projects is projectSlugs) is (
-        (listLength of slugs) + (listLength of projectSlugs)) + 2
+        everyUrl with posts is slugs,
+        projects is projectSlugs,
+        docs is docSlugs) is (
+        ((listLength of slugs) + (listLength of projectSlugs)) + (
+            listLength of docSlugs)) + 3
 
 test "robots points at the sitemap"
     expect (textContains with value is robotsText,

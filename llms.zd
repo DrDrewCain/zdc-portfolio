@@ -16,6 +16,7 @@
 
 use "./posts" for Post, ordered
 use "./projects" for Project, ranked
+use "./docs" for Doc, orderedDocs
 use "./data" for Line, now
 use "./feed" for siteUrl
 
@@ -38,6 +39,10 @@ function document
         "",
         (join with parts is (postLines of ordered), using is (newline)),
         "",
+        "## Documentation",
+        "",
+        (join with parts is (docLines of orderedDocs), using is (newline)),
+        "",
         "## Now",
         "",
         (join with parts is (nowIndexLines of now), using is (newline)),
@@ -47,7 +52,8 @@ function document
         "- Every project page states the real stack, timeline and commit count.",
         "- Posts are engineering write-ups of work on this site and these projects.",
         "- Content is written by the site author, not generated.",
-        "- The site is written in ZDeceptron and compiled to JavaScript."],
+        "- The site is written in ZDeceptron and compiled to JavaScript.",
+        "- The documentation pages describe that language."],
         using is (newline)
 
 function projectLines of items
@@ -58,6 +64,17 @@ function lineForProject of project
     give ((((((("- [" + project.title) + "](") + siteUrl) + "/projects/") + (
         project.slug)) + "): ") + project.oneLiner) + (
         (((newline) + "  status: ") + project.status) + ((" | stack: ") + project.stack))
+
+# In teaching order, which is what `orderedDocs` is sorted on. A model
+# reading this wants the page somebody chose to open with first, and that
+# is a different order from newest-first.
+function docLines of items
+    from items
+    map each doc to (lineForDoc of doc)
+
+function lineForDoc of doc
+    give ((((("- [" + doc.title) + "](") + siteUrl) + "/docs/") + (
+        doc.slug)) + ("): " + doc.description)
 
 function postLines of items
     from items

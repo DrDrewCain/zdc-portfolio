@@ -4,13 +4,14 @@
 #
 # WHY THIS FILE EXISTS. The point of `llms.txt` is that it is generated
 # from the content that builds the site, so it cannot drift. That is a
-# property, and a property is a claim: these check that every project and
-# every post is named, and that the count is the list's count rather than
-# a number written beside it.
+# property, and a property is a claim: these check that every project,
+# every post and every documentation page is named, and that the count is
+# the list's count rather than a number written beside it.
 
-use "./llms" for projectLines, postLines, lineForNow
+use "./llms" for projectLines, postLines, docLines, lineForNow
 use "./posts" for ordered
 use "./projects" for ranked
+use "./docs" for orderedDocs
 use "./data" for Line
 # The widget set is the program's to declare, and a program that reads a
 # project reads a document that names one.
@@ -21,6 +22,11 @@ test "every project is listed"
 
 test "every post is listed"
     expect listLength of (postLines of ordered) is listLength of ordered
+
+# The section was added after the other two, which is exactly when a
+# generated index stops matching the site it describes.
+test "every documentation page is listed"
+    expect listLength of (docLines of orderedDocs) is listLength of orderedDocs
 
 # A `Line` is three pieces of text, so one can be written here and the
 # formatting checked without reaching into a list for a real post.

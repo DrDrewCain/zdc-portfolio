@@ -1,32 +1,41 @@
 # sitemap.zd — every URL this site serves, as the crawlers want it.
 #
-# The route table is the source. `route Site` names four shapes — the home
-# page, the blog index, an entry per post slug and a card per project slug
-# — and this file walks the same two lists the router walks, so a sitemap
-# cannot name a page the site does not serve or miss one it does.
+# The route table is the source. `route Site` names six shapes — the home
+# page, the blog index, an entry per post slug, a card per project slug,
+# the docs index and a page per doc slug — and this file walks the same
+# three lists the router walks, so a sitemap cannot name a page the site
+# does not serve or miss one it does.
 #
 # `static` throughout, like the feed: the slugs are read from disk at build
 # time and `emitting` writes the document into the bundle.
 
 use "./posts" for slugs
 use "./projects" for projectSlugs
+use "./docs" for docSlugs
 use "./feed" for siteUrl, escaped
 
 state sitemap is static Text from sitemapFrom with posts is slugs,
-    projects is projectSlugs emitting "sitemap.xml"
+    projects is projectSlugs,
+    docs is docSlugs emitting "sitemap.xml"
 
-function sitemapFrom with posts, projects
+function sitemapFrom with posts, projects, docs
     give (("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + (
         "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">")) + (
-        join with parts is (everyUrl with posts is posts, projects is projects),
+        join with parts is (
+            everyUrl with posts is posts, projects is projects, docs is docs),
         using is "")) + "</urlset>"
 
 # One flat list, built in the order a reader would walk them: the home
-# page, the blog index, every entry, every project.
-function everyUrl with posts, projects
+# page, the blog index, every entry, every project, the docs index and
+# every page of it.
+function everyUrl with posts, projects, docs
     give append (urlFor of "/") to (
         append (urlFor of "/blog/") to (
-            listJoin with left is (postUrls of posts), right is (projectUrls of projects)))
+            listJoin with left is (postUrls of posts),
+            right is (
+                listJoin with left is (projectUrls of projects),
+                right is (
+                    append (urlFor of "/docs/") to (docUrls of docs)))))
 
 function listJoin with left, right
     from right
@@ -39,6 +48,10 @@ function postUrls of items
 function projectUrls of items
     from items
     map each slug to (urlFor of (("/projects/" + slug) + "/"))
+
+function docUrls of items
+    from items
+    map each slug to (urlFor of (("/docs/" + slug) + "/"))
 
 # A `<loc>` is a URL, and a URL in XML is escaped text like any other: a
 # slug holding `&` would otherwise close the document early.
