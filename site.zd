@@ -117,6 +117,11 @@ use "./mines" for Field,
     openPath,
     cursorPath,
     minePath
+use "./docs" for Doc,
+    docSlugs,
+    orderedDocs,
+    missingDoc,
+    docWith
 use "./life" for Life,
     stepLife,
     stamped,
@@ -132,6 +137,11 @@ route Site
     Writing is "/blog"
     Entry   is "/blog" with slug is Text in slugs
     Work    is "/projects" with slug is Text in projectSlugs
+    # `Topic`, not `Doc`: `record Doc` already has that name, and a route
+    # variant and a record share one namespace — the same collision
+    # `Entry` is named around in `posts.zd`.
+    Manual  is "/docs"
+    Topic   is "/docs" with slug is Text in docSlugs
 
 state page is client Option of Site starting address
 
@@ -149,6 +159,32 @@ component Card with post
                 Text "min read"
             Heading post.title, class is "card-title"
             Text post.summary, color is "muted", size is "small", lineHeight is 1.7
+
+component DocCard with doc
+    Link (Topic with slug is doc.slug), decoration is "none", color is "ink"
+        Column class is "card", padding is 20, gap is 8
+            Row gap is 6, align is "center", class is "meta"
+                Text "docs"
+                Text "·"
+                Text doc.navTitle
+            Heading doc.title, class is "card-title"
+            Text doc.description, color is "muted", size is "small", lineHeight is 1.7
+
+# The page itself. `Prose` and not `Text`, because the body is `Markup`:
+# `Text` sets `nodeValue` and every `#` would arrive as a visible character.
+component Manualled with doc
+    Column gap is 0
+        Link Manual, decoration is "none", padding is 0
+            Row gap is 8, align is "center", class is "cd"
+                Text "←", class is "cd-arrow"
+                Text "cd ../docs"
+        Row height is 24
+        Heading doc.title, class is "title"
+        Row height is 12
+        Text doc.description, color is "muted", size is "small", lineHeight is 1.7
+        Row height is 28
+        Section
+            Prose doc.body, class is "prose"
 
 component Crumb
     Row gap is 8, align is "center", class is "cd"
@@ -207,6 +243,14 @@ function isReading of spot
                 Entry with slug
                     give yes
                 Work with slug
+                    give no
+                # The docs are their own place, not the blog: the reading
+                # tab is about `/blog`, and a page that lights it from
+                # `/docs` would be telling the reader they are somewhere
+                # they are not.
+                Manual
+                    give no
+                Topic with slug
                     give no
 
 component Tab with number, name, target, here
@@ -1378,3 +1422,31 @@ view title is "Mark Sturman"
                             slug is slug,
                             index is 0,
                             fallback is missingPost)
+
+                Manual
+                    Shell yes
+                        Column gap is 0
+                            Row height is 40
+                            Heading "ZDeceptron.", class is "title"
+                            Row height is 16
+                            Row gap is 8, align is "center", class is "tagline"
+                                Text "//", class is "slash"
+                                Text "a reactive dataflow language where placement is a property of state"
+                            Row height is 28
+
+                            # A `Section`, for the reason the blog index
+                            # has one: each card's `Heading` becomes an h2
+                            # rather than a fourth h1 on the page.
+                            Section
+                                Column gap is 14
+                                    each doc in orderedDocs
+                                        DocCard doc
+
+                Topic with slug
+                    Shell yes
+                        # Looked up once, at the call, as `Entry` does.
+                        Manualled (
+                            docWith with all is orderedDocs,
+                            slug is slug,
+                            index is 0,
+                            fallback is missingDoc)
